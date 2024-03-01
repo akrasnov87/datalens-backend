@@ -21,6 +21,7 @@ DEFAULT_RCI_PLAIN_HEADERS = (
     "X-DL-Folder-ID",
     DLHeadersCommon.TENANT_ID.value,
     DLHeadersCommon.WORKBOOK_ID.value,
+    DLHeadersCommon.X_RPC_AUTHORIZATION.value,
     "Referer",
     "X-Chart-Id",
     "X-Dash-Id",

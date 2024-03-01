@@ -26,6 +26,7 @@ class DLHeadersCommon(DLHeaders):
     REQUEST_ID = "X-Request-ID"
     PUBLIC_API_KEY = "X-DL-Back-Public-API-Token"
     FILE_UPLOADER_MASTER_TOKEN = "X-DL-File-Uploader-Master-Token"
+    X_RPC_AUTHORIZATION = "X-Rpc-Authorization"
     TENANT_ID = "X-DL-TenantId"  # Tenant in the UnitedStorage format.
     WORKBOOK_ID = "X-DL-WorkbookId"
     PROJECT_ID = "X-DC-ProjectId"
