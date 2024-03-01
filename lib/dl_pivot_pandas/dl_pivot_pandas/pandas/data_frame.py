@@ -35,7 +35,7 @@ class PdPivotDataFrame(PivotDataFrame):
                 # Single column dimension, so normalize
                 values = (values,)
 
-            yield PivotHeader(values=values, info=self.headers_info[values])
+            yield PivotHeader(values=values, info=self.headers_info[values])  # type: ignore # TODO: Argument "values" to "PivotHeader" has incompatible type "str"
 
     def iter_row_headers(self) -> Generator[PivotHeader, None, None]:
         for values in self._pd_df.index:
@@ -122,7 +122,7 @@ class PdVSeriesPivotDataFrame(PdSeriesPivotDataFrameBase):
         yield from self._iter_headers()
 
     def iter_rows(self) -> Generator[tuple[PivotHeader, MeasureValues], None, None]:
-        for header, value in zip(self._iter_headers(), self._get_values()):
+        for header, value in zip(self._iter_headers(), self._get_values(), strict=True):
             yield header, (value,)
 
     def get_column_count(self) -> int:

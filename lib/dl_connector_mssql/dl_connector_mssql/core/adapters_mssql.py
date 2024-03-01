@@ -146,7 +146,7 @@ class MSSQLDefaultAdapter(BaseClassicAdapter):
         names = query_res.cursor_info["names"]
         if data:
             assert len(names) == len(data[0])
-        data = [dict(zip(names, row)) for row in data]
+        data = [dict(zip(names, row, strict=True)) for row in data]
 
         engine = self.get_db_engine(db_name=None)
         dialect = engine.dialect
@@ -174,7 +174,6 @@ class MSSQLDefaultAdapter(BaseClassicAdapter):
             nullable = column_info["is_nullable"]
 
             native_type = CommonNativeType.normalize_name_and_create(
-                conn_type=self.conn_type,
                 name=self.normalize_sa_col_type(sa_type),
                 nullable=nullable,
             )

@@ -330,7 +330,15 @@ class RawSQLLevel(Enum):
 
 
 class DashSQLQueryType(DynamicEnum):
-    classic_query = AutoEnumValue()
+    # The most generic type of query that accepts a single text field as input and returns any number of data columns
+    generic_query = AutoEnumValue()
+    # Generic type for queries with a single-column result (i.e. all distinct values of a dimension column)
+    generic_distinct = AutoEnumValue()
+    # More specific than `generic_distinct` for connectors that have the concept of labels
+    generic_label_names = AutoEnumValue()
+    generic_label_values = AutoEnumValue()
+    generic_label_names = AutoEnumValue()
+
     # Connector-specific query types should be defined as "<connector_name>_<query_type>"
 
 

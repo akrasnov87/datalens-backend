@@ -26,8 +26,8 @@ from dl_formula.utils.datetime import make_datetime_value
 try:
     from dl_formula.parser.antlr.gen.DataLensParser import DataLensParser
     from dl_formula.parser.antlr.gen.DataLensVisitor import DataLensVisitor
-except ImportError:
-    raise exc.ParserNotFoundError()
+except ImportError as e:
+    raise exc.ParserNotFoundError() from e
 
 
 EMPTY_FORMULA_ERROR = "Empty formula is invalid"
@@ -42,7 +42,7 @@ class CustomDataLensVisitor(DataLensVisitor):
         self._text = text
         self._pos_conv = PositionConverter(text=text)
 
-    def _make_node_meta(self, *ctxes: antlr4.ParserRuleContext) -> Optional[nodes.NodeMeta]:  # type: ignore
+    def _make_node_meta(self, *ctxes: antlr4.ParserRuleContext) -> Optional[nodes.NodeMeta]:
         first_ctx = ctxes[0]
         last_ctx = ctxes[-1]
         return nodes.NodeMeta(
@@ -60,7 +60,7 @@ class CustomDataLensVisitor(DataLensVisitor):
 
     def _separate_children(
         self,
-        ctx: antlr4.ParserRuleContext,  # type: ignore
+        ctx: antlr4.ParserRuleContext,
         exclude: Iterable[str] = (),
         lower_str: bool = False,
     ) -> Tuple[List[str], List[nodes.FormulaItem]]:
@@ -95,10 +95,10 @@ class CustomDataLensVisitor(DataLensVisitor):
         date_str = str(ctx.children[1])
         try:
             value = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
-        except ValueError:
+        except ValueError as e:
             raise exc.ParseDateValueError(
                 f"Invalid date value: {date_str}", token=date_str, position=self._make_position(ctx)
-            )
+            ) from e
         return nodes.LiteralDate.make(value=value, meta=self._make_node_meta(ctx))
 
     def visitDatetimeLiteral(self, ctx: DataLensParser.DatetimeLiteralContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
@@ -106,10 +106,10 @@ class CustomDataLensVisitor(DataLensVisitor):
         try:
             value = make_datetime_value(date_str)
             assert value is not None
-        except ValueError:
+        except ValueError as e:
             raise exc.ParseDatetimeValueError(
                 f"Invalid datetime value: {date_str}", token=date_str, position=self._make_position(ctx)
-            )
+            ) from e
         node_cls = nodes.LiteralGenericDatetime
         return node_cls.make(value=value, meta=self._make_node_meta(ctx))
 
@@ -117,10 +117,10 @@ class CustomDataLensVisitor(DataLensVisitor):
         date_str = str(ctx.children[1])
         try:
             value = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
-        except ValueError:
+        except ValueError as e:
             raise exc.ParseDateValueError(
                 f"Invalid date value: {date_str}", token=date_str, position=self._make_position(ctx)
-            )
+            ) from e
         return nodes.LiteralDate.make(value=value, meta=self._make_node_meta(ctx))
 
     def visitGenericDatetimeLiteral(self, ctx: DataLensParser.GenericDatetimeLiteralContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
@@ -128,10 +128,10 @@ class CustomDataLensVisitor(DataLensVisitor):
         try:
             value = make_datetime_value(date_str)
             assert value is not None
-        except ValueError:
+        except ValueError as e:
             raise exc.ParseDatetimeValueError(
                 f"Invalid datetime value: {date_str}", token=date_str, position=self._make_position(ctx)
-            )
+            ) from e
         node_cls = nodes.LiteralGenericDatetime
         return node_cls.make(value=value, meta=self._make_node_meta(ctx))
 
@@ -385,8 +385,8 @@ class CustomDataLensVisitor(DataLensVisitor):
             )
 
         def _flatten_and_visit_cmp_ctx(
-            _ctx: antlr4.ParserRuleContext,  # type: ignore
-        ) -> List[antlr4.ParserRuleContext]:  # type: ignore
+            _ctx: antlr4.ParserRuleContext,
+        ) -> List[antlr4.ParserRuleContext]:
             if is_cmp(_ctx):
                 return [
                     *_flatten_and_visit_cmp_ctx(_ctx.children[0]),  # type: ignore  # TODO: fix

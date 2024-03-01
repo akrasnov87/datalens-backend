@@ -185,8 +185,8 @@ class DatasetDataBaseView(BaseView):
         else:
             try:
                 dataset = await us_manager.get_by_id(self.dataset_id, Dataset)  # type: ignore  # 2024-01-24 # TODO: Incompatible types in assignment (expression has type "USEntry", variable has type "Dataset")  [assignment]
-            except USObjectNotFoundException:
-                raise web.HTTPNotFound(reason="Entity not found")
+            except USObjectNotFoundException as e:
+                raise web.HTTPNotFound(reason="Entity not found") from e
 
             await us_manager.load_dependencies(dataset)
 
@@ -201,7 +201,7 @@ class DatasetDataBaseView(BaseView):
     def try_get_mutation_key(self, updates: List[Action]) -> Optional[MutationKey]:
         if self.dataset_id is not None and self.dataset.revision_id is not None:
             if self._updates_only_fields(updates):
-                return UpdateDatasetMutationKey.create(self.dataset.revision_id, updates)  # type: ignore
+                return UpdateDatasetMutationKey.create(self.dataset.revision_id, updates)  # type: ignore  # 2024-01-30 # TODO: Argument 2 to "create" of "UpdateDatasetMutationKey" has incompatible type "list[Action]"; expected "list[FieldAction]"  [arg-type]
         return None
 
     def try_get_cache(self) -> Optional[USEntryMutationCache]:
@@ -420,7 +420,7 @@ class DatasetDataBaseView(BaseView):
         executed_queries = await runner.finalize()
         postprocessed_query_blocks = [
             PostprocessedQueryBlock.from_block_spec(block_spec, postprocessed_query=postprocessed_query)
-            for block_spec, postprocessed_query in zip(block_legend.blocks, executed_queries)
+            for block_spec, postprocessed_query in zip(block_legend.blocks, executed_queries, strict=True)
         ]
 
         postprocessed_query_union = PostprocessedQueryUnion(

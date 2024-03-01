@@ -124,7 +124,7 @@ class QueryExecutor(QueryExecutorBase):
         if translated_multi_query.is_empty():
             for stream in streams_by_result_id.values():
                 assert isinstance(stream, DataStreamAsync)
-            return streams_by_result_id, stream_aliases  # type: ignore
+            return streams_by_result_id, stream_aliases  # type: ignore  # 2024-01-30 # TODO: Incompatible return value type (got "tuple[dict[str, AbstractStream], dict[str, str]]", expected "tuple[dict[str, DataStreamAsync], dict[str, str]]")  [return-value]
 
         op: BaseOp  # For usage in various parts of this function
 
@@ -358,7 +358,7 @@ class QueryExecutor(QueryExecutorBase):
                 role=exec_info.role,
                 row_count_hard_limit=row_count_hard_limit,
             )
-        except exc.EmptyQuery:
+        except exc.EmptyQuery as e:
             if empty_query_mode == EmptyQueryMode.error:
                 raise
             empty_rows: List[TBIDataRow]
@@ -367,7 +367,7 @@ class QueryExecutor(QueryExecutorBase):
             elif empty_query_mode == EmptyQueryMode.empty_row:
                 empty_rows = [[]]
             else:
-                raise ValueError(empty_query_mode)
+                raise ValueError(empty_query_mode) from e
             return ExecutedQuery(
                 rows=empty_rows,
                 meta=ExecutedQueryMetaInfo.from_trans_meta(

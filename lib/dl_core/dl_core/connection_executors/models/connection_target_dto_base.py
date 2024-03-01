@@ -43,7 +43,7 @@ class ConnTargetDTO(metaclass=abc.ABCMeta):
 
     _MAP_CLASS_NAME_CLASS: ClassVar[Dict[str, Type[ConnTargetDTO]]] = {}
 
-    def __init_subclass__(cls, **kwargs):  # type: ignore
+    def __init_subclass__(cls, **kwargs):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
         cls._MAP_CLASS_NAME_CLASS[cls.__qualname__] = cls
 
     @classmethod
@@ -85,3 +85,8 @@ class BaseSQLConnTargetDTO(ConnTargetDTO):
 
     def get_effective_host(self) -> Optional[str]:
         return self.host
+
+
+@attr.s(frozen=True)
+class BaseAiohttpConnTargetDTO(ConnTargetDTO, metaclass=abc.ABCMeta):
+    ca_data: str = attr.ib(repr=secrepr)

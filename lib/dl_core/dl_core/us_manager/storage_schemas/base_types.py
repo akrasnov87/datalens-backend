@@ -3,28 +3,32 @@ from __future__ import annotations
 from typing import Any
 
 from marshmallow import (
+    EXCLUDE,
     Schema,
     fields,
     post_load,
 )
 
-from dl_constants.enums import (
-    ConnectionType,
-    UserDataType,
-)
+from dl_constants.enums import UserDataType
 from dl_core.db.elements import SchemaColumn
 from dl_core.db.native_type import GenericNativeType
-from dl_model_tools.schema.dynamic_enum_field import DynamicEnumField
 
 
 class NativeTypeSchema(Schema):
     """(currently used for uploads / ProviderConnection)"""
 
-    conn_type = DynamicEnumField(ConnectionType, by_value=True)
+    class Meta:
+        # Same as in `NativeTypeSchemaBase`, to ignore `conn_type`
+        unknown = EXCLUDE
+
     name = fields.String()
 
     @post_load(pass_many=False)
     def to_object(self, data: dict[str, Any], **kwargs: Any) -> Any:
+        if "conn_type" in data:
+            # TODO: Remove once all datasets have been migrated
+            data = data.copy()
+            data.pop("conn_type")
         return GenericNativeType(**data)
 
 

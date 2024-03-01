@@ -90,6 +90,7 @@ class ConnExecutorBase(metaclass=abc.ABCMeta):
     _exec_mode: ExecutionMode = attr.ib()
     _sec_mgr: "ConnectionSecurityManager" = attr.ib()
     _remote_qe_data: Optional[RemoteQueryExecutorData] = attr.ib()
+    _ca_data: bytes = attr.ib()
     _services_registry: Optional[ServicesRegistry] = attr.ib(
         kw_only=True, default=None
     )  # Do not use. To be deprecated. Somehow.
@@ -129,7 +130,8 @@ class ConnExecutorBase(metaclass=abc.ABCMeta):
         if len(user_types) != len(row):
             raise ValueError(f"Length of user_types {len(user_types)} != length of row {len(row)}")
         return tuple(
-            self.type_transformer.cast_for_output(val, user_t=user_type) for val, user_type in zip(row, user_types)
+            self.type_transformer.cast_for_output(val, user_t=user_type)
+            for val, user_type in zip(row, user_types, strict=True)
         )
 
     def create_schema_info_from_raw_schema_info(

@@ -21,6 +21,7 @@ from sqlalchemy.sql.elements import (
 )
 
 from dl_app_tools.profiling_base import generic_profiler_async
+from dl_cache_engine.engine import RedisCacheLockWrapped
 from dl_constants.enums import ConnectionType
 from dl_core.aio.web_app_services.redis import RedisConnParams
 from dl_core.connection_executors.adapters.adapter_actions.async_base import AsyncDBVersionAdapterAction
@@ -38,7 +39,6 @@ from dl_core.connection_models import (
     TableIdent,
 )
 from dl_core.connectors.base.error_handling import ETBasedExceptionMaker
-from dl_core.data_processing.cache.engine import RedisCacheLockWrapped
 from dl_core.db.native_type import CommonNativeType
 from dl_core.exc import DatabaseQueryError
 
@@ -185,10 +185,10 @@ class BitrixGDSDefaultAdapter(AiohttpDBAdapter, ETBasedExceptionMaker):
         try:
             normalized_data = dict(
                 cols=[dict(id=col, label=col, type=columns_type.get(col, "string")) for col in selected_columns],
-                rows=[[dict(zip(cols, row))[col] for col in selected_columns] for row in rows],
+                rows=[[dict(zip(cols, row, strict=True))[col] for col in selected_columns] for row in rows],
             )
-        except (KeyError, TypeError, ValueError):
-            raise ValueError("unexpected data structure")
+        except (KeyError, TypeError, ValueError) as e:
+            raise ValueError("unexpected data structure") from e
 
         return normalized_data
 
@@ -240,7 +240,7 @@ class BitrixGDSDefaultAdapter(AiohttpDBAdapter, ETBasedExceptionMaker):
                 query=dba_query.debug_compiled_query,
                 orig=None,
                 details={},
-            )
+            ) from err
 
     @generic_profiler_async("db-full")  # type: ignore  # TODO: fix
     async def execute(self, query: DBAdapterQuery) -> AsyncRawExecutionResult:
@@ -321,7 +321,6 @@ class BitrixGDSDefaultAdapter(AiohttpDBAdapter, ETBasedExceptionMaker):
                     title=col["id"],
                     nullable=True,
                     native_type=CommonNativeType(
-                        conn_type=self.conn_type,
                         name=columns_type.get(col["id"], "string"),
                         nullable=True,
                     ),

@@ -152,10 +152,6 @@ def main() -> None:
         "--root_pkgs",
         help="comma separated list of dirs to walk inside to find test targets",
     )
-    parser.add_argument(
-        "--fallback_pkg",
-        help="relative path to pkg to always include in results",
-    )
     parser.add_argument("--changes_file")
     args = parser.parse_args()
 
@@ -174,19 +170,16 @@ def main() -> None:
     else:
         to_check = process(cfg, False)
 
-    to_check.append(
-        PkgRef(
-            root=cfg.root_dir,
-            full_path=cfg.root_dir / args.fallback_pkg,
-        )
-    )
     result = set()
+    skipped = set()
 
     for sub in to_check:
         if sub.skip_test:
+            skipped.add(str(sub.partial_parent_path))
             continue
         result.add(str(sub.partial_parent_path))
     print(f"affected={json.dumps(list(result))}")
+    print(f"all_affected_with_skips={json.dumps(list(result | skipped))}")
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ from dl_api_lib.dataset.utils import (
     log_dataset_field_stats,
 )
 from dl_api_lib.enums import USPermissionKind
+from dl_api_lib.schemas import main as dl_api_main_schemas
 import dl_api_lib.schemas.data
 import dl_api_lib.schemas.dataset_base
 import dl_api_lib.schemas.validation
@@ -79,9 +80,9 @@ class DatasetCollection(DatasetResource):
     @put_to_request_context(endpoint_code="DatasetCreate")
     @schematic_request(
         ns=ns,
-        body=dl_api_lib.schemas.main.CreateDatasetSchema(),
+        body=dl_api_main_schemas.CreateDatasetSchema(),
         responses={
-            200: ("Success", dl_api_lib.schemas.main.CreateDatasetResponseSchema()),
+            200: ("Success", dl_api_main_schemas.CreateDatasetResponseSchema()),
         },
     )
     def post(self, body):  # type: ignore  # TODO: fix
@@ -232,7 +233,7 @@ class DatasetVersionItem(DatasetResource):
         """Update dataset version"""
         us_manager = self.get_us_manager()
         with us_manager.get_locked_entry_cm(
-            Dataset, dataset_id, wait_timeout=DEFAULT_DATASET_LOCK_WAIT_TIMEOUT
+            Dataset, dataset_id, wait_timeout=DEFAULT_DATASET_LOCK_WAIT_TIMEOUT  # type: ignore # TODO: "SyncUSManager" has incompatible type "type[Dataset]"
         ) as ds:  # type: Dataset
             utils.need_permission_on_entry(ds, USPermissionKind.edit)
             us_manager.load_dependencies(ds)

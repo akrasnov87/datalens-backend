@@ -13,6 +13,10 @@ from dl_api_commons.reporting.profiler import (
     PROFILING_LOG_NAME,
     DefaultReportingProfiler,
 )
+from dl_cache_engine.primitives import (
+    DataKeyPart,
+    LocalKeyRepresentation,
+)
 from dl_constants.api_constants import DLHeadersCommon
 from dl_constants.enums import (
     DataSourceRole,
@@ -21,10 +25,6 @@ from dl_constants.enums import (
     UserDataType,
 )
 from dl_core.base_models import WorkbookEntryLocation
-from dl_core.data_processing.cache.primitives import (
-    DataKeyPart,
-    LocalKeyRepresentation,
-)
 from dl_core.data_processing.processing.operation import (
     BaseOp,
     CalcOp,
@@ -60,6 +60,7 @@ class TestCompengCache(DefaultCoreTestClass):
         sync_us_manager,
         caches_redis_client_factory,
         data_processor_service_factory,
+        root_certificates,
     ):
         dataset = saved_dataset
         us_manager = sync_us_manager
@@ -122,6 +123,7 @@ class TestCompengCache(DefaultCoreTestClass):
                 conn_bi_context=conn_bi_context,
                 caches_redis_client_factory=caches_redis_client_factory,
                 data_processor_service_factory=data_processor_service_factory,
+                root_certificates_data=root_certificates,
             )
             dto = ClickHouseConnDTO(
                 conn_id="123",
@@ -190,7 +192,9 @@ class TestCompengCache(DefaultCoreTestClass):
         operations_c10 = get_operations(coeff=10)
         data_key_l10 = LocalKeyRepresentation(key_parts=(DataKeyPart(part_type="part", part_content="value_l10"),))
         output_data = await get_data_from_processor(
-            input_data=input_data_l10, data_key=data_key_l10, operations=operations_c10
+            input_data=input_data_l10,
+            data_key=data_key_l10,
+            operations=operations_c10,
         )
         expected_data_l10_c10 = get_expected_data(length=10, coeff=10)
         assert output_data == expected_data_l10_c10
@@ -204,7 +208,9 @@ class TestCompengCache(DefaultCoreTestClass):
         caplog.clear()
         input_data_l5 = [[i, f"str_{i}"] for i in range(5)]  # up to 5 instead of 10
         output_data = await get_data_from_processor(
-            input_data=input_data_l5, data_key=data_key_l10, operations=operations_c10
+            input_data=input_data_l5,
+            data_key=data_key_l10,
+            operations=operations_c10,
         )
         assert output_data == expected_data_l10_c10
         # Check cache flags in reporting
@@ -218,7 +224,9 @@ class TestCompengCache(DefaultCoreTestClass):
         data_key_l5 = LocalKeyRepresentation(key_parts=(DataKeyPart(part_type="part", part_content="value_l5"),))
         operations_c5 = get_operations(coeff=5)
         output_data = await get_data_from_processor(
-            input_data=input_data_l5, data_key=data_key_l5, operations=operations_c5
+            input_data=input_data_l5,
+            data_key=data_key_l5,
+            operations=operations_c5,
         )
         expected_data_l5_c5 = get_expected_data(length=5, coeff=5)
         assert output_data == expected_data_l5_c5

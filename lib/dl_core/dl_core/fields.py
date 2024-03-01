@@ -397,7 +397,7 @@ class ResultSchema:
     _title_cache: Dict[str, BIField] = attr.ib(init=False, eq=False)
     valid: bool = attr.ib(default=True)
 
-    def __attrs_post_init__(self):  # type: ignore  # TODO: fix
+    def __attrs_post_init__(self) -> None:
         self._guid_cache = {}
         self._title_cache = {}
         self.reload_caches()
@@ -422,8 +422,8 @@ class ResultSchema:
             self.reload_caches()
         try:
             return self._guid_cache[guid]
-        except KeyError:
-            raise FieldNotFound(f"Unknown field {guid}")
+        except KeyError as e:
+            raise FieldNotFound(f"Unknown field {guid}") from e
 
     def by_title(self, title: str) -> BIField:
         """Find field by title"""
@@ -431,8 +431,8 @@ class ResultSchema:
             self.reload_caches()
         try:
             return self._title_cache[title]
-        except KeyError:
-            raise FieldNotFound(f"Unknown field {title}")
+        except KeyError as e:
+            raise FieldNotFound(f"Unknown field {title}") from e
 
     @property
     def titles_to_guids(self) -> Dict[str, FieldId]:

@@ -54,7 +54,6 @@ _SETTINGS_TV = TypeVar("_SETTINGS_TV")
 
 SEP = "_"
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -72,7 +71,7 @@ class ConfigFieldMissing(InvalidConfigValueException):
         return self._field_set
 
 
-def get_sub_keys(prefix: str, env: SDict):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+def get_sub_keys(prefix: str, env: SDict) -> dict[str, str]:
     effective_prefix = prefix if prefix.endswith(SEP) else prefix + SEP
     return {key[len(effective_prefix) :]: value for key, value in env.items() if key.startswith(effective_prefix)}
 
@@ -100,7 +99,7 @@ class SDictExtractor:
     @final
     def extract(self, s_dict: SDict) -> Any:
         ret = self._extract(s_dict)
-        typeguard.check_type(self.key or "root", ret, self.expected_type)
+        typeguard.check_type(ret, self.expected_type)
         return ret
 
 
@@ -118,7 +117,7 @@ class ScalarExtractor(SDictExtractor):
 
             return None
 
-        value = s_dict[self.key]  # type: ignore  # 2024-01-24 # TODO: Invalid index type "str | None" for "Mapping[str, str]"; expected type "str"  [index]
+        value = s_dict[self.key]  # type: ignore  # 2024-01-24 # TODO: Invalid index type "str | None" for "Mapping[str, str]";
 
         if self.converter is None:
             return value
@@ -132,7 +131,7 @@ class ScalarExtractor(SDictExtractor):
 
 @attr.s
 class DefaultOnlyExtractor(SDictExtractor):
-    def __attrs_post_init__(self):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def __attrs_post_init__(self) -> None:
         assert self.default is not NOT_SET
 
     def has_field(self, s_dict: SDict) -> bool:
@@ -173,8 +172,12 @@ class CompositeExtractor(SDictExtractor):
         if field_enables_flag_extractor is None:
             return False
 
-        if self.field_enables_flag_extractor.has_field(scoped_s_dict):  # type: ignore  # 2024-01-24 # TODO: Item "None" of "ScalarExtractor | None" has no attribute "has_field"  [union-attr]
-            should_read = self.field_enables_flag_extractor.extract(scoped_s_dict)  # type: ignore  # 2024-01-24 # TODO: Item "None" of "ScalarExtractor | None" has no attribute "extract"  [union-attr]
+        if self.field_enables_flag_extractor.has_field(  # type: ignore  # 2024-01-24 # TODO: Item "None" of "ScalarExtractor | None" has no attribute "has_field"  [union-attr]
+            scoped_s_dict
+        ):
+            should_read = self.field_enables_flag_extractor.extract(  # type: ignore  # 2024-01-24 # TODO: Item "None" of "ScalarExtractor | None" has no attribute "extract"  [union-attr]
+                scoped_s_dict
+            )
             return not bool(should_read)
 
         return False
@@ -210,7 +213,7 @@ class CompositeExtractor(SDictExtractor):
         missing_required_fields: list[attr.Attribute] = []
         missing_sub_field_code_set: set[str] = set()
 
-        def handle_field_sub_exc(faulty_field_name: str, exc: ConfigFieldMissing):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+        def handle_field_sub_exc(faulty_field_name: str, exc: ConfigFieldMissing) -> None:
             missing_sub_field_code_set.update(f"{faulty_field_name}.{sub_field}" for sub_field in exc.field_set)
 
         if obj is None:
@@ -253,13 +256,13 @@ class CompositeExtractor(SDictExtractor):
             json_value = json.loads(json_str)
         except json.JSONDecodeError:
             # TODO FIX: take in account potential sensivity of value
-            raise InvalidConfigValueException(f"Malformed JSON for {self.key!r}")
+            raise InvalidConfigValueException(f"Malformed JSON for {self.key!r}") from None
 
         try:
             return converter(json_value)
-        except Exception as exc:  # noqa
+        except Exception as exc:
             # TODO FIX: take in account potential sensivity of value
-            raise InvalidConfigValueException(f"Can not convert JSON value to target object {self.key!r}")
+            raise InvalidConfigValueException(f"Can not convert JSON value to target object {self.key!r}") from exc
 
     def _extract(self, s_dict: SDict) -> Any:
         default_value = self.default
@@ -308,7 +311,7 @@ class EnvSettingsLoader:
 
     _s_dict: Optional[SDict] = attr.ib(repr=False)
 
-    def __attrs_post_init__(self):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def __attrs_post_init__(self) -> None:
         if self._s_dict is None:
             self._s_dict = MappingProxyType(dict(os.environ))
         else:
@@ -388,14 +391,19 @@ class EnvSettingsLoader:
             if ignore_none:
                 # TODO FIX: try to not use noqa: E721
                 # (to consider: `not issubclass(arg_type, type(None))`
-                unwrapped_types = [argtype for argtype in unwrapped_types if argtype is not type(None)]  # type: ignore  # 2024-01-24 # TODO: Incompatible types in assignment (expression has type "list[Any]", variable has type "tuple[Any, ...]")  [assignment]
+                unwrapped_types = [
+                    argtype for argtype in unwrapped_types if argtype is not type(None)
+                ]  # type: ignore  # 2024-01-24 # TODO: Incompatible types in assignment (expression has type "list[Any]", variable has type "tuple[Any, ...]")  [assignment]
             return frozenset(unwrapped_types)
         return frozenset([the_type])
 
     @classmethod
     def is_sub_settings_field(cls, attrib: attr.Attribute) -> bool:
         the_type = attrib.type
-        possible_types = cls.unwrap_union(the_type, ignore_none=True)  # type: ignore  # 2024-01-24 # TODO: Argument 1 to "unwrap_union" of "EnvSettingsLoader" has incompatible type "type[Any] | None"; expected "type[Any]"  [arg-type]
+        possible_types = cls.unwrap_union(
+            the_type,  # type: ignore  # 2024-01-24 # TODO: Argument 1 to "unwrap_union" of "EnvSettingsLoader" has incompatible type "type[Any] | None"; expected "type[Any]"  [arg-type]
+            ignore_none=True,
+        )
         map_type_is_sub_setting: dict[Type, bool] = {
             t: isinstance(t, type) and issubclass(t, SettingsBase) for t in possible_types
         }
@@ -489,7 +497,11 @@ class EnvSettingsLoader:
                     raise SettingsLoadingException(f"Unexpected signature of fallback factory for {field}")
 
             else:
-                field_default = getattr(fallback_cfg, field_s_meta.name, NOT_SET)  # type: ignore  # 2024-01-24 # TODO: Argument 2 to "getattr" has incompatible type "str | None"; expected "str"  [arg-type]
+                field_default = getattr(
+                    fallback_cfg,
+                    field_s_meta.name,  # type: ignore  # 2024-01-24 # TODO: Argument 2 to "getattr" has incompatible type "str | None"; expected "str"  [arg-type]
+                    NOT_SET,
+                )
                 if (
                     field_default is NOT_SET
                     and cls.is_sub_settings_field(field)
@@ -552,7 +564,11 @@ class EnvSettingsLoader:
 
     @classmethod
     def get_app_cfg_type_field(cls, settings_type: Type[SettingsBase]) -> Optional[attr.Attribute]:
-        candidates = [field for field in attr.fields(settings_type) if SMeta.from_attrib(field).is_app_cfg_type]  # type: ignore  # 2024-01-24 # TODO: Argument 1 to "fields" has incompatible type "type[SettingsBase]"; expected "type[AttrsInstance]"  [arg-type]
+        candidates = [
+            field
+            for field in attr.fields(settings_type)  # type: ignore  # 2024-01-24 # TODO: Argument 1 to "fields" has incompatible type "type[SettingsBase]";
+            if SMeta.from_attrib(field).is_app_cfg_type  # type: ignore  # 2024-02-09 # TODO: Item "None" of "SMeta | None" has no attribute
+        ]
         if len(candidates) > 1:
             raise SettingsLoadingException(
                 f"Settings class {get_type_full_name(settings_type)}"
@@ -623,8 +639,10 @@ class EnvSettingsLoader:
         if fallback_cfg_resolver is not None:
             fallback_cfg = fallback_cfg_resolver.resolve(effective_s_dict)
 
-        app_cfg_type = self.get_app_cfg_type_value_from_env(settings_type, effective_s_dict)  # type: ignore  # 2024-01-24 # TODO: Argument 1 to "get_app_cfg_type_value_from_env" of "EnvSettingsLoader" has incompatible type "type[_SETTINGS_TV]"; expected "type[SettingsBase]"  [arg-type]
-
+        app_cfg_type = self.get_app_cfg_type_value_from_env(
+            settings_type,  # type: ignore  # 2024-01-24 # TODO: Argument 1 to "get_app_cfg_type_value_from_env" of "EnvSettingsLoader" has incompatible type "type[_SETTINGS_TV]"; expected "type[SettingsBase]"  [arg-type]
+            effective_s_dict,
+        )
         extractor = self.build_top_level_extractor(
             settings_type=settings_type,
             key_prefix=key_prefix,

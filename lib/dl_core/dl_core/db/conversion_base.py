@@ -46,8 +46,8 @@ def _if_not_none(value: _INN_TV, func: Callable[[_INN_TV], Any]) -> Any:
     if value is not None:
         try:
             return func(value)
-        except ValueError:
-            raise exc.DataParseError(f"Cannot convert {value!r} to {func.__name__}", query=None)
+        except ValueError as e:
+            raise exc.DataParseError(f"Cannot convert {value!r} to {func.__name__}", query=None) from e
     return None
 
 
@@ -83,8 +83,8 @@ def make_int(value: Any) -> Optional[int]:
 def _handle_type_cast_errors() -> Generator[None, None, None]:
     try:
         yield
-    except (TypeError, ValueError):
-        raise exc.TypeCastFailed("Type casting failed for value")
+    except (TypeError, ValueError) as e:
+        raise exc.TypeCastFailed("Type casting failed for value") from e
 
 
 class TypeCaster:
@@ -218,7 +218,6 @@ class LowercaseTypeCaster(TypeCaster):
 
 
 class TypeTransformer:
-    conn_type: ClassVar[ConnectionType]
     native_to_user_map: ClassVar[dict[GenericNativeType, UserDataType]] = {}
     user_to_native_map: ClassVar[dict[UserDataType, GenericNativeType]] = {}
     casters: ClassVar[dict[UserDataType, TypeCaster]] = {
@@ -255,40 +254,23 @@ class TypeTransformer:
 
         try:
             return self.native_to_user_map.get(native_t) or self.native_to_user_map[native_t.as_generic]
-        except KeyError:
-            raise exc.UnsupportedNativeTypeError(native_t)
-
-    def make_foreign_native_type_conversion(self, native_t: GenericNativeType) -> GenericNativeType:
-        """
-        Attempt to make a native type for the current database that corresponds
-        to a native type of another database.
-
-        If there is no known direct conversion, should return `native_t` as-is
-        (with non-matching `conn_type`).
-        """
-        return native_t  # no known conversion
+        except KeyError as e:
+            raise exc.UnsupportedNativeTypeError(native_t) from e
 
     def type_user_to_native(
         self, user_t: UserDataType, native_t: Optional[GenericNativeType] = None
     ) -> GenericNativeType:
         if native_t is not None:
             # original NT is given, try to do a direct conversion
-
-            if native_t.conn_type != self.conn_type:
-                # attempt to translate to own native type
-                native_t = self.make_foreign_native_type_conversion(native_t)
-
-            if native_t.conn_type == self.conn_type:
-                # it is from the same DB type, so try to validate against UT
-                if user_t == self.native_to_user_map.get(native_t) or user_t == self.native_to_user_map.get(
-                    native_t.as_generic
-                ):
-                    return native_t
+            if user_t == self.native_to_user_map.get(native_t) or user_t == self.native_to_user_map.get(
+                native_t.as_generic
+            ):
+                return native_t
 
         try:
             result = self.user_to_native_map[user_t]
-        except KeyError:
-            raise exc.UnsupportedBITypeError(user_t)
+        except KeyError as e:
+            raise exc.UnsupportedBITypeError(user_t) from e
 
         # Assume all databases support `nullable` in a similar way, so pass it
         # along if possible.
@@ -321,5 +303,5 @@ def register_type_transformer_class(conn_type: ConnectionType, tt_cls: Type[Type
 def get_type_transformer(conn_type: ConnectionType) -> TypeTransformer:
     try:
         return TYPE_TRANSFORMER_MAP[conn_type]
-    except KeyError:
-        raise exc.UnsupportedDatabaseError(conn_type)
+    except KeyError as e:
+        raise exc.UnsupportedDatabaseError(conn_type) from e

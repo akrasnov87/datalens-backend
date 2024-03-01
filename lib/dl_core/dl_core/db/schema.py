@@ -16,7 +16,7 @@ def are_raw_schemas_same(first: Optional[List[SchemaColumn]], second: Optional[L
         return first == second
     if len(first) != len(second):
         return False
-    for col_1, col_2 in zip(first, second):
+    for col_1, col_2 in zip(first, second, strict=True):
         data_1, data_2 = col_1._asdict(), col_2._asdict()
         # FIXME:
         # API doesn't have the full NativeType definition yet, so we can't compare them directly
@@ -33,11 +33,8 @@ def are_raw_schemas_same(first: Optional[List[SchemaColumn]], second: Optional[L
             or not ntypes_arent_none
             and col_1.native_type != col_2.native_type
             # or native types have different names (only for different db (conn) types)
-            or (
-                ntypes_arent_none
-                and col_1.native_type.conn_type == col_2.native_type.conn_type
-                and col_1.native_type.name != col_2.native_type.name
-            )
+            or ntypes_arent_none
+            and col_1.native_type.name != col_2.native_type.name
         ):
             return False
 

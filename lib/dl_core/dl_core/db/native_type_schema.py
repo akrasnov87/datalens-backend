@@ -17,13 +17,13 @@ from typing import (
 )
 
 from marshmallow import (
+    EXCLUDE,
     Schema,
     fields,
     post_load,
 )
 from marshmallow_oneofschema import OneOfSchema
 
-from dl_constants.enums import ConnectionType
 from dl_core.db.native_type import (
     ClickHouseDateTime64NativeType,
     ClickHouseDateTime64WithTZNativeType,
@@ -33,7 +33,6 @@ from dl_core.db.native_type import (
     GenericNativeType,
     LengthedNativeType,
 )
-from dl_model_tools.schema.dynamic_enum_field import DynamicEnumField
 
 
 LOGGER = logging.getLogger(__name__)
@@ -45,10 +44,23 @@ _TARGET_TV = TypeVar("_TARGET_TV")
 class NativeTypeSchemaBase(Schema, Generic[_TARGET_TV]):
     """(Shared ((Native Type) Storage Schema)), common base class for NT schemas."""
 
+    class Meta:
+        # This crutch allows the schema to ignore unknown attributes.
+        # We need this because older dataset versions have `conn_type` attributes in native type objects,
+        # but this attribute is no longer present in current code.
+        # To avoid this conflict we need to ignore extra attributes.
+        # TODO: Eventually datasets should be migrated so that this can be removed
+        unknown = EXCLUDE
+
     TARGET_CLS: ClassVar[Type[_TARGET_TV]]  # type: ignore  # 2024-01-24 # TODO: ClassVar cannot contain type variables  [misc]
 
     @post_load(pass_many=False)
     def to_object(self, data: dict, **_):  # type: ignore  # TODO: fix
+        if "conn_type" in data:
+            # TODO: Remove once all datasets have been migrated
+            data = data.copy()
+            data.pop("conn_type")
+
         return self.TARGET_CLS(**data)  # type: ignore  # TODO: fix
 
 
@@ -59,7 +71,7 @@ class GenericNativeTypeSchema(NativeTypeSchemaBase[GenericNativeType]):
     """
 
     TARGET_CLS = GenericNativeType
-    conn_type = DynamicEnumField(ConnectionType)
+
     name = fields.String()
 
 
@@ -97,6 +109,10 @@ class ClickHouseDateTime64WithTZNativeTypeSchema(ClickHouseDateTime64NativeTypeS
 
 class OneOfNativeTypeSchemaBase(OneOfSchema):
     """(OneOf (Native Type) Storage Schema)"""
+
+    class Meta:
+        # Same as above in `NativeTypeSchemaBase`, to ignore `conn_type`
+        unknown = EXCLUDE
 
     type_field = "native_type_class_name"
     type_schemas = {
@@ -143,10 +159,7 @@ class OneOfNativeTypeSchema(OneOfNativeTypeSchemaBase):
             # probably a normal case until the transition is done.
             # LOGGER.info("OneOfNativeTypeSchema loading from an str")
 
-            from dl_core.us_manager.storage_schemas.base import CtxKey
-
-            ds_conn_type = self.context.get("ds_conn_type") or self.context[CtxKey.ds_conn_type]
-            return GenericNativeType(conn_type=ds_conn_type, name=value)
+            return GenericNativeType(name=value)
 
         if isinstance(value, GenericNativeType):
             raise Exception("OneOfNativeTypeSchema loading an obj")

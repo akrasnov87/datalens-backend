@@ -54,7 +54,7 @@ class CsvTableDumper:
         return self._PY_CONVERTERS_BY_BITYPE[user_type](value)
 
     def _convert_row(self, row: Sequence[Optional[str]], type_schema: Sequence[UserDataType]) -> list[Any]:
-        return [self._convert_value(v, t) for v, t in zip(row, type_schema)]
+        return [self._convert_value(v, t) for v, t in zip(row, type_schema, strict=True)]
 
     def _load_table_data(self, raw_csv_data: str, type_schema: Sequence[UserDataType]) -> list[list[Any]]:
         reader = csv.reader(io.StringIO(raw_csv_data))
@@ -66,6 +66,7 @@ class CsvTableDumper:
         table_schema: Sequence[tuple[str, UserDataType]],
         table_name_prefix: Optional[str] = None,
         nullable: bool = True,
+        chunk_size: Optional[int] = None,
     ) -> DbTable:
         table_name_prefix = table_name_prefix or "table_"
         if not table_name_prefix.endswith("_"):
@@ -82,9 +83,9 @@ class CsvTableDumper:
             return _value_gen
 
         columns = [
-            C(name=name, user_type=user_type, vg=_value_gen_factory(_col_idx=col_idx), nullable=nullable)  # type: ignore
+            C(name=name, user_type=user_type, vg=_value_gen_factory(_col_idx=col_idx), nullable=nullable)  # type: ignore  # 2024-01-30 # TODO: Argument "vg" to "C" has incompatible type "Callable[[int, datetime, Random], Any]"; expected "Callable[[int, datetime], Any]"  [arg-type]
             for col_idx, (name, user_type) in enumerate(table_schema)
         ]
 
-        db_table = make_table(db=self.db, name=table_name, columns=columns, rows=len(data))
+        db_table = make_table(db=self.db, name=table_name, columns=columns, rows=len(data), chunk_size=chunk_size)
         return db_table

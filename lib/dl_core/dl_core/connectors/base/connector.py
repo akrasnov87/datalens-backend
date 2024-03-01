@@ -52,7 +52,7 @@ if TYPE_CHECKING:
 
 class CoreSourceDefinition(abc.ABC):
     source_type: ClassVar[DataSourceType]
-    source_cls: ClassVar[Type[DataSource]] = DataSource  # type: ignore
+    source_cls: ClassVar[Type[DataSource]] = DataSource  # type: ignore  # 2024-01-30 # TODO: Can only assign concrete classes to a variable of type "type[DataSource]"  [type-abstract]
     source_spec_cls: ClassVar[Type[DataSourceSpec]] = DataSourceSpec
     us_storage_schema_cls: ClassVar[Type[DataSourceSpecStorageSchema]] = DataSourceSpecStorageSchema
 
@@ -61,7 +61,7 @@ class CoreConnectionDefinition(abc.ABC):
     conn_type: ClassVar[ConnectionType]
     connection_cls: ClassVar[Type[ConnectionBase]]
     us_storage_schema_cls: ClassVar[Optional[Type[Schema]]] = None
-    type_transformer_cls: ClassVar[Type[TypeTransformer]]
+    type_transformer_cls: ClassVar[Type[TypeTransformer]]  # TODO: Move to CoreBackendDefinition
     sync_conn_executor_cls: ClassVar[Optional[Type[ConnExecutorBase]]] = None
     async_conn_executor_cls: ClassVar[Optional[Type[AsyncConnExecutorBase]]] = None
     lifecycle_manager_cls: ClassVar[Type[ConnectionLifecycleManager]] = DefaultConnectionLifecycleManager
@@ -83,7 +83,10 @@ class CoreConnector(abc.ABC):
     backend_definition: Type[CoreBackendDefinition]
     connection_definitions: ClassVar[tuple[Type[CoreConnectionDefinition], ...]] = ()
     source_definitions: ClassVar[tuple[Type[CoreSourceDefinition], ...]] = ()
-    sa_types: ClassVar[Optional[dict[GenericNativeType, Callable[[GenericNativeType], TypeEngine]]]] = None
+    # TODO: Move to CoreBackendDefinition:
+    sa_types: ClassVar[
+        Optional[dict[tuple[SourceBackendType, GenericNativeType], Callable[[GenericNativeType], TypeEngine]]]
+    ] = None
     rqe_adapter_classes: ClassVar[AbstractSet[Type[CommonBaseDirectAdapter]]] = frozenset()
     conn_security: ClassVar[AbstractSet[ConnSecuritySettings]] = frozenset()
     query_fail_exceptions: frozenset[Type[Exception]] = frozenset()
@@ -92,3 +95,4 @@ class CoreConnector(abc.ABC):
     @classmethod
     def registration_hook(cls) -> None:
         """Do some non-standard stuff here. Think twice before implementing."""
+        return

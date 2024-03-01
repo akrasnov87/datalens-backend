@@ -56,9 +56,6 @@ if TYPE_CHECKING:
     from dl_formula.translation.env import TranslationEnvironment
 
 
-# FIXME: uncomment commented __slots__ if and when Python version is updated (bug in 3.5)
-
-
 _VARIANT_OF_TV = TypeVar("_VARIANT_OF_TV")
 _VARIANT_TV = TypeVar("_VARIANT_TV", bound="ValueVariant")
 
@@ -88,7 +85,7 @@ class ValueVariant(Generic[_VARIANT_OF_TV]):
     def value(self) -> _VARIANT_OF_TV:
         return self._value
 
-    def match(self, dialect) -> bool:  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+    def match(self, dialect: DialectCombo) -> bool:
         """Return True if this variant matches the given dialect"""
         return self.dialects == D.ANY or self.dialects & dialect == dialect
 
@@ -320,7 +317,7 @@ class TranslationVariant(ValueVariant[FuncTranslationImplementationBase]):
         instance = cls(dialects=dialects, value=translation_impl)
         return instance
 
-    def __repr__(self):  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def __repr__(self) -> str:
         _c0 = "\x1b[0m"
         _c1 = "\x1b[038;5;118m"
         return "<{}({})>{}".format(
@@ -347,7 +344,7 @@ class TranslationVariant(ValueVariant[FuncTranslationImplementationBase]):
             translation_env=translation_env,
         )
 
-    def match(self, dialect) -> bool:  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+    def match(self, dialect: DialectCombo) -> bool:
         return super().match(dialect)
 
 
@@ -626,6 +623,18 @@ class MultiVariantTranslation(NodeTranslation):
         patched_variant = variant.clone(dialects=dialects)
         return cls(variants=[patched_variant], arg_transformer=arg_transformer)
 
+    def for_another_dialect(
+        self,
+        dialects: DialectCombo,
+        arg_transformer: Optional[ArgTransformer] = None,
+    ) -> MultiVariantTranslation:
+        variants = self.get_variants()
+        assert len(variants) == 1
+        variant = next(iter(variants))
+        patched_variant = variant.clone(dialects=dialects)
+        func_class = type(self)
+        return func_class(variants=[patched_variant], arg_transformer=arg_transformer)
+
 
 _SINGLE_NODE_TRANS_TV = TypeVar("_SINGLE_NODE_TRANS_TV", bound="SingleVariantTranslationBase")
 
@@ -679,6 +688,14 @@ class SingleVariantTranslationBase(MultiVariantTranslation):
         arg_transformer: Optional[ArgTransformer] = None,
     ) -> _SINGLE_NODE_TRANS_TV:
         return cls(dialects=dialects)
+
+    def for_another_dialect(
+        self,
+        dialects: DialectCombo,
+        arg_transformer: Optional[ArgTransformer] = None,
+    ) -> SingleVariantTranslationBase:
+        func_class = type(self)
+        return func_class(dialects=dialects, arg_transformer=arg_transformer)
 
 
 class SingleVariantFullOverrideTranslationBase(SingleVariantTranslationBase):

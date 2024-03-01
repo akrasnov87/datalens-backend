@@ -15,13 +15,13 @@ from dl_api_lib.app_settings import (
     DataApiAppSettings,
 )
 from dl_api_lib.connector_availability.base import ConnectorAvailabilityConfig
+from dl_cache_engine.primitives import CacheTTLConfig
 from dl_configs.connectors_settings import ConnectorSettingsBase
 from dl_configs.enums import RequiredService
 from dl_configs.utils import get_root_certificates
 from dl_constants.enums import ConnectionType
 from dl_core.aio.middlewares.services_registry import services_registry_middleware
 from dl_core.aio.middlewares.us_manager import service_us_manager_middleware
-from dl_core.data_processing.cache.primitives import CacheTTLConfig
 from dl_core.services_registry.entity_checker import EntityUsageChecker
 from dl_core.services_registry.env_manager_factory import InsecureEnvManagerFactory
 from dl_core.services_registry.env_manager_factory_base import EnvManagerFactory
@@ -115,8 +115,8 @@ class StandaloneDataApiAppFactory(DataApiAppFactory[DataApiAppSettings], Standal
             ca_data=ca_data,
         )
         usm_middleware_list = [
-            service_us_manager_middleware(us_master_token=self._settings.US_MASTER_TOKEN, **common_us_kw),  # type: ignore
-            service_us_manager_middleware(us_master_token=self._settings.US_MASTER_TOKEN, as_user_usm=True, **common_us_kw),  # type: ignore
+            service_us_manager_middleware(us_master_token=self._settings.US_MASTER_TOKEN, **common_us_kw),  # type: ignore  # 2024-01-30 # TODO: Argument "us_master_token" to "service_us_manager_middleware" has incompatible type "str | None"; expected "str"  [arg-type]
+            service_us_manager_middleware(us_master_token=self._settings.US_MASTER_TOKEN, as_user_usm=True, **common_us_kw),  # type: ignore  # 2024-01-30 # TODO: Argument "us_master_token" to "service_us_manager_middleware" has incompatible type "str | None"; expected "str"  [arg-type]
         ]
 
         result = EnvSetupResult(

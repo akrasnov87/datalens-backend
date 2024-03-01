@@ -6,7 +6,7 @@ from dl_api_connector.connector import (
 )
 
 from dl_connector_snowflake.api.api_schema.connection import SnowFlakeConnectionSchema
-from dl_connector_snowflake.api.api_schema.source import (  # type: ignore
+from dl_connector_snowflake.api.api_schema.source import (
     SnowFlakeTableDataSourceSchema,
     SnowFlakeTableDataSourceTemplateSchema,
 )
@@ -16,7 +16,6 @@ from dl_connector_snowflake.api.i18n.localizer import CONFIGS
 from dl_connector_snowflake.core.connector import (
     SnowflakeCoreBackendDefinition,
     SnowFlakeCoreConnectionDefinition,
-    SnowFlakeCoreConnector,
     SnowFlakeCoreTableSourceDefinition,
 )
 from dl_connector_snowflake.formula.constants import DIALECT_NAME_SNOWFLAKE

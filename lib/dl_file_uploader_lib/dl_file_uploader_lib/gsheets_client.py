@@ -242,7 +242,7 @@ class GSheetsClient:
                 row.extend([None] * width_diff)
             else:
                 row = row[: len(user_types)]
-            for col_idx, (value, user_type) in enumerate(zip(row, user_types)):
+            for col_idx, (value, user_type) in enumerate(zip(row, user_types, strict=True)):
                 try:
                     raw_values[row_idx][col_idx] = make_type(value, user_type)
                 except (ValueError, TypeError):
@@ -409,9 +409,9 @@ class GSheetsClient:
                         )
                     else:
                         user_creds = None
-                    resp_json = await self._aiogoogle.as_user(request, user_creds=user_creds)  # type: ignore
+                    resp_json = await self._aiogoogle.as_user(request, user_creds=user_creds)
                 else:
-                    resp_json = await self._aiogoogle.as_api_key(request)  # type: ignore
+                    resp_json = await self._aiogoogle.as_api_key(request)
                 break
             except aiogoogle.excs.HTTPError as err:
                 if self._is_retryable_status(err.res.status_code):

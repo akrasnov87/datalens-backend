@@ -63,6 +63,7 @@ class CHYTAdapterConnExecutor(BaseCHYTAdapterConnExecutor):
             insert_quorum=self._conn_options.insert_quorum,
             insert_quorum_timeout=self._conn_options.insert_quorum_timeout,
             disable_value_processing=self._conn_options.disable_value_processing,
+            ca_data=self._ca_data.decode("ascii"),
         )
 
 
@@ -73,4 +74,4 @@ class CHYTSyncAdapterConnExecutor(CHYTAdapterConnExecutor):
 
 @attr.s(cmp=False, hash=False)
 class CHYTAsyncAdapterConnExecutor(CHYTAdapterConnExecutor):
-    TARGET_ADAPTER_CLS = AsyncCHYTAdapter  # type: ignore
+    TARGET_ADAPTER_CLS = AsyncCHYTAdapter  # type: ignore  # 2024-01-30 # TODO: Incompatible types in assignment (expression has type "type[AsyncCHYTAdapter]", base class "DefaultSqlAlchemyConnExecutor" defined the type as "type[BaseCHYTAdapter]")  [assignment]

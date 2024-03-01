@@ -20,10 +20,10 @@ import attr
 import sqlalchemy as sa
 from sqlalchemy.sql.elements import ClauseElement
 
+from dl_cache_engine.primitives import LocalKeyRepresentation
 from dl_constants.enums import JoinType
 from dl_core import exc
 from dl_core.components.ids import AvatarId
-from dl_core.data_processing.cache.primitives import LocalKeyRepresentation
 from dl_core.data_processing.prepared_components.primitives import (
     PreparedMultiFromInfo,
     PreparedSingleFromInfo,
@@ -74,7 +74,7 @@ class SqlSourceBuilder:
         on_clause: JoinExpressionType,
     ) -> SqlSourceType:
         join_params = dict(self._COMMON_JOIN_PARAMS, **self._JOIN_PARAMS_BY_TYPE[join_type])
-        result = sa.join(left, right, on_clause)  # type: ignore
+        result = sa.join(left, right, on_clause)
         for name, value in join_params.items():
             setattr(result, name, value)
         return result

@@ -20,6 +20,10 @@ import sqlalchemy as sa
 from sqlalchemy.engine.default import DefaultDialect
 
 from dl_api_commons.reporting.models import NotificationReportingRecord
+from dl_cache_engine.primitives import (
+    DataKeyPart,
+    LocalKeyRepresentation,
+)
 from dl_configs.connectors_settings import ConnectorSettingsBase
 from dl_constants.enums import (
     ConnectionType,
@@ -27,6 +31,7 @@ from dl_constants.enums import (
     DataSourceRole,
     DataSourceType,
     RawSQLLevel,
+    UserDataType,
 )
 from dl_core import connection_models
 from dl_core.base_models import (
@@ -42,10 +47,6 @@ from dl_core.connection_executors.adapters.common_base import get_dialect_for_co
 from dl_core.connection_models import (
     DBIdent,
     SchemaIdent,
-)
-from dl_core.data_processing.cache.primitives import (
-    DataKeyPart,
-    LocalKeyRepresentation,
 )
 from dl_core.db import (
     TypeTransformer,
@@ -97,6 +98,36 @@ class DataSourceTemplate(NamedTuple):
             connection_id=self.connection_id,
             **self.parameters,
         )
+
+
+@attr.s(frozen=True)
+class RequiredParameterInfo:
+    name: str = attr.ib(kw_only=True)
+    data_type: UserDataType = attr.ib(kw_only=True)
+
+
+@attr.s(frozen=True)
+class QueryTypeInfo:
+    query_type: DashSQLQueryType = attr.ib(kw_only=True)
+    query_type_label: str = attr.ib(kw_only=True)  # How the value should be displayed in the UI
+    required_parameters: tuple[RequiredParameterInfo, ...] = attr.ib(kw_only=True, default=())
+    allow_selector: bool = attr.ib(kw_only=True, default=False)
+
+    @query_type_label.default
+    def _default_query_type_label(self) -> str:
+        # FIXME: This is a temporary hack until we start using real texts here
+        label = self.query_type.name
+        label = label.replace("_", " ")
+        label = " ".join([word.capitalize() for word in label.split()])
+        return label
+
+
+@attr.s(frozen=True)
+class ConnectionOptions:
+    allow_dashsql_usage: bool = attr.ib(kw_only=True)
+    allow_dataset_usage: bool = attr.ib(kw_only=True)
+    allow_typed_query_usage: bool = attr.ib(kw_only=True)
+    query_types: list[QueryTypeInfo] = attr.ib(kw_only=True)
 
 
 _CB_TV = TypeVar("_CB_TV", bound="ConnectionBase")
@@ -204,6 +235,10 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
     def is_dataset_allowed(self) -> bool:
         return True
 
+    @property
+    def is_typed_query_allowed(self) -> bool:
+        return False
+
     def as_dict(self, short=False):  # type: ignore  # TODO: fix
         resp = super().as_dict(short=short)
         if short:
@@ -247,9 +282,6 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
             meta,
             **kwargs,
         )
-
-    def test(self, conn_executor_factory: Callable[[ConnectionBase], SyncConnExecutorBase]) -> None:
-        raise NotImplementedError
 
     @property
     def table_name(self):  # type: ignore  # TODO: fix
@@ -339,11 +371,18 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
         )
         return local_key_rep
 
-    def get_supported_dashsql_query_types(self) -> frozenset[DashSQLQueryType]:
-        return frozenset()
+    def get_supported_query_type_infos(self) -> frozenset[QueryTypeInfo]:
+        return frozenset({QueryTypeInfo(query_type=DashSQLQueryType.generic_query)})
 
+    def get_options(self) -> ConnectionOptions:
+        query_type_info_list = sorted(self.get_supported_query_type_infos(), key=lambda qti: qti.query_type.name)
+        return ConnectionOptions(
+            allow_dashsql_usage=self.is_dashsql_allowed,
+            allow_dataset_usage=self.is_dataset_allowed,
+            allow_typed_query_usage=self.is_typed_query_allowed,
+            query_types=query_type_info_list,
+        )
 
-class ExecutorBasedMixin(ConnectionBase, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def get_conn_dto(self) -> connection_models.ConnDTO:
         pass
@@ -396,8 +435,9 @@ class ExecutorBasedMixin(ConnectionBase, metaclass=abc.ABCMeta):
         conn_executor = conn_executor_factory(self)
         return conn_executor.get_tables(SchemaIdent(db_name=db_name, schema_name=schema_name))
 
-    def get_supported_dashsql_query_types(self) -> frozenset[DashSQLQueryType]:
-        return frozenset({DashSQLQueryType.classic_query})
+
+class ExecutorBasedMixin(ConnectionBase, metaclass=abc.ABCMeta):
+    pass  # TODO: Remove all usages, then remove the class itself
 
 
 class SubselectMixin:
@@ -578,3 +618,10 @@ class UnknownConnection(ConnectionBase):
     @attr.s(kw_only=True)
     class DataModel(ConnectionBase.DataModel):
         pass
+
+    def get_conn_dto(self) -> connection_models.ConnDTO:
+        raise NotImplementedError
+
+    @property
+    def cache_ttl_sec_override(self) -> Optional[int]:
+        return 0

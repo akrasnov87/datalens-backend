@@ -44,11 +44,11 @@ if TYPE_CHECKING:
     from redis.asyncio import Redis
 
     from dl_api_commons.base_models import RequestContextInfo
+    from dl_cache_engine.primitives import CacheTTLConfig
     from dl_configs.connectors_settings import ConnectorSettingsBase
     from dl_configs.rqe import RQEConfig
     from dl_constants.enums import ConnectionType
     from dl_core.aio.web_app_services.data_processing.data_processor import DataProcessorService
-    from dl_core.data_processing.cache.primitives import CacheTTLConfig
     from dl_core.services_registry.entity_checker import EntityUsageChecker
     from dl_core.services_registry.env_manager_factory_base import EnvManagerFactory
     from dl_core.services_registry.inst_specific_sr import InstallationSpecificServiceRegistryFactory
@@ -84,6 +84,7 @@ class SRFactory(Generic[SERVICE_REGISTRY_TV], metaclass=abc.ABCMeta):
 
 @attr.s
 class DefaultSRFactory(SRFactory[SERVICE_REGISTRY_TV]):  # type: ignore  # TODO: fix
+    ca_data: bytes = attr.ib()
     rqe_config: Optional[RQEConfig] = attr.ib()
     async_env: bool = attr.ib()
     env_manager_factory: EnvManagerFactory = attr.ib()
@@ -100,7 +101,6 @@ class DefaultSRFactory(SRFactory[SERVICE_REGISTRY_TV]):  # type: ignore  # TODO:
     rqe_caches_settings: Optional[RQECachesSetting] = attr.ib(default=None)
     required_services: set[RequiredService] = attr.ib(factory=set)
     inst_specific_sr_factory: Optional[InstallationSpecificServiceRegistryFactory] = attr.ib(default=None)
-    ca_data: Optional[bytes] = attr.ib(default=None)
 
     service_registry_cls: ClassVar[Type[SERVICE_REGISTRY_TV]] = DefaultServicesRegistry  # type: ignore  # TODO: fix
 
@@ -128,6 +128,7 @@ class DefaultSRFactory(SRFactory[SERVICE_REGISTRY_TV]):  # type: ignore  # TODO:
             connect_options_mutator=self.env_manager_factory.mutate_conn_opts,
             entity_usage_checker=self.entity_usage_checker,
             force_non_rqe_mode=self.force_non_rqe_mode,
+            ca_data=self.ca_data,
         )
 
     def additional_sr_constructor_kwargs(

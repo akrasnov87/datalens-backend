@@ -219,11 +219,11 @@ class DLRequestBase:
             return None
         try:
             return json.loads(raw_header)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
             raise InvalidHeaderException(
                 "Invalid JSON in header content",
                 header_name=header.value,
-            )
+            ) from e
 
     @property
     def required_resources(self) -> FrozenSet[RequiredResource]:
@@ -275,7 +275,7 @@ _DL_REQUEST_TV = TypeVar("_DL_REQUEST_TV", bound=DLRequestBase)
 
 
 class DLRequestView(web.View, Generic[_DL_REQUEST_TV]):
-    dl_request_cls: Type[_DL_REQUEST_TV] = DLRequestBase  # type: ignore
+    dl_request_cls: Type[_DL_REQUEST_TV] = DLRequestBase  # type: ignore  # 2024-01-30 # TODO: Incompatible types in assignment (expression has type "type[DLRequestBase]", variable has type "type[_DL_REQUEST_TV]")  [assignment]
 
     @property
     def dl_request(self) -> _DL_REQUEST_TV:

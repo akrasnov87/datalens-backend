@@ -19,10 +19,10 @@ import attr
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import pypostgresql
 
+from dl_cache_engine.primitives import LocalKeyRepresentation
 from dl_compeng_pg.compeng_pg_base.exec_adapter_base import PostgreSQLExecAdapterAsync
 from dl_constants.enums import UserDataType
 from dl_core.connectors.base.error_transformer import DbErrorTransformer
-from dl_core.data_processing.cache.primitives import LocalKeyRepresentation
 from dl_core.data_processing.prepared_components.primitives import PreparedFromInfo
 from dl_core.data_processing.processing.context import OpExecutionContext
 from dl_core.data_processing.streaming import (
@@ -116,7 +116,7 @@ class AsyncpgExecAdapter(PostgreSQLExecAdapterAsync[asyncpg.pool.PoolConnectionP
                         chunk.append(
                             [
                                 self._tt.cast_for_output(value=value, user_t=user_t)
-                                for value, user_t in zip(row, user_types)
+                                for value, user_t in zip(row, user_types, strict=True)
                             ]
                         )
                     if not chunk:
@@ -140,6 +140,9 @@ class AsyncpgExecAdapter(PostgreSQLExecAdapterAsync[asyncpg.pool.PoolConnectionP
             chunk = []
             for row in raw_chunk:
                 chunk.append(
-                    [self._tt.cast_for_input(value=value, user_t=user_t) for value, user_t in zip(row, user_types)]
+                    [
+                        self._tt.cast_for_input(value=value, user_t=user_t)
+                        for value, user_t in zip(row, user_types, strict=True)
+                    ]
                 )
             await self._conn.copy_records_to_table(table_name=table_name, columns=names, records=chunk)

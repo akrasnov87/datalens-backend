@@ -194,7 +194,7 @@ class DatasetValidator(DatasetBaseWrapper):
                 )
         except common_exc.DatasetConfigurationError as err:
             LOGGER.info("Error occurred during applying action: %r", err)
-            raise exc.DLValidationFatal(f"Invalid action: {err}")
+            raise exc.DLValidationFatal(f"Invalid action: {err}") from err
 
         self._check_for_orphaned_component_errors()
 
@@ -297,10 +297,10 @@ class DatasetValidator(DatasetBaseWrapper):
             )
             formula_comp_multi_query = self.process_compiled_query(compiled_query=formula_comp_query)
             multi_translator = self.make_multi_query_translator()
-            errors += multi_translator.collect_errors(compiled_multi_query=formula_comp_multi_query)  # type: ignore  # TODO: fix
+            errors += multi_translator.collect_errors(compiled_multi_query=formula_comp_multi_query)
         except formula_exc.FormulaError:
             pass
-        return errors  # type: ignore  # TODO: fix
+        return errors
 
     def _get_relation_errors(self, relation: AvatarRelation) -> list[FormulaErrorCtx]:
         # TODO: switch to ComponentError items
@@ -655,11 +655,11 @@ class DatasetValidator(DatasetBaseWrapper):
         if action in (DatasetAction.update_field, DatasetAction.delete_field):
             try:
                 old_field = self.get_field_by_id(field_id)
-            except common_exc.FieldNotFound:
+            except common_exc.FieldNotFound as err:
                 err_msg = f"Field with ID {field_id} doesn't exist"
                 LOGGER.error(err_msg)
                 if strict:
-                    raise exc.DLValidationFatal(err_msg)
+                    raise exc.DLValidationFatal(err_msg) from err
                 return
 
             self._ds_ca.validate_component_can_be_managed(component_ref=component_ref, by=by)

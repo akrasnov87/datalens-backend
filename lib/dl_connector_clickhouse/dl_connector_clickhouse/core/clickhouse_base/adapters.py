@@ -60,6 +60,7 @@ from dl_core.connection_models import (
 )
 from dl_core.connectors.base.error_transformer import DBExcKWArgs
 from dl_core.connectors.ssl_common.adapter import BaseSSLCertAdapter
+from dl_core.db.conversion_base import get_type_transformer
 from dl_core.db.native_type import (
     ClickHouseDateTime64NativeType,
     ClickHouseDateTime64WithTZNativeType,
@@ -120,6 +121,7 @@ class BaseClickHouseConnLineConstructor(ClassicSQLConnLineConstructor[_TARGET_DT
         }
 
 
+@attr.s
 class BaseClickHouseAdapter(BaseClassicAdapter["BaseClickHouseConnTargetDTO"], BaseSSLCertAdapter):
     allow_sa_text_as_columns_source = True
     ch_utils: ClassVar[Type[ClickHouseBaseUtils]] = ClickHouseBaseUtils
@@ -268,7 +270,6 @@ class BaseClickHouseAdapter(BaseClassicAdapter["BaseClickHouseConnTargetDTO"], B
                     explicit_timezone = False
                     col_type = ch_types.DateTime64WithTZ(col_type.precision, system_tz)
 
-            conn_type = self.conn_type
             if is_array:
                 name = norm_native_type(ch_types.Array(col_type))
             else:
@@ -276,7 +277,6 @@ class BaseClickHouseAdapter(BaseClassicAdapter["BaseClickHouseConnTargetDTO"], B
 
             if isinstance(col_type, ch_types.DateTimeWithTZ):
                 return ClickHouseDateTimeWithTZNativeType(
-                    conn_type=conn_type,
                     name=name,  # type: ignore  # TODO: fix
                     nullable=nullable,
                     lowcardinality=lowcardinality,
@@ -285,7 +285,6 @@ class BaseClickHouseAdapter(BaseClassicAdapter["BaseClickHouseConnTargetDTO"], B
                 )
             if isinstance(col_type, ch_types.DateTime64WithTZ):
                 return ClickHouseDateTime64WithTZNativeType(
-                    conn_type=conn_type,
                     name=name,  # type: ignore  # TODO: fix
                     nullable=nullable,
                     lowcardinality=lowcardinality,
@@ -295,14 +294,12 @@ class BaseClickHouseAdapter(BaseClassicAdapter["BaseClickHouseConnTargetDTO"], B
                 )
             if isinstance(col_type, ch_types.DateTime64):
                 return ClickHouseDateTime64NativeType(
-                    conn_type=conn_type,
                     name=name,  # type: ignore  # TODO: fix
                     nullable=nullable,
                     lowcardinality=lowcardinality,
                     precision=col_type.precision,
                 )
             return ClickHouseNativeType(
-                conn_type=conn_type,
                 name=name,  # type: ignore  # TODO: fix
                 nullable=nullable,
                 lowcardinality=lowcardinality,
@@ -373,12 +370,14 @@ class BaseAsyncClickHouseAdapter(AiohttpDBAdapter):
 
     def _make_async_typed_query_action(self) -> AsyncTypedQueryAdapterAction:
         literalizer = get_dash_sql_param_literalizer(backend_type=self.get_backend_type())
+        type_transformer = get_type_transformer(conn_type=self.conn_type)
         return AsyncTypedQueryAdapterActionViaStandardExecute(
             async_adapter=self,
             query_converter=TypedQueryToDBAQueryConverter(
                 literalizer=literalizer,
                 query_formatter_factory=DBAPIQueryFormatterFactory(),
             ),
+            type_transformer=type_transformer,
         )
 
     def __attrs_post_init__(self) -> None:
@@ -493,7 +492,7 @@ class BaseAsyncClickHouseAdapter(AiohttpDBAdapter):
                 try:
                     event, data = parser.next_event()
                 except parser.RowTooLarge:
-                    raise CHRowTooLarge()
+                    raise CHRowTooLarge() from None
                 if event == parser.parts.NEED_DATA:
                     break
                 elif event == parser.parts.FINISHED:
@@ -598,7 +597,7 @@ class BaseAsyncClickHouseAdapter(AiohttpDBAdapter):
                                 _safe_col_converter(col_converter, val)  # type: ignore  # TODO: fix
                                 if col_converter is not None
                                 else val
-                                for val, col_converter in zip(raw_row, row_converters)
+                                for val, col_converter in zip(raw_row, row_converters, strict=True)
                             )
                             for raw_row in evt_data
                         )
@@ -641,7 +640,6 @@ class BaseAsyncClickHouseAdapter(AiohttpDBAdapter):
         if type_pieces and type_pieces[0] == "nullable":
             type_pieces = type_pieces[1:]
         return GenericNativeType.normalize_name_and_create(
-            conn_type=self.conn_type,
             name=type_pieces[0] if type_pieces else "",
         )
 

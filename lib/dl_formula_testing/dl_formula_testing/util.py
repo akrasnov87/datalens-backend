@@ -10,11 +10,11 @@ import dateutil.parser
 import dateutil.relativedelta
 
 
-def now():  # type: ignore  # 2024-01-29 # TODO: Function is missing a return type annotation  [no-untyped-def]
+def now() -> datetime.datetime:
     return datetime.datetime.utcnow().replace(microsecond=0)
 
 
-def today():  # type: ignore  # 2024-01-29 # TODO: Function is missing a return type annotation  [no-untyped-def]
+def today() -> datetime.date:
     return datetime.datetime.utcnow().date()
 
 
@@ -91,4 +91,4 @@ def utc_ts(*args, tzinfo: Optional[datetime.tzinfo] = None) -> float:  # type: i
 def as_tz(dt: datetime.datetime, tzinfo: datetime.tzinfo) -> datetime.datetime:
     assert hasattr(tzinfo, "localize"), "non-pytz time zones are not supported"
     # Sadly pytz has no single base class defining the `localize` interface
-    return tzinfo.localize(dt)  # type: ignore
+    return tzinfo.localize(dt)

@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from dl_core.us_connection_base import DataSourceTemplate
+from dl_constants.enums import DashSQLQueryType
+from dl_core.us_connection_base import (
+    DataSourceTemplate,
+    QueryTypeInfo,
+)
 from dl_i18n.localizer_base import Localizer
 
 from dl_connector_clickhouse.core.clickhouse.constants import (
@@ -38,4 +42,18 @@ class ConnectionClickhouse(ConnectionClickhouseBase):
 
     @property
     def allow_public_usage(self) -> bool:
+        return True
+
+    def get_supported_query_type_infos(self) -> frozenset[QueryTypeInfo]:
+        return frozenset(
+            {
+                QueryTypeInfo(
+                    query_type=DashSQLQueryType.generic_query,
+                    allow_selector=True,
+                ),
+            }
+        )
+
+    @property
+    def is_typed_query_allowed(self) -> bool:
         return True

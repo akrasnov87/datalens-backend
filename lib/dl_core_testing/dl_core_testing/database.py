@@ -20,8 +20,10 @@ from sqlalchemy.sql.type_api import TypeEngine
 
 from dl_constants.enums import (
     ConnectionType,
+    SourceBackendType,
     UserDataType,
 )
+from dl_core.backend_types import get_backend_type
 from dl_core.db import (
     get_type_transformer,
     make_sa_type,
@@ -151,13 +153,13 @@ class C:
         try:
             return self.DEFAULT_VALUE_GENERATORS[self.user_type]
         except KeyError as e:
-            raise ValueError(f"No default value generator for user type {e}")
+            raise ValueError(f"No default value generator for user type {e}") from e
 
-    def get_sa_type(self, tt: TypeTransformer) -> TypeEngine:
+    def get_sa_type(self, tt: TypeTransformer, backend_type: SourceBackendType) -> TypeEngine:
         if self._sa_type is not None:
             return self._sa_type
         native_type = tt.type_user_to_native(user_t=self.user_type)
-        return make_sa_type(native_type, nullable=self.nullable)
+        return make_sa_type(backend_type=backend_type, native_type=native_type, nullable=self.nullable)
 
     @classmethod
     def array_data_getter(cls, data_container) -> "C.ArrayDataGetter":  # type: ignore  # TODO: fix
@@ -188,7 +190,7 @@ class C:
         ]
 
     @classmethod
-    def array_columns(cls):  # type: ignore  # TODO: fix
+    def array_columns(cls) -> list[C]:
         return [
             cls("array_int_value", UserDataType.array_int),
             cls("array_str_value", UserDataType.array_str),
@@ -226,11 +228,13 @@ def make_table(
     name: Optional[str] = None,
     data: Optional[list[dict[str, Any]]] = None,
     create_in_db: bool = True,
+    chunk_size: Optional[int] = None,
 ) -> DbTable:
+    backend_type = get_backend_type(conn_type=db.conn_type)
     columns = columns or C.full_house()
     tt = get_type_transformer(db.conn_type)
     table = db.table_from_columns(
-        [sa.Column(name=col.name, type_=col.get_sa_type(tt)) for col in columns],
+        [sa.Column(name=col.name, type_=col.get_sa_type(tt=tt, backend_type=backend_type)) for col in columns],
         schema=schema,
         table_name=name,
     )
@@ -243,7 +247,7 @@ def make_table(
 
     if create_in_db:
         db.create_table(table)
-        db_table.insert(data)
+        db_table.insert(data, chunk_size=chunk_size)
 
     return db_table
 

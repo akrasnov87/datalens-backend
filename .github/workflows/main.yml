@@ -15,15 +15,15 @@ on:
   workflow_dispatch:
     inputs:
       test_targets:
-        default: ""
-        description: "Comma separated list to run pytest on, e.g.: `lib/dl_api_lib,lib/dl_core`. "
+        default: "__ALL__"
+        description: "Comma separated list to run pytest on, e.g.: `lib/dl_api_lib,lib/dl_core`. Use __ALL__ to run all tests"
       run_mypy_only:
         type: boolean
         default: false
         description: "Check to only run mypy"
-      pytest_timeout_minutes:
+      mypy_timeout_minutes:
         type: number
-        default: 10
+        default: 20
         description: "Timeout for pytest JOB in minutes"
 
 jobs:
@@ -166,6 +166,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     outputs:
       affected: ${{ steps.get_affected.outputs.affected }}
+      all_affected_with_skips: ${{ steps.get_affected.outputs.all_affected_with_skips }}
     steps:
     - name: Cleanup build folder
       run: |
@@ -207,8 +208,7 @@ jobs:
         . /venv/bin/activate && detect-affected-packages \
           --repo=/src \
           --changes_file="/tmp/targets.json" \
-          --root_pkgs="lib,app,terrarium" \
-          --fallback_pkg="terrarium/bi_ci" | tee -a  >> "$GITHUB_OUTPUT"
+          --root_pkgs="lib,app" | tee -a  >> "$GITHUB_OUTPUT"
       env:
         TEST_TARGET_OVERRIDE: ${{ github.event.inputs.test_targets }}
 
@@ -276,9 +276,7 @@ jobs:
         id: get_split
         run: |
           . /venv/bin/activate && echo '${{ needs.router.outputs.affected }}' >> /tmp/dl_test_targets.json
-          split-pytest-tasks base /src /tmp/dl_test_targets.json | tee -a >> "$GITHUB_OUTPUT"
-          split-pytest-tasks fat /src /tmp/dl_test_targets.json | tee -a >> "$GITHUB_OUTPUT"
-          split-pytest-tasks ext_public /src /tmp/dl_test_targets.json | tee -a >> "$GITHUB_OUTPUT"
+          split-pytest-tasks base,fat,ext_public /src /tmp/dl_test_targets.json true true >> "$GITHUB_OUTPUT"
 
   run_tests_base:
     runs-on: [ self-hosted, linux, light ]
@@ -436,7 +434,7 @@ jobs:
 
   mypy:
     runs-on: [ self-hosted, linux, light ]
-    needs: router
+    needs: gh_build_image
     container:
       # until https://github.com/github/docs/issues/25520 is resolved, using vars
       image: "ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/datalens_ci_with_code:${{ github.sha }}"
@@ -446,7 +444,7 @@ jobs:
       volumes:
         - /var/run/docker.sock:/var/run/docker.sock
     name: "🐲 mypy"
-    timeout-minutes: ${{ inputs.pytest_timeout_minutes && fromJSON(inputs.pytest_timeout_minutes ) || 10 }}
+    timeout-minutes: ${{ inputs.mypy_timeout_minutes && fromJSON(inputs.mypy_timeout_minutes ) || 20 }}
     steps:
       - name: Cleanup build folder
         run: |
@@ -455,12 +453,13 @@ jobs:
       - name: Checkout code, just to get access to .github/execute_mypy...
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 1
-      - run: echo '${{ needs.router.outputs.affected }}' >> /tmp/dl_test_targets.json
       - name: run mypy
         run: |
           . /venv/bin/activate
-          execute-mypy-multi /src /tmp/dl_test_targets.json
+          execute-mypy-multi /src
         env:
           PYTHONUNBUFFERED: "1"
 
@@ -476,21 +475,22 @@ jobs:
         run: |
           skip_tests=${{ needs.check-skip-tests-label.outputs.result }}
           [[ $skip_tests == "true" ]] && exit 0
-
-          [[ ${{ needs.pytest_split.result }} != "success" ]] && exit 1
+          
+          pytest_split=${{ needs.pytest_split.result }}
+          [[ $pytest_split != "success" && $pytest_split != "skipped" ]] && echo "pytest_split failed" && exit 1
           result_base=${{ needs.run_tests_base.result }}
-          [[ $result_base != "success" && $result_base != "skipped" ]] && exit 1
+          [[ $result_base != "success" && $result_base != "skipped" ]] && echo "base failed" && exit 1
           result_fat=${{ needs.run_tests_fat.result }}
-          [[ $result_fat != "success" && $result_fat != "skipped" ]] && exit 1
+          [[ $result_fat != "success" && $result_fat != "skipped" ]] && echo "fat failed" && exit 1
           result_ext_public=${{ needs.run_tests_ext_public.result }}
-          [[ $result_ext_public != "success" && $result_ext_public != "skipped" ]] && exit 1
+          [[ $result_ext_public != "success" && $result_ext_public != "skipped" ]] && echo "ext_public failed" && exit 1
           
           echo "All tests passed"
 
   publish-result:
     runs-on: [ self-hosted, linux, light ]
     needs: [ "run_tests_base", "run_tests_fat", "run_tests_ext_public" ]
-    if: ${{ !cancelled() && github.event.inputs.run_mypy_only != 'true' }}
+    if: ${{ !cancelled() && github.event.inputs.run_mypy_only != 'true' && ( needs.run_tests_base.result != 'skipped' || needs.run_tests_fat.result != 'skipped' || needs.run_tests_ext_public.result != 'skipped' )}}
     permissions:
       contents: read
       issues: read
@@ -510,7 +510,7 @@ jobs:
           event_name: ${{ github.event.workflow_run.event }}
           report_individual_runs: "true"
 
-  codestyle_all_without_ruff:
+  codestyle_all:
     runs-on: [ self-hosted, linux, light ]
     needs: gh_build_image
     container:
@@ -527,10 +527,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 1
       - run: |
           task cq:check_dir -- .
           task cq:check_dir_strict -- .
         env:
           VENV_PATH: /venv
-          SKIP_RUFF: true

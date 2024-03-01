@@ -59,7 +59,7 @@ class ApiTestBase(abc.ABC):
     query_processing_mode: ClassVar[QueryProcessingMode] = QueryProcessingMode.basic
 
     @pytest.fixture(scope="function", autouse=True)
-    def preload(self):  # type: ignore  # 2024-01-29 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def preload(self) -> None:
         preload_api_lib()
 
     @pytest.fixture(scope="class")
@@ -81,6 +81,7 @@ class ApiTestBase(abc.ABC):
     @pytest.fixture(scope="function")
     def environment_readiness(self, enable_all_connectors: Any) -> None:
         """Make sure the environment is ready for tests"""
+        return
 
     @pytest.fixture(scope="function")
     def rqe_config_subprocess(
@@ -134,7 +135,7 @@ class ApiTestBase(abc.ABC):
             rqe_config_subprocess=rqe_config_subprocess,
         )
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture(scope="session")
     def ca_data(self) -> bytes:
         return get_root_certificates()
 

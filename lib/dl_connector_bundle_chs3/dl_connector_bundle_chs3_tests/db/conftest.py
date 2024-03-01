@@ -6,6 +6,7 @@ from typing import (
 import pytest
 
 from dl_api_lib_testing.initialization import initialize_api_lib_test
+from dl_testing.utils import get_root_certificates
 
 from dl_connector_bundle_chs3.chs3_base.core.us_connection import BaseFileS3Connection
 from dl_connector_bundle_chs3_tests.db.config import API_TEST_CONFIG
@@ -17,7 +18,12 @@ def pytest_configure(config):  # noqa
 
 @pytest.fixture(autouse=True)
 def patch_get_full_s3_filename(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _patched(self: Any, s3_filename_suffix: str) -> str:  # type: ignore
+    def _patched(self: Any, s3_filename_suffix: str) -> str:
         return s3_filename_suffix
 
     monkeypatch.setattr(BaseFileS3Connection, "get_full_s3_filename", _patched)
+
+
+@pytest.fixture(scope="session")
+def root_certificates() -> bytes:
+    return get_root_certificates()

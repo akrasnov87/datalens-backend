@@ -138,7 +138,7 @@ class PdPivotSorterBase(PivotSorter):
         normalizer = self._measure_sort_strategy.get_normalizer(
             pivot_item_id=sorting_piid, direction=settings.direction
         )
-        sorting_key = sorting_key.map(normalizer.normalize_vector_value).argsort()
+        sorting_key = sorting_key.map(normalizer.normalize_vector_value).values.argsort()  # type: ignore # TODO: Incompatible types in assignment
         if settings.direction == OrderDirection.desc:
             sorting_key = sorting_key[::-1]
         if self._axis_has_total(self._complementary_axis(axis)):
@@ -159,6 +159,7 @@ class PdPivotSorterBase(PivotSorter):
             for axis, settings in zip(
                 [SortAxis.columns, SortAxis.rows],
                 [sorting_settings.column, sorting_settings.row],
+                strict=True,
             ):
                 if settings is not None:
                     self._sort_by_measure(axis, pivot_item.pivot_item_id, settings)
@@ -186,7 +187,7 @@ class PdPivotSorter(PdPivotSorterBase):
             new_df = self._get_pd_obj().iloc[sorting_key]  # ordering by column, so reorder rows
         else:
             new_df = self._get_pd_obj().iloc[:, sorting_key]  # ordering by row, so reorder columns
-        self._pivot_dframe._pd_df = new_df  # type: ignore
+        self._pivot_dframe._pd_df = new_df  # type: ignore  # 2024-01-30 # TODO: "PivotDataFrame" has no attribute "_pd_df"  [attr-defined]
 
     def sort(self) -> None:
         directions_by_axis = self._resolve_axis_order()
@@ -203,7 +204,7 @@ class PdSeriesPivotSorterBase(PdPivotSorterBase):
 
     def _get_pd_obj(self) -> pd.Series:
         assert isinstance(self._pivot_dframe, (PdHSeriesPivotDataFrame, PdVSeriesPivotDataFrame))
-        return self._pivot_dframe.pd_series  # type: ignore
+        return self._pivot_dframe.pd_series
 
     def _get_pd_axis(self, axis: SortAxis) -> int:
         return 0

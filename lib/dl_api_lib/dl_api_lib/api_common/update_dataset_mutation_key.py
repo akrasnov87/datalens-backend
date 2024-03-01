@@ -10,8 +10,8 @@ from typing import (
 import attr
 
 from dl_api_lib.request_model.data import FieldAction
-from dl_core.serialization import RedisDatalensDataJSONEncoder
 from dl_core.us_manager.mutation_cache.mutation_key_base import MutationKey
+from dl_model_tools.serialization import RedisDatalensDataJSONEncoder
 
 
 class MutationKeySerializationError(ValueError):
@@ -33,8 +33,8 @@ class UpdateDatasetMutationKey(MutationKey):
     def create(cls, dataset_revision_id: str, updates: List[FieldAction]) -> UpdateDatasetMutationKey:
         try:
             serialized = [upd.serialized for upd in updates]
-        except Exception:
-            raise MutationKeySerializationError()
+        except Exception as e:
+            raise MutationKeySerializationError() from e
         serialized.sort(key=lambda x: json.dumps(x, indent=None, sort_keys=True, cls=RedisDatalensDataJSONEncoder))
         dumped = json.dumps(
             dict(ds_rev=dataset_revision_id, mutation=serialized),

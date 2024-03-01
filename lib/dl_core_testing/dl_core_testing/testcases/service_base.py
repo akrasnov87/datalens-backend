@@ -80,7 +80,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
         return bi_context
 
     @pytest.fixture(scope="session")
-    def ca_data(self) -> bytes:
+    def root_certificates(self) -> bytes:
         return get_root_certificates()
 
     @pytest.fixture(scope="session")
@@ -89,7 +89,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
 
     @contextlib.asynccontextmanager
     async def _make_redis(self, redis_settings: RedisSettings) -> AsyncGenerator[Redis, None]:
-        redis_client = Redis(  # type: ignore  # 2024-01-29 # TODO: Need type annotation for "redis_client"  [var-annotated]
+        redis_client: Redis = Redis(
             host=redis_settings.HOSTS[0],
             port=redis_settings.PORT,
             db=redis_settings.DB,
@@ -102,7 +102,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
             await redis_client.connection_pool.disconnect()
 
     @pytest.fixture(scope="function")
-    async def caches_redis_client_factory(self) -> Optional[Callable[[bool], Redis]]:  # type: ignore  # 2024-01-29 # TODO: The return type of an async generator function should be "AsyncGenerator" or one of its supertypes  [misc]
+    async def caches_redis_client_factory(self) -> AsyncGenerator[Optional[Callable[[bool], Redis]], None]:
         if not self.data_caches_enabled:
             yield None
 
@@ -145,6 +145,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
         self,
         conn_exec_factory_async_env: bool,
         conn_bi_context: RequestContextInfo,
+        root_certificates_data: bytes,
         caches_redis_client_factory: Optional[Callable[[bool], Optional[Redis]]] = None,
         data_processor_service_factory: Optional[Callable[[bool], DataProcessorService]] = None,
         **kwargs: Any,
@@ -163,6 +164,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
                 services_registry_ref=sr_future_ref,
                 conn_sec_mgr=InsecureConnectionSecurityManager(),
                 tpe=ContextVarExecutor(),
+                ca_data=root_certificates_data,
             ),
             connectors_settings={self.conn_type: self.connection_settings} if self.connection_settings else {},
             inst_specific_sr=(
@@ -180,23 +182,27 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
     @pytest.fixture(scope="session")
     def conn_sync_service_registry(
         self,
+        root_certificates: bytes,
         conn_bi_context: RequestContextInfo,
     ) -> ServicesRegistry:
         return self.service_registry_factory(
             conn_exec_factory_async_env=False,
             conn_bi_context=conn_bi_context,
             caches_redis_client_factory=None,
+            root_certificates_data=root_certificates,
         )
 
     @pytest.fixture(scope="session")
     def conn_async_service_registry(
         self,
+        root_certificates: bytes,
         conn_bi_context: RequestContextInfo,
         # caches_redis_client_factory: Optional[Callable[[bool], Redis]],  # FIXME: switch to function scope to use
     ) -> ServicesRegistry:
         return self.service_registry_factory(
             conn_exec_factory_async_env=True,
             conn_bi_context=conn_bi_context,
+            root_certificates_data=root_certificates,
         )
 
     @pytest.fixture(scope="session")
@@ -232,7 +238,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
         conn_us_config: USConfig,
         conn_bi_context: RequestContextInfo,
         conn_async_service_registry: ServicesRegistry,
-        ca_data: bytes,
+        root_certificates: bytes,
     ) -> AsyncUSManager:
         us_manager = AsyncUSManager(
             bi_context=conn_bi_context,
@@ -240,7 +246,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
             us_base_url=conn_us_config.us_base_url,
             us_auth_context=conn_us_config.us_auth_context,
             crypto_keys_config=conn_us_config.us_crypto_keys_config,
-            ca_data=ca_data,
+            ca_data=root_certificates,
         )
         return us_manager
 
@@ -279,12 +285,12 @@ class DbServiceFixtureTextClass(metaclass=abc.ABCMeta):
         )
 
     def db_reinit_hook(self) -> None:
-        pass
+        return
 
     @pytest.fixture(scope="class")
     def db(self, db_config: CoreDbConfig) -> Db:
         return self.db_dispenser.get_database(db_config)
 
     @pytest.fixture(scope="class", autouse=True)
-    def db_is_ready(self, db: Db) -> str:  # type: ignore  # 2024-01-29 # TODO: Missing return statement  [empty-body]
-        pass  # Just making sure that the database is available
+    def db_is_ready(self, db: Db) -> None:
+        return  # Just making sure that the database is available

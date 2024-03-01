@@ -298,8 +298,7 @@ class ModelMapperMarshmallow:
         if target in self._map_complex_type_schema_bundle:
             return self._map_complex_type_schema_bundle[target]
 
-        # TODO FIX: Determine why MyPy thinks "error: Module has no attribute "resolve_types"
-        attr.resolve_types(target)  # type: ignore
+        attr.resolve_types(target)
         schema_bundle: SchemaBundle
 
         if target_model_descriptor.is_abstract:

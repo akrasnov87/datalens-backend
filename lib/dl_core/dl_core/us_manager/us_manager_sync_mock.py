@@ -138,8 +138,8 @@ class MockedUStorageClient(UStorageClient):
         assert params is None
         try:
             previous_resp = self._saved_entries[entry_id]
-        except KeyError:
-            raise USObjectNotFoundException()
+        except KeyError as e:
+            raise USObjectNotFoundException() from e
         else:
             return previous_resp
 
@@ -147,16 +147,16 @@ class MockedUStorageClient(UStorageClient):
 class MockedSyncUSManager(SyncUSManager):
     def __init__(
         self,
-        bi_context: RequestContextInfo = RequestContextInfo.create_empty(),
+        bi_context: RequestContextInfo = RequestContextInfo.create_empty(),  # noqa: B008
         crypto_keys_config: Optional[CryptoKeysConfig] = None,
-        services_registry: ServicesRegistry = DummyServiceRegistry(rci=RequestContextInfo.create_empty()),
+        services_registry: ServicesRegistry = DummyServiceRegistry(rci=RequestContextInfo.create_empty()),  # noqa: B008
     ):
         super().__init__(
             bi_context=bi_context,
             us_base_url="http://localhost:66000",
             us_api_prefix="dummy",
-            crypto_keys_config=CryptoKeysConfig(
-                map_id_key={"dummy_usm_key": fernet.Fernet.generate_key()},  # type: ignore
+            crypto_keys_config=CryptoKeysConfig(  # type: ignore  # 2024-01-30 # TODO: Unexpected keyword argument "map_id_key" for "CryptoKeysConfig"  [call-arg]
+                map_id_key={"dummy_usm_key": fernet.Fernet.generate_key()},
                 actual_key_id="dummy_usm_key",
             )
             if crypto_keys_config is None

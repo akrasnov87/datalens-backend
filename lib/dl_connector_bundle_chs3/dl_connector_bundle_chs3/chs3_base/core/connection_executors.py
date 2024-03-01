@@ -11,7 +11,7 @@ class BaseFileS3AsyncAdapterConnExecutor(AsyncClickHouseConnExecutor):
     _conn_dto: BaseFileS3ConnDTO = attr.ib()
     _conn_options: CHConnectOptions = attr.ib()
 
-    async def _make_target_conn_dto_pool(self) -> list[BaseFileS3ConnTargetDTO]:  # type: ignore
+    async def _make_target_conn_dto_pool(self) -> list[BaseFileS3ConnTargetDTO]:  # type: ignore  # 2024-01-30 # TODO: Return type "Coroutine[Any, Any, list[BaseFileS3ConnTargetDTO]]" of "_make_target_conn_dto_pool" incompatible with return type "Coroutine[Any, Any, list[ClickHouseConnTargetDTO]]" in supertype "_BaseClickHouseConnExecutor"  [override]
         dto_pool = []
         for host in self._conn_hosts_pool:
             dto_pool.append(
@@ -34,6 +34,7 @@ class BaseFileS3AsyncAdapterConnExecutor(AsyncClickHouseConnExecutor):
                     access_key_id=self._conn_dto.access_key_id,
                     secret_access_key=self._conn_dto.secret_access_key,
                     replace_secret=self._conn_dto.replace_secret,
+                    ca_data=self._ca_data.decode("ascii"),
                 )
             )
         return dto_pool
