@@ -68,6 +68,7 @@ class AsyncUSManager(USManagerBase):
             context_request_id=bi_context.request_id if bi_context is not None else None,
             context_forwarded_for=bi_context.forwarder_for,
             context_workbook_id=bi_context.workbook_id,
+            context_rpc_authorization_id=bi_context.rpc_authorization if bi_context is not None else None,
             ca_data=ca_data,
         )
         self._ca_data = ca_data

@@ -75,6 +75,10 @@ class RequestContextInfo:
     @property
     def workbook_id(self) -> Optional[str]:
         return self.plain_headers.get(DLHeadersCommon.WORKBOOK_ID.value)
+    
+    @property
+    def rpc_authorization(self) -> Optional[str]:
+        return self.plain_headers.get(DLHeadersCommon.X_RPC_AUTHORIZATION.value)
 
     @property
     def client_ip(self) -> Optional[str]:
