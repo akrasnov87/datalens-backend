@@ -38,14 +38,6 @@ RUN groupadd -r -g ${GID} ${USER} && \
     useradd -mr -g ${USER} -u ${UID} -s /bin/bash ${USER}
 USER ${USER}
 
-RUN chown -R ${USER}:${USER} /home
-RUN chown -R ${USER}:${USER} /src
-RUN chown -R ${USER}:${USER} /code
-
-RUN chmod -R 777 /home
-RUN chmod -R 777 /src
-RUN chmod -R 777 /code
-
 EXPOSE 8080
 
 ENTRYPOINT ["/etc/service/dl_api/run"]
