@@ -1,6 +1,10 @@
 #syntax=docker/dockerfile:1.4
 FROM bake_ctx_base_img
 
+RUN apt update && apt upgrade -y
+RUN apt install mc -y
+RUN EDITOR="mcedit mc"
+
 ENV APP_DIR="app/dl_data_api"
 
 RUN mkdir -p /code
@@ -33,6 +37,14 @@ ARG UID=1000
 RUN groupadd -r -g ${GID} ${USER} && \
     useradd -mr -g ${USER} -u ${UID} -s /bin/bash ${USER}
 USER ${USER}
+
+RUN chown -R ${USER}:${USER} /home
+RUN chown -R ${USER}:${USER} /src
+RUN chown -R ${USER}:${USER} /code
+
+RUN chmod -R 777 /home
+RUN chmod -R 777 /src
+RUN chmod -R 777 /code
 
 EXPOSE 8080
 
