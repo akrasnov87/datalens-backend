@@ -28,22 +28,23 @@ from dl_core.connection_executors import ConnExecutorQuery
 from dl_core.data_processing.prepared_components.default_manager import DefaultPreparedComponentManager
 from dl_core.data_processing.processing.context import OpExecutionContext
 from dl_core.data_processing.processing.db_base.exec_adapter_base import ProcessorDbExecAdapterBase
-from dl_core.data_processing.streaming import (
-    AsyncChunked,
-    AsyncChunkedBase,
-    LazyAsyncChunked,
-)
+import dl_core.exc as exc
 from dl_core.query.bi_query import QueryAndResultInfo
 from dl_core.us_connection_base import (
     ClassicConnectionSQL,
     ConnectionBase,
-    ExecutorBasedMixin,
+)
+from dl_utils.streaming import (
+    AsyncChunked,
+    AsyncChunkedBase,
+    LazyAsyncChunked,
 )
 
 
 if TYPE_CHECKING:
     from sqlalchemy.sql.selectable import Select
 
+    from dl_api_commons.base_models import RequestContextInfo
     from dl_cache_engine.primitives import LocalKeyRepresentation
     from dl_constants.enums import DataSourceRole
     from dl_constants.types import TBIDataValue
@@ -52,6 +53,7 @@ if TYPE_CHECKING:
     from dl_core.data_processing.prepared_components.manager_base import PreparedComponentManagerBase
     from dl_core.data_processing.prepared_components.primitives import PreparedFromInfo
     from dl_core.data_processing.types import TValuesChunkStream
+    from dl_core.services_registry.conn_executor_factory_base import ConnExecutorFactory
     from dl_core.us_dataset import Dataset
     from dl_core.us_manager.local_cache import USEntryBuffer
 
@@ -77,6 +79,8 @@ class SourceDbExecAdapter(ProcessorDbExecAdapterBase):  # noqa
     _prep_component_manager: Optional[PreparedComponentManagerBase] = attr.ib(kw_only=True, default=None)
     _row_count_hard_limit: Optional[int] = attr.ib(kw_only=True, default=None)
     _us_entry_buffer: USEntryBuffer = attr.ib(kw_only=True)
+    _ce_factory: ConnExecutorFactory = attr.ib(kw_only=True)
+    _rci: RequestContextInfo = attr.ib(kw_only=True)
 
     def __attrs_post_init__(self) -> None:
         if self._prep_component_manager is None:
@@ -104,10 +108,9 @@ class SourceDbExecAdapter(ProcessorDbExecAdapterBase):  # noqa
 
         assert joint_dsrc_info.target_connection_ref is not None
         target_connection = self._us_entry_buffer.get_entry(joint_dsrc_info.target_connection_ref)
-        assert isinstance(target_connection, ExecutorBasedMixin)
+        assert isinstance(target_connection, ConnectionBase)
 
-        ce_factory = self._service_registry.get_conn_executor_factory()
-        ce = ce_factory.get_async_conn_executor(target_connection)
+        ce = self._ce_factory.get_async_conn_executor(target_connection)
 
         exec_result = await ce.execute(
             ConnExecutorQuery(
@@ -126,11 +129,16 @@ class SourceDbExecAdapter(ProcessorDbExecAdapterBase):  # noqa
         async def finalize_data_stream() -> None:
             pass
 
-        result_iter = LazyAsyncChunked(initializer=initialize_data_stream, finalizer=finalize_data_stream)
+        result_iter: AsyncChunkedBase = LazyAsyncChunked(
+            initializer=initialize_data_stream,
+            finalizer=finalize_data_stream,
+        )
 
         if row_count_hard_limit is not None:
-            result_iter = result_iter.limit(max_count=row_count_hard_limit)  # type: ignore  # 2024-01-24 # TODO: Incompatible types in assignment (expression has type "AsyncChunkedLimited[Any]", variable has type "LazyAsyncChunked[list[date | datetime | time | timedelta | Decimal | UUID | bytes | str | float | int | bool | None]]")  [assignment]
-
+            result_iter = result_iter.limit(
+                max_count=row_count_hard_limit,
+                limit_exception=exc.ResultRowCountLimitExceeded,
+            )
         return result_iter  # type: ignore  # 2024-01-24 # TODO: Incompatible return value type (got "LazyAsyncChunked[list[date | datetime | time | timedelta | Decimal | UUID | bytes | str | float | int | bool | None]]", expected "AsyncChunkedBase[Sequence[date | datetime | time | timedelta | Decimal | UUID | bytes | str | float | int | bool | None]]")  [return-value]
 
     async def _execute_and_fetch(
@@ -167,9 +175,9 @@ class SourceDbExecAdapter(ProcessorDbExecAdapterBase):  # noqa
     ) -> None:
         assert target_connection_ref is not None
         target_connection = self._us_entry_buffer.get_entry(entry_id=target_connection_ref)
-        assert isinstance(target_connection, ExecutorBasedMixin)
+        assert isinstance(target_connection, ConnectionBase)
 
-        workbook_id = self._service_registry.rci.workbook_id or (
+        workbook_id = self._rci.workbook_id or (
             target_connection.entry_key.workbook_id
             if isinstance(target_connection.entry_key, WorkbookEntryLocation)
             else None
@@ -181,7 +189,7 @@ class SourceDbExecAdapter(ProcessorDbExecAdapterBase):  # noqa
             dataset_id=dataset_id,
             query_type=get_query_type(
                 connection=target_connection,
-                conn_sec_mgr=self._service_registry.get_conn_executor_factory().conn_security_manager,
+                conn_sec_mgr=self._ce_factory.conn_security_manager,
             ),
             connection_type=target_connection.conn_type,
             conn_reporting_data=target_connection.get_conn_dto().conn_reporting_data(),

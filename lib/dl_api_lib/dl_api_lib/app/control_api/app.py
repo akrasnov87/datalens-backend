@@ -26,6 +26,7 @@ from dl_api_commons.flask.middlewares.tracing import (
     TracingContextMiddleware,
     TracingMiddleware,
 )
+from dl_api_commons.flask.ping import register_ping_handler_hax
 from dl_api_lib.app.control_api.resources import init_apis
 from dl_api_lib.app_common import SRFactoryBuilder
 from dl_api_lib.app_common_settings import ConnOptionsMutatorsFactory
@@ -42,12 +43,11 @@ from dl_constants.enums import (
 from dl_core import profiling_middleware
 from dl_core.flask_utils.services_registry_middleware import ServicesRegistryMiddleware
 from dl_core.flask_utils.us_manager_middleware import USManagerFlaskMiddleware
-from dl_core.ping import register_ping_handler_hax
 
 
 if TYPE_CHECKING:
     from dl_core.connection_models import ConnectOptions
-    from dl_core.us_connection_base import ExecutorBasedMixin
+    from dl_core.us_connection_base import ConnectionBase
 
 
 @attr.s(frozen=True)
@@ -77,9 +77,7 @@ class ControlApiAppFactory(SRFactoryBuilder, Generic[TControlApiAppSettings], ab
     def _get_conn_opts_mutators_factory(self) -> ConnOptionsMutatorsFactory:
         conn_opts_mutators_factory = ConnOptionsMutatorsFactory()
 
-        def enable_index_fetching_mutator(
-            conn_opts: ConnectOptions, conn: ExecutorBasedMixin
-        ) -> Optional[ConnectOptions]:
+        def enable_index_fetching_mutator(conn_opts: ConnectOptions, conn: ConnectionBase) -> Optional[ConnectOptions]:
             return conn_opts.clone(fetch_table_indexes=True)
 
         if self._settings.DO_DSRC_IDX_FETCH:

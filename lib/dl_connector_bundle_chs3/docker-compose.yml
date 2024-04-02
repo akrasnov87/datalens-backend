@@ -44,11 +44,13 @@ services:
       - 52609:5432
 
   us:
+    labels:
+      datalens.ci.service: united-storage
     build:
       context: ../testenv-common/images
       dockerfile: Dockerfile.us
     ports:
-      - 52600:80
+      - 52600:8083
     depends_on:
       - pg-us
     environment:

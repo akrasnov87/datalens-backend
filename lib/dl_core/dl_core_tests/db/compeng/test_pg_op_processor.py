@@ -35,7 +35,6 @@ from dl_core.data_processing.stream_base import (
     DataRequestMetaInfo,
     DataStreamAsync,
 )
-from dl_core.data_processing.streaming import AsyncChunked
 from dl_core.query.bi_query import BIQuery
 from dl_core.query.expression import (
     ExpressionCtx,
@@ -43,6 +42,7 @@ from dl_core.query.expression import (
     OrderByExpressionCtx,
 )
 from dl_core_tests.db.base import DefaultCoreTestClass
+from dl_utils.streaming import AsyncChunked
 
 
 class PGOpRunnerTestBase(DefaultCoreTestClass):
@@ -51,10 +51,10 @@ class PGOpRunnerTestBase(DefaultCoreTestClass):
 
     @pytest.fixture(scope="function")
     async def pg_op_processor(self, loop, conn_default_service_registry) -> PostgreSQLOperationProcessor:
-        service_registry = conn_default_service_registry
+        reporting_registry = conn_default_service_registry.get_reporting_registry()
         compeng_pg_dsn = self.core_test_config.get_compeng_url()
         async with self.PG_POOL_WRAPPER_CLS.context(compeng_pg_dsn) as pool_wrapper:
-            async with self.PG_PROCESSOR_CLS(service_registry=service_registry, pg_pool=pool_wrapper) as processor:
+            async with self.PG_PROCESSOR_CLS(reporting_registry=reporting_registry, pg_pool=pool_wrapper) as processor:
                 yield processor
 
     @pytest.fixture(scope="function")

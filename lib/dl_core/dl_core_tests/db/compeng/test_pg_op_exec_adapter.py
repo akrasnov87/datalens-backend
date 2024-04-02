@@ -20,10 +20,10 @@ from dl_compeng_pg.compeng_pg_base.exec_adapter_base import PostgreSQLExecAdapte
 from dl_constants.enums import UserDataType
 from dl_core.data_processing.cache.utils import CompengOptionsBuilder
 from dl_core.data_processing.processing.context import OpExecutionContext
-from dl_core.data_processing.streaming import AsyncChunked
 from dl_core.services_registry.top_level import ServicesRegistry
 from dl_core.utils import make_id
 from dl_core_tests.db.base import DefaultCoreTestClass
+from dl_utils.streaming import AsyncChunked
 
 
 async def get_active_queries(pg_adapter: PostgreSQLExecAdapterAsync) -> List[Dict[str, Any]]:
@@ -156,7 +156,7 @@ class TestAiopgOpRunner(BaseTestPGOpExecAdapter):
         async with aiopg.sa.create_engine(compeng_pg_dsn, minsize=self.min_size, maxsize=self.max_size) as engine:
             async with engine.acquire() as conn:
                 yield AiopgExecAdapter(
-                    service_registry=service_registry,
+                    reporting_registry=service_registry.get_reporting_registry(),
                     conn=conn,
                     cache_options_builder=CompengOptionsBuilder(),
                 )
@@ -174,7 +174,7 @@ class TestAsyncpgOpRunner(BaseTestPGOpExecAdapter):
             async with pool.acquire() as conn:
                 async with conn.transaction():
                     yield AsyncpgExecAdapter(
-                        service_registry=service_registry,
+                        reporting_registry=service_registry.get_reporting_registry(),
                         conn=conn,
                         cache_options_builder=CompengOptionsBuilder(),
                     )

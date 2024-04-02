@@ -56,7 +56,7 @@ from dl_core.us_dataset import Dataset
 from dl_core.us_manager.storage_schemas.base import DefaultStorageSchema
 from dl_core.us_manager.storage_schemas.data_source_collection import GenericDataSourceCollectionStorageSchema
 from dl_core.us_manager.storage_schemas.error_registry import ComponentErrorListSchema
-from dl_core.values import (
+from dl_model_tools.typed_values import (
     ArrayFloatValue,
     ArrayIntValue,
     ArrayStrValue,
@@ -141,6 +141,7 @@ class AvatarRelationSchema(DefaultStorageSchema):
     join_type = ma_fields.Enum(JoinType)
     managed_by = ma_fields.Enum(ManagedBy, allow_none=True, dump_default=ManagedBy.user)
     valid = ma_fields.Boolean(allow_none=True)
+    required = ma_fields.Boolean(load_default=False, dump_default=False)
 
 
 class RLSSchema(DefaultStorageSchema):

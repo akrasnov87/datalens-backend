@@ -23,10 +23,10 @@ from dl_constants.types import TBIDataValue
 from dl_core.connectors.base.query_compiler import QueryCompiler
 from dl_core.data_processing.cache.utils import DatasetOptionsBuilder
 from dl_core.data_processing.processing.context import OpExecutionContext
-from dl_core.data_processing.streaming import AsyncChunkedBase
 from dl_core.data_processing.types import TValuesChunkStream
 from dl_core.query.bi_query import QueryAndResultInfo
 from dl_core.utils import make_id
+from dl_utils.streaming import AsyncChunkedBase
 
 
 if TYPE_CHECKING:
@@ -35,7 +35,6 @@ if TYPE_CHECKING:
     from dl_constants.enums import UserDataType
     from dl_core.base_models import ConnectionRef
     from dl_core.data_processing.prepared_components.primitives import PreparedFromInfo
-    from dl_core.services_registry.top_level import ServicesRegistry
 
 
 LOGGER = logging.getLogger(__name__)
@@ -47,12 +46,8 @@ class ProcessorDbExecAdapterBase(abc.ABC):
     _default_chunk_size: ClassVar[int] = 1000
     _log: ClassVar[logging.Logger] = LOGGER.getChild("ProcessorDbExecAdapterBase")
     _cache_options_builder: DatasetOptionsBuilder = attr.ib(kw_only=True)
-    _service_registry: ServicesRegistry = attr.ib(kw_only=True)
     _reporting_enabled: bool = attr.ib(kw_only=True, default=True)
-
-    @property
-    def _reporting_registry(self) -> ReportingRegistry:
-        return self._service_registry.get_reporting_registry()
+    _reporting_registry: ReportingRegistry = attr.ib(kw_only=True)
 
     def add_reporting_record(self, record: ReportingRecord) -> None:
         if self._reporting_enabled:

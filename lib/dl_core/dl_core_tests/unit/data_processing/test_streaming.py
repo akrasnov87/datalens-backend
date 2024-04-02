@@ -4,12 +4,12 @@ from typing import Generator
 
 import pytest
 
-from dl_core.data_processing.streaming import (
+import dl_core.exc as exc
+from dl_utils.streaming import (
     AsyncChunked,
     AsyncChunkedLimited,
     LazyAsyncChunked,
 )
-import dl_core.exc as exc
 
 
 def chunked_range(size: int, chunk_size: int) -> Generator[Generator[int, None, None], None, None]:
@@ -38,7 +38,11 @@ async def test_async_chunked():
 @pytest.mark.asyncio
 async def test_async_chunked_limited():
     # chunks
-    chunked = AsyncChunkedLimited(chunked=AsyncChunked.from_chunked_iterable(chunked_range(97, 10)), max_count=53)
+    chunked = AsyncChunkedLimited(
+        chunked=AsyncChunked.from_chunked_iterable(chunked_range(97, 10)),
+        max_count=53,
+        limit_exc_to_raise=exc.ResultRowCountLimitExceeded,
+    )
     data = []
     with pytest.raises(exc.ResultRowCountLimitExceeded):
         async for chunk in chunked.chunks:
@@ -50,7 +54,11 @@ async def test_async_chunked_limited():
     assert data == list(range(50))
 
     # items
-    chunked = AsyncChunkedLimited(chunked=AsyncChunked.from_chunked_iterable(chunked_range(97, 10)), max_count=53)
+    chunked = AsyncChunkedLimited(
+        chunked=AsyncChunked.from_chunked_iterable(chunked_range(97, 10)),
+        max_count=53,
+        limit_exc_to_raise=exc.ResultRowCountLimitExceeded,
+    )
     data = []
     with pytest.raises(exc.ResultRowCountLimitExceeded):
         async for item in chunked.items:
@@ -58,7 +66,11 @@ async def test_async_chunked_limited():
     assert data == list(range(53))
 
     # all
-    chunked = AsyncChunkedLimited(chunked=AsyncChunked.from_chunked_iterable(chunked_range(97, 10)), max_count=53)
+    chunked = AsyncChunkedLimited(
+        chunked=AsyncChunked.from_chunked_iterable(chunked_range(97, 10)),
+        max_count=53,
+        limit_exc_to_raise=exc.ResultRowCountLimitExceeded,
+    )
     with pytest.raises(exc.ResultRowCountLimitExceeded):
         await chunked.all()
 

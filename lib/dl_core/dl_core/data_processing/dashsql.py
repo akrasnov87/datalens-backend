@@ -22,22 +22,18 @@ from dl_api_commons.reporting.models import (
     QueryExecutionEndReportingRecord,
     QueryExecutionStartReportingRecord,
 )
+from dl_cache_engine.processing_helper import (
+    CacheProcessingHelper,
+    CacheSituation,
+    TJSONExtChunkStream,
+)
 from dl_constants.types import TJSONExt  # not under `TYPE_CHECKING`, need to define new type aliases.
 from dl_core import exc
 from dl_core.backend_types import get_backend_type
 from dl_core.base_models import WorkbookEntryLocation
 from dl_core.connection_executors.common_base import ConnExecutorQuery
 from dl_core.connectors.base.dashsql import get_custom_dash_sql_key_names
-from dl_core.data_processing.cache.processing_helper import (
-    CacheProcessingHelper,
-    CacheSituation,
-)
 from dl_core.data_processing.cache.utils import DashSQLCacheOptionsBuilder
-from dl_core.data_processing.streaming import (
-    AsyncChunked,
-    chunkify_by_one,
-)
-from dl_core.us_connection_base import ExecutorBasedMixin
 from dl_core.utils import (
     compile_query_for_debug,
     make_id,
@@ -50,6 +46,10 @@ from dl_dashsql.formatting.base import (
 from dl_dashsql.formatting.placeholder_dbapi import DBAPIQueryFormatterFactory
 from dl_dashsql.registry import get_dash_sql_param_literalizer
 from dl_dashsql.types import IncomingDSQLParamTypeExt
+from dl_utils.streaming import (
+    AsyncChunked,
+    chunkify_by_one,
+)
 
 
 if TYPE_CHECKING:
@@ -58,7 +58,6 @@ if TYPE_CHECKING:
         AsyncConnExecutorBase,
         AsyncExecutionResult,
     )
-    from dl_core.data_processing.types import TJSONExtChunkStream
     from dl_core.services_registry import ServicesRegistry
     from dl_core.us_connection_base import ConnectionBase
 
@@ -153,12 +152,7 @@ class DashSQLSelector:
         sa_query = self._formatted_query_to_sa_query(formatted_query)
 
         conn = self.conn
-        # This should've been `dialect = conn.get_dialect() if isinstance(conn, ExecutorBasedMixin) else None`,
-        # but mypy couldn't handle that.
-        if isinstance(conn, ExecutorBasedMixin):
-            dialect = conn.get_dialect()
-        else:
-            dialect = None  # type: ignore  # TODO: fix
+        dialect = conn.get_dialect()
         debug_text = compile_query_for_debug(self.sql_query, dialect=dialect)
         return sa_query, debug_text
 
@@ -281,7 +275,6 @@ class DashSQLCachedSelector(DashSQLSelector):
             return AsyncChunked(chunked_data=chunks)
 
         query_id = self.make_query_id()
-        assert isinstance(self.conn, ExecutorBasedMixin), "connection must be derived from ExecutorBasedMixin"
         conn = self.conn
         conn_id = conn.uuid
         assert conn_id
@@ -305,10 +298,10 @@ class DashSQLCachedSelector(DashSQLSelector):
             )
         )
 
-        cache_helper = CacheProcessingHelper(
-            entity_id=conn_id,
-            service_registry=service_registry,
-        )
+        cache_engine_factory = service_registry.get_cache_engine_factory()
+        assert cache_engine_factory is not None
+        cache_engine = cache_engine_factory.get_cache_engine(entity_id=conn_id)
+        cache_helper = CacheProcessingHelper(cache_engine=cache_engine)
         cache_options = self.make_cache_options()
         if not cache_options.cache_enabled:
             # cache not applicable

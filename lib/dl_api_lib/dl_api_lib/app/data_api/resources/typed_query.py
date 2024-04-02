@@ -16,26 +16,24 @@ from dl_api_lib.app.data_api.resources.base import (
 )
 from dl_api_lib.enums import USPermissionKind
 from dl_api_lib.schemas.typed_query import (
-    DataRowsTypedQueryResultSchema,
     PlainTypedQueryContentSchema,
     RawTypedQuery,
     RawTypedQueryParameter,
+    TypedQueryResultSchema,
     TypedQuerySchema,
 )
+from dl_api_lib.service_registry.service_registry import ApiServiceRegistry
 from dl_api_lib.utils.base import need_permission_on_entry
 from dl_app_tools.profiling_base import generic_profiler_async
 from dl_constants.enums import DashSQLQueryType
-from dl_core.data_processing.typed_query import CEBasedTypedQueryProcessor
 import dl_core.exc as core_exc
 from dl_core.us_connection_base import ConnectionBase
 from dl_dashsql.typed_query.primitives import (
-    DataRowsTypedQueryResult,
     PlainTypedQuery,
     TypedQuery,
     TypedQueryParameter,
     TypedQueryResult,
 )
-from dl_dashsql.typed_query.processor.base import TypedQueryProcessorBase
 
 
 class TypedQueryLoader(abc.ABC):
@@ -63,8 +61,7 @@ class PlainTypedQueryLoader(TypedQueryLoader):
             parameters=tuple(
                 TypedQueryParameter(
                     name=param.name,
-                    user_type=param.data_type,
-                    value=param.value.value,
+                    typed_value=param.value,
                 )
                 for param in parameters
             ),
@@ -76,11 +73,9 @@ class TypedQueryResultSerializer:
     """Serializes the result (meta and data)"""
 
     def serialize_typed_query_result(self, typed_query_result: TypedQueryResult) -> Any:
-        # No other result types are supported in API:
-        assert isinstance(typed_query_result, DataRowsTypedQueryResult)
         return {
             "query_type": typed_query_result.query_type.name,
-            "data": DataRowsTypedQueryResultSchema().dump(typed_query_result),
+            "data": TypedQueryResultSchema().dump(typed_query_result),
         }
 
 
@@ -99,6 +94,12 @@ class DashSQLTypedQueryView(BaseView):
 
     endpoint_code = "DashSQLTypedQuery"
     profiler_prefix = "dashsql_typed_query"
+
+    @property
+    def api_service_registry(self) -> ApiServiceRegistry:
+        service_registry = self.dl_request.services_registry
+        assert isinstance(service_registry, ApiServiceRegistry)
+        return service_registry
 
     @property
     def connection_id(self) -> Optional[str]:
@@ -131,17 +132,10 @@ class DashSQLTypedQueryView(BaseView):
         )
         return typed_query
 
-    def _get_tq_processor(self, connection: ConnectionBase) -> TypedQueryProcessorBase:
-        # TODO: Move processor creation to SR (more logic will come with the implementation of caches)
-        sr = self.dl_request.services_registry
-        ce_factory = sr.get_conn_executor_factory()
-        conn_executor = ce_factory.get_async_conn_executor(conn=connection)
-        tq_processor = CEBasedTypedQueryProcessor(async_conn_executor=conn_executor)
-        return tq_processor
-
     async def execute_query(self, connection: ConnectionBase, typed_query: TypedQuery) -> TypedQueryResult:
         """Prepare everything for execution and execute"""
-        tq_processor = self._get_tq_processor(connection=connection)
+        tq_processor_factory = self.api_service_registry.get_typed_query_processor_factory()
+        tq_processor = tq_processor_factory.get_typed_query_processor(connection=connection)
         typed_query_result = await tq_processor.process_typed_query(typed_query=typed_query)
         return typed_query_result
 
