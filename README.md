@@ -39,6 +39,13 @@ git pull upstream main
 MC_HOME=/tmp/MCHOME mc -F
 </pre>
 
+## Подключение к контейнерам
+
+Для отладки можно подключиться к контейнеру и использовать mc
+<pre>
+docker exec -u root -it container_id /bin/bash
+</pre>
+
 ## About
 
 This is the repository for the back-end implementation of DataLens
