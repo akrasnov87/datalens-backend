@@ -38,9 +38,6 @@ RUN groupadd -r -g ${GID} ${USER} && \
     useradd -mr -g ${USER} -u ${UID} -s /bin/bash ${USER}
 USER ${USER}
 
-
-RUN chmod -R 777 /src
-
 EXPOSE 8080
 
 ENTRYPOINT ["/etc/service/dl_api/run"]
