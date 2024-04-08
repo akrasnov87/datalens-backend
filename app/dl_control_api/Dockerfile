@@ -34,6 +34,7 @@ RUN groupadd -r -g ${GID} ${USER} && \
     useradd -mr -g ${USER} -u ${UID} -s /bin/bash ${USER}
 USER ${USER}
 
+RUN chown -R app:app /src
 RUN chmod -R 777 /src
 
 EXPOSE 8080
