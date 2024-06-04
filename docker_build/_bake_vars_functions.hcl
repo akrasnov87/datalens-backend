@@ -1,7 +1,13 @@
 # All variables should be prefixed with `DL_B_`
 
+variable DL_B_BASE_SERVER {
+  #default = "ghcr.io/datalens-tech/docker-mirror/"
+  # переопределил
+  default = ""
+}
+
 variable BASE_LINUX {
-  default = "ghcr.io/datalens-tech/docker-mirror/ubuntu:22.04"
+  default = "${DL_B_BASE_SERVER}ubuntu:22.04"
 }
 
 variable DL_B_PROJECT_ROOT {
@@ -9,7 +15,7 @@ variable DL_B_PROJECT_ROOT {
 }
 
 variable DL_B_FILE_OPS_IMG {
-  default = "ghcr.io/datalens-tech/docker-mirror/debian:bookworm-slim"
+  default = "${DL_B_BASE_SERVER}debian:bookworm-slim"
 }
 
 variable DL_B_EXT_CACHED_TARGET_BASE_CI {

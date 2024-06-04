@@ -17,6 +17,15 @@ task e2e:docker-build
 
 По умолчанию контейнеры создаются без номера версии (тега), чтобы исправить это выполнить `docker tag <image> <newName>/<repoName>:<tagName>`
 
+### С официального сайта
+
+<pre>
+git clone git@github.com:datalens-tech/datalens-backend.git && cd datalens-backend
+
+./docker_build/run-project-bake dl_control_api --set "dl_control_api.tags=datalens-control-api:local"
+./docker_build/run-project-bake dl_data_api --set "dl_data_api.tags=datalens-data-api:local"
+</pre>
+
 <pre>
 # изменить версию
 docker tag data-api:test akrasnov87/datalens-data-api:0.2058.0
