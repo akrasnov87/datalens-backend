@@ -31,6 +31,27 @@ _SOURCE_INT_FLOAT_1 = ExampleSource(
     ],
 )
 
+_SOURCE_TEMP = ExampleSource(
+    columns=[
+        ("Month", DataType.STRING),
+        ("Temperature", DataType.FLOAT),
+    ],
+    data=[
+        ["January", -8.0],
+        ["February", -4.0],
+        ["March", -1.0],
+        ["April", 7.0],
+        ["May", 14.0],
+        ["June", 18.0],
+        ["July", 22.0],
+        ["August", 19.0],
+        ["September", 13.0],
+        ["October", 5.0],
+        ["November", 1.0],
+        ["December", -4.0],
+    ],
+)
+
 
 FUNCTION_SUM = FunctionDocRegistryItem(
     name="sum",
@@ -43,7 +64,8 @@ FUNCTION_SUM = FunctionDocRegistryItem(
                 group_by=["[City]"],
                 order_by=["[City]"],
                 show_source_table=True,
-                formula_fields=[("City", "[City]"), ("Sum 1", "SUM([Orders])"), ("Sum 2", "SUM([Profit])")],
+                formula_fields=[("City", "[City]"), ("Sum Orders", "SUM([Orders])"), ("Sum Profit", "SUM([Profit])")],
+                formulas_as_names=False,
             ),
         ),
     ],
@@ -172,11 +194,18 @@ FUNCTION_STDEV = FunctionDocRegistryItem(
     name="stdev",
     category=CATEGORY_AGGREGATION,
     description=_(
-        "Returns the statistical standard deviation of all values in the expression "
+        "Returns the statistical {link: standard_dev: standard deviation} of all values in the expression "
         "based on a selection from the population."
     ),
     examples=[
-        SimpleExample("STDEV([Profit])"),
+        DataExample(
+            example_config=ExampleConfig(
+                source=_SOURCE_TEMP,
+                show_source_table=True,
+                formulas_as_names=False,
+                formula_fields=[("Temperature SD", "STDEV([Temperature])")],
+            ),
+        ),
     ],
 )
 
@@ -184,10 +213,20 @@ FUNCTION_STDEVP = FunctionDocRegistryItem(
     name="stdevp",
     category=CATEGORY_AGGREGATION,
     description=_(
-        "Returns the statistical standard deviation of all values in the expression " "based on the biased population."
+        "Returns the statistical {link: standard_dev: standard deviation} of all values in the expression "
+        "based on the biased population. "
+        "The function shows how far data points are from their average. "
+        "In other words, standard deviation shows to what extent values in a dataset deviate from their average."
     ),
     examples=[
-        SimpleExample("STDEVP([Profit])"),
+        DataExample(
+            example_config=ExampleConfig(
+                source=_SOURCE_TEMP,
+                show_source_table=True,
+                formulas_as_names=False,
+                formula_fields=[("Temperature SD", "STDEVP([Temperature])")],
+            ),
+        ),
     ],
 )
 
@@ -226,9 +265,19 @@ FUNCTION_QUANTILE_APPROX = FunctionDocRegistryItem(
 FUNCTION_MEDIAN = FunctionDocRegistryItem(
     name="median",
     category=CATEGORY_AGGREGATION,
-    description=_("Returns the median value."),
+    description=_(
+        "Returns the {link: median_link: median} value. "
+        "For an even number of items, it returns the greatest of the neighboring items in the central position."
+    ),
     examples=[
-        SimpleExample("MEDIAN([Profit])"),
+        DataExample(
+            example_config=ExampleConfig(
+                source=_SOURCE_INT_FLOAT_1,
+                show_source_table=True,
+                formulas_as_names=False,
+                formula_fields=[("Median Profit", "MEDIAN([Profit])")],
+            ),
+        ),
     ],
 )
 

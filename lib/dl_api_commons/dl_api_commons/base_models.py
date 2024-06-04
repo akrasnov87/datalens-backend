@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import enum
 from typing import (
     Any,
     Optional,
@@ -31,14 +32,23 @@ class TenantDef(metaclass=abc.ABCMeta):
     def get_tenant_id(self) -> str:
         raise NotImplementedError()
 
+    def get_reporting_extra(self) -> dict[str, str | None]:
+        return dict(
+            billing_folder_id=self.get_tenant_id(),
+        )
+
+
+class AuthTarget(str, enum.Enum):
+    UNITED_STORAGE = "united_storage"
+
 
 class AuthData(metaclass=abc.ABCMeta):
     @abc.abstractmethod
-    def get_headers(self) -> dict[DLHeaders, str]:
+    def get_headers(self, target: Optional[AuthTarget] = None) -> dict[DLHeaders, str]:
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def get_cookies(self) -> dict[DLCookies, str]:
+    def get_cookies(self, target: Optional[AuthTarget] = None) -> dict[DLCookies, str]:
         raise NotImplementedError()
 
 
@@ -143,6 +153,16 @@ class RequestContextInfo:
     def clone(self: _REQUEST_CONTEXT_INFO_TV, **kwargs: Any) -> _REQUEST_CONTEXT_INFO_TV:
         return attr.evolve(self, **kwargs)
 
+    def get_reporting_extra(self) -> dict[str, str | None]:
+        reporting_extra = dict(
+            user_id=self.user_id,
+            source=self.endpoint_code,
+            username=self.user_name,
+        )
+        if self.tenant is not None:
+            reporting_extra.update(self.tenant.get_reporting_extra())
+        return reporting_extra
+
 
 _REQUEST_CONTEXT_INFO_TV = TypeVar("_REQUEST_CONTEXT_INFO_TV", bound="RequestContextInfo")
 
@@ -158,8 +178,8 @@ class TenantCommon(TenantDef):
 
 @attr.s()
 class NoAuthData(AuthData):
-    def get_headers(self) -> dict[DLHeaders, str]:
+    def get_headers(self, target: Optional[AuthTarget] = None) -> dict[DLHeaders, str]:
         return {}
 
-    def get_cookies(self) -> dict[DLCookies, str]:
+    def get_cookies(self, target: Optional[AuthTarget] = None) -> dict[DLCookies, str]:
         return {}

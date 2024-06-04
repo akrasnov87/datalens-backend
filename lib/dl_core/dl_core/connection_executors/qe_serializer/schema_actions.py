@@ -37,10 +37,17 @@ class DBAdapterActionBaseSchema(BaseQEAPISchema):
         return self.context["allowed_dba_classes"]
 
     def dump_dba_cls(self, act: dba_actions.ActionExecuteQuery) -> str:
-        return act.dba_cls.__qualname__
+        return f"{act.dba_cls.__module__}.{act.dba_cls.__qualname__}"
 
     def load_dba_cls(self, value: str) -> Union[Type[CommonBaseDirectAdapter]]:
-        candidate = next(filter(lambda clz: clz.__qualname__ == value, self.allowed_dba_classes), None)
+        mod_name, cls_name = value.rsplit(".", 1) if "." in value else (None, value)
+        candidate = next(
+            filter(
+                lambda clz: clz.__module__ == mod_name and clz.__qualname__ == cls_name or clz.__qualname__ == value,
+                self.allowed_dba_classes,
+            ),  # TODO clz.__qualname__ == value method is deprecated, to be removed someday
+            None,
+        )
         if candidate is None:
             raise ValueError(f"Can not restore DBA class from string '{value}'")
         return candidate

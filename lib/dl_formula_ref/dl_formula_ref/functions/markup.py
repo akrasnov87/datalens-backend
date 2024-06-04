@@ -29,7 +29,7 @@ FUNCTION_URL = FunctionDocRegistryItem(
         "When you click on the link, the page opens in a new browser tab."
     ),
     examples=[
-        SimpleExample("URL('https://example.com/?value=' + [value], [value])"),
+        SimpleExample("URL('https://yandex.ru/search/?text=buy+a+' + [Product Name], [Product Name])"),
     ],
 )
 
@@ -45,17 +45,22 @@ FUNCTION_MARKUP = FunctionDocRegistryItem(
 FUNCTION_COLOR = FunctionDocRegistryItem(
     name="color",
     category=CATEGORY_MARKUP,
-    description=_("Enables specifying the color for the provided text."),
+    description=_(
+        "Enables specifying the color for the provided text.\n"
+        "\n"
+        "We recommend using the {link: gravity_ui_texts_link: color variables} from the "
+        "{link: gravity_ui_link: Gravity UI} palette to specify colors. "
+        "Such colors are easily discernible with both the light and dark theme.\n"
+        "\n"
+        "You can also specify the color in any web format, such as HEX, keyword (e.g., `green`), RGB, etc. "
+        "In this case, however, we cannot guarantee that the colors will be discernible."
+    ),
     examples=[
+        SimpleExample("COLOR([text], 'var(--g-color-text-danger)')"),
         SimpleExample("COLOR([text], '#5282ff')"),
         SimpleExample("COLOR([text], 'blue')"),
         SimpleExample("COLOR([text], 'rgb(82, 130, 255)')"),
         SimpleExample("COLOR([text], 'rgba(82, 130, 255, 0.5)')"),
-    ],
-    notes=[
-        Note(
-            Translatable("You can specify the color in any web format, such as HEX, keyword (e.g., `green`), RGB, etc.")
-        ),
     ],
 )
 
@@ -77,6 +82,29 @@ FUNCTION_BR = FunctionDocRegistryItem(
     ],
 )
 
+FUNCTION_IMAGE = FunctionDocRegistryItem(
+    name="image",
+    category=CATEGORY_MARKUP,
+    description=_(
+        "Enables inserting an image located at the {arg:0} address to the table. "
+        "The {arg:1} and {arg:2} values are provided in pixels. If one of the dimensions is "
+        "`NULL`, it will be calculated automatically in proportion to the other. "
+        "If both dimensions are `NULL`, the image will be inserted with the original width and height. "
+        "In case there are issues when uploading the image, the function will display the {arg:3} text.\n"
+        "\n"
+        "{text: image_source_restrictions}\n"
+        "\n"
+    ),
+    examples=[
+        SimpleExample(
+            "IMAGE('https://storage.yandexcloud.net/functions********/nature-01.jpg', 250, 150, 'alt-text-1')"
+        ),
+        SimpleExample(
+            "IMAGE('https://storage.yandexcloud.net/functions********/nature-02.jpg', NULL, NULL, 'alt-text-2')"
+        ),
+    ],
+)
+
 FUNCTIONS_MARKUP = [
     FUNCTION_BOLD,
     FUNCTION_ITALIC,
@@ -85,4 +113,5 @@ FUNCTIONS_MARKUP = [
     FUNCTION_COLOR,
     FUNCTION_SIZE,
     FUNCTION_BR,
+    FUNCTION_IMAGE,
 ]

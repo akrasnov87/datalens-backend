@@ -11,6 +11,7 @@ from typing import (
 
 import attr
 
+from dl_api_commons.base_models import TenantDef
 from dl_api_lib.connection_forms.registry import CONN_FORM_FACTORY_BY_TYPE
 from dl_api_lib.connection_info import get_connector_info_provider_cls
 from dl_api_lib.i18n.localizer import Translatable
@@ -116,15 +117,21 @@ class ConnectorBase(LocalizedSerializable, metaclass=abc.ABCMeta):
         )
 
 
+def _conn_type_converter(value: Any) -> ConnectionType:
+    return ConnectionType(value) if not isinstance(value, ConnectionType) else value
+
+
+def _availability_converter(value: Any) -> ConnectorAvailability:
+    return ConnectorAvailability(value) if not isinstance(value, ConnectorAvailability) else value
+
+
 @attr.s(kw_only=True)
-class Connector(ConnectorBase):  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+class Connector(ConnectorBase):
     """Represents an actual connection type"""
 
     _hidden: bool = attr.ib(init=False, default=False)
-    conn_type: ConnectionType = attr.ib(  # type: ignore  # 2024-01-24 # TODO: Need type annotation for "conn_type"  [var-annotated]
-        converter=lambda v: ConnectionType(v) if not isinstance(v, ConnectionType) else v
-    )
-    availability: ConnectorAvailability = attr.ib(default=ConnectorAvailability.free, converter=ConnectorAvailability)
+    conn_type: ConnectionType = attr.ib(converter=_conn_type_converter)
+    availability: ConnectorAvailability = attr.ib(default=ConnectorAvailability.free, converter=_availability_converter)
 
     @classmethod
     def from_settings(cls, settings: ConnectorSettings) -> Connector:
@@ -242,7 +249,7 @@ class ConnectorAvailabilityConfig(SettingsBase):
             ),
         )
 
-    def as_dict(self, localizer: Localizer) -> dict[str, Any]:
+    def get_available_connectors(self, localizer: Localizer, tenant: Optional[TenantDef]) -> dict[str, Any]:
         return dict(
             uncategorized=[connector.as_dict(localizer) for connector in self.uncategorized],
             sections=[section.as_dict(localizer) for section in self.sections],

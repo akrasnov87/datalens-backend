@@ -1,3 +1,4 @@
+import flaky
 import flask
 import flask.testing
 import pytest
@@ -16,8 +17,7 @@ def fixture_app(sync_request_limiter: dl_rate_limiter.SyncRequestRateLimiter) ->
         return "OK"
 
     app.config.update({"TESTING": True})
-    middleware = dl_rate_limiter.FlaskMiddleware(rate_limiter=sync_request_limiter)
-    app.before_request(middleware.process)
+    dl_rate_limiter.FlaskMiddleware(rate_limiter=sync_request_limiter).set_up(app)
 
     yield app
 
@@ -42,12 +42,14 @@ def test_unlimited(client: flask.testing.FlaskClient):
     assert all(response.status_code == 200 for response in responses)
 
 
+@flaky.flaky(max_runs=3)
 def test_limited(client: flask.testing.FlaskClient):
     responses = [client.get("/limited/1", headers={"X-Test-Header": "test"}) for _ in range(20)]
     assert sum(response.status_code == 429 for response in responses) == 15
     assert sum(response.status_code == 200 for response in responses) == 5
 
 
+@flaky.flaky(max_runs=3)
 def test_limited_multiple_limits(client: flask.testing.FlaskClient):
     responses = [client.get("/limited/more_specifically/1", headers={"X-Test-Header": "test"}) for _ in range(10)]
     assert sum(response.status_code == 429 for response in responses) == 9

@@ -10,7 +10,6 @@ import flask
 from flask import request
 
 from dl_api_commons import (
-    log_request_start,
     make_uuid_from_parts,
     request_id_generator,
 )
@@ -24,13 +23,14 @@ from dl_api_commons.headers import (
 )
 from dl_api_commons.logging import (
     NON_TRANSITIVE_LOGGING_CTX_KEYS,
-    log_request_end_extended,
+    RequestLogHelper,
 )
 from dl_app_tools.log.context import put_to_context
 from dl_constants.api_constants import DLHeadersCommon
 
 
 LOGGER = logging.getLogger(__name__)
+LOG_HELPER = RequestLogHelper(logger=LOGGER)
 
 
 @attr.s
@@ -54,9 +54,13 @@ class RequestIDService:
         else:
             current_req_id = incoming_req_id or request_id_generator(self._request_id_app_prefix)
 
+        trace_id_header = DLHeadersCommon.UBER_TRACE_ID
+        trace_id = request.headers[trace_id_header].split(":")[0] if trace_id_header in request.headers else None
+
         req_log_ctx_ctrl = RequestLoggingContextControllerMiddleWare.get_for_request()
         req_log_ctx_ctrl.put_to_context("request_id", current_req_id)
         req_log_ctx_ctrl.put_to_context("parent_request_id", incoming_req_id)
+        req_log_ctx_ctrl.put_to_context("trace_id", trace_id)
 
         # Updating logging context with outer values
         logging_ctx_header = request.headers.get(self._logging_ctx_header_name)
@@ -72,8 +76,7 @@ class RequestIDService:
             except Exception:  # noqa
                 LOGGER.exception("Can not parse logging context: %s", logging_ctx_header)
 
-        log_request_start(
-            logger=LOGGER,
+        LOG_HELPER.log_request_start(
             method=request.method,
             full_path=request.full_path,
             headers=request.headers.items(),
@@ -120,8 +123,7 @@ def _post_log_request_id(response: flask.Response) -> flask.Response:
             user_name = rci.user_name
             user_id = rci.user_id
 
-        log_request_end_extended(
-            logger=LOGGER,
+        LOG_HELPER.log_request_end_extended(
             request_method=request.method,
             request_path=request.full_path,
             request_headers=dict(request.headers),

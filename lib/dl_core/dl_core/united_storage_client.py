@@ -24,10 +24,11 @@ from requests.exceptions import HTTPError
 
 from dl_api_commons.base_models import (
     AuthData,
+    AuthTarget,
     TenantCommon,
     TenantDef,
 )
-from dl_api_commons.logging import mask_sensitive_fields_by_name_in_json_recursive
+from dl_api_commons.logging import RequestObfuscator
 from dl_api_commons.tracing import get_current_tracing_headers
 from dl_api_commons.utils import (
     get_retriable_requests_session,
@@ -104,12 +105,12 @@ class USAuthContextRegular(USAuthContextBase):
 
         return {
             **(self.tenant.get_outbound_tenancy_headers() if include_tenancy else {}),
-            **self.auth_data.get_headers(),
+            **self.auth_data.get_headers(AuthTarget.UNITED_STORAGE),
             **{name: val for name, val in flags.items() if val is not None},
         }
 
     def get_outbound_cookies(self) -> dict[DLCookies, str]:
-        return self.auth_data.get_cookies()
+        return self.auth_data.get_cookies(AuthTarget.UNITED_STORAGE)
 
 
 @attr.s(frozen=True)
@@ -176,11 +177,11 @@ class USAuthContextEmbed(USAuthContextBase):
     def get_outbound_headers(self, include_tenancy: bool = True) -> dict[DLHeaders, str]:
         return {
             **(self.tenant.get_outbound_tenancy_headers() if include_tenancy else {}),
-            **self.auth_data.get_headers(),
+            **self.auth_data.get_headers(AuthTarget.UNITED_STORAGE),
         }
 
     def get_outbound_cookies(self) -> dict[DLCookies, str]:
-        return self.auth_data.get_cookies()
+        return self.auth_data.get_cookies(AuthTarget.UNITED_STORAGE)
 
 
 # noinspection PyCallByClass
@@ -358,7 +359,7 @@ class UStorageClientBase:
                 "US error response on %s %s (%s): %s, folder_id: %s, org_id: %s, req_id: %s",
                 response.request.method,
                 response.request.relative_url,
-                mask_sensitive_fields_by_name_in_json_recursive(response.request.json),
+                RequestObfuscator().mask_sensitive_fields_by_name_in_json_recursive(response.request.json),
                 response.content,
                 # TODO: BI-4918 move to local injection and reuse bi_api_commons_ya_cloud.constants.DLHeadersYC
                 response.request.get_header(DLHeadersCommon.FOLDER_ID.value),
