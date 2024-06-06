@@ -1,5 +1,9 @@
 # datalens-backend
 
+Используется для взаимодействия с [datalens-ui](https://github.com/akrasnov87/datalens-ui) и [datalens-us](https://github.com/akrasnov87/datalens-us).
+
+Обновлён для применения атворизации [datalens-auth](https://github.com/akrasnov87/datalens-auth) 
+
 ## Сборка
 
 Перед сборкой выполнить установку компонета [task](https://taskfile.dev/usage/)
@@ -17,15 +21,6 @@ task e2e:docker-build
 
 По умолчанию контейнеры создаются без номера версии (тега), чтобы исправить это выполнить `docker tag <image> <newName>/<repoName>:<tagName>`
 
-### С официального сайта
-
-<pre>
-git clone git@github.com:datalens-tech/datalens-backend.git && cd datalens-backend
-
-./docker_build/run-project-bake dl_control_api --set "dl_control_api.tags=datalens-control-api:local"
-./docker_build/run-project-bake dl_data_api --set "dl_data_api.tags=datalens-data-api:local"
-</pre>
-
 <pre>
 # изменить версию
 docker tag data-api:test akrasnov87/datalens-data-api:0.2058.0
@@ -34,6 +29,15 @@ docker tag control-api:test akrasnov87/datalens-control-api:0.2058.0
 </pre>
 
 Актуальные версии контейнеров [тут](https://github.com/datalens-tech/datalens/blob/main/versions-config.json)
+
+### С официального сайта
+
+<pre>
+git clone git@github.com:datalens-tech/datalens-backend.git && cd datalens-backend
+
+./docker_build/run-project-bake dl_control_api --set "dl_control_api.tags=datalens-control-api:local"
+./docker_build/run-project-bake dl_data_api --set "dl_data_api.tags=datalens-data-api:local"
+</pre>
 
 ## Получение последних изменений
 
