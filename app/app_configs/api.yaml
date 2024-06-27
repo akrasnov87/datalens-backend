@@ -32,10 +32,12 @@ CORS_ALLOWED_HEADERS:
 - X-CSRF-Token
 - X-DL-Allow-Superuser
 - X-DL-Sudo
+- X-Rpc-Authorization
 CORS_ALLOWED_ORIGINS:
 - '*'
 CORS_EXPOSE_HEADERS:
 - X-Request-ID
+- X-Rpc-Authorization
 CSRF_HEADER_NAME: X-CSRF-Token
 CSRF_METHODS:
 - POST
