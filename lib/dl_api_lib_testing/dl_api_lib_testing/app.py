@@ -37,11 +37,6 @@ from dl_constants.enums import (
 )
 from dl_core.aio.middlewares.services_registry import services_registry_middleware
 from dl_core.aio.middlewares.us_manager import service_us_manager_middleware
-from dl_core.rls import (
-    RLS_FAILED_USER_NAME_PREFIX,
-    BaseSubjectResolver,
-    RLSSubject,
-)
 from dl_core.services_registry import ServicesRegistry
 from dl_core.services_registry.entity_checker import EntityUsageChecker
 from dl_core.services_registry.env_manager_factory_base import EnvManagerFactory
@@ -53,6 +48,11 @@ from dl_core.services_registry.rqe_caches import RQECachesSetting
 from dl_core.utils import FutureRef
 from dl_core_testing.app_test_workarounds import TestEnvManagerFactory
 from dl_core_testing.fixture_server_runner import WSGIRunner
+from dl_rls.models import (
+    RLS_FAILED_USER_NAME_PREFIX,
+    RLSSubject,
+)
+from dl_rls.subject_resolver import BaseSubjectResolver
 from dl_testing.utils import get_root_certificates
 
 
@@ -111,23 +111,25 @@ class TestingSubjectResolver(BaseSubjectResolver):
         if it's equals to '_the_tests_asyncapp_user_name_'
         """
         subjects = []
+
         for name in names:
+            subject: RLSSubject
             if name == "_the_tests_asyncapp_user_name_":
-                subjects.append(
-                    RLSSubject(
-                        subject_id="_the_tests_asyncapp_user_id_",
-                        subject_type=RLSSubjectType.user,
-                        subject_name=name,
-                    )
+                subject = RLSSubject(
+                    subject_id="_the_tests_asyncapp_user_id_",
+                    subject_type=RLSSubjectType.user,
+                    subject_name=name,
                 )
+            elif name.startswith("user"):
+                subject = RLSSubject(subject_id="", subject_type=RLSSubjectType.user, subject_name=name)
             else:
-                subjects.append(
-                    RLSSubject(
-                        subject_id="",
-                        subject_type=RLSSubjectType.user if name.startswith("user") else RLSSubjectType.notfound,
-                        subject_name=name if name.startswith("user") else RLS_FAILED_USER_NAME_PREFIX + name,
-                    )
+                subject = RLSSubject(
+                    subject_id="",
+                    subject_type=RLSSubjectType.notfound,
+                    subject_name=RLS_FAILED_USER_NAME_PREFIX + name,
                 )
+            subjects.append(subject)
+
         return subjects
 
 

@@ -1,6 +1,13 @@
-from typing import Optional
+from typing import (
+    Any,
+    Optional,
+)
 
 import attr
+from dynamic_enum import (
+    AutoEnumValue,
+    DynamicEnum,
+)
 
 from dl_configs.settings_loaders.settings_obj_base import SettingsBase
 from dl_constants.enums import ConnectorAvailability
@@ -15,6 +22,18 @@ class TranslatableSettings(SettingsBase):
 @attr.s(kw_only=True)
 class ConnectorBaseSettings(SettingsBase):
     pass
+
+
+class ConnectorIconSrcType(DynamicEnum):
+    data = AutoEnumValue()
+    url = AutoEnumValue()
+
+
+@attr.s(kw_only=True)
+class ConnectorIconSrc:
+    icon_type: ConnectorIconSrcType = attr.ib(default=ConnectorIconSrcType.data)
+    url_prefix: Optional[str] = attr.ib(default=None)
+    data: Optional[str] = attr.ib(default=None)
 
 
 @attr.s(kw_only=True)
@@ -42,3 +61,4 @@ class ConnectorAvailabilityConfigSettings(SettingsBase):
     sections: list[SectionSettings] = attr.ib(factory=list)
 
     visible_connectors: set[str] = attr.ib(factory=set)
+    icon_src: ConnectorIconSrc = attr.ib(default=ConnectorIconSrc())

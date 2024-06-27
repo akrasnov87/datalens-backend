@@ -7,14 +7,6 @@ class FeatureNotAvailable(DLBaseException):
     err_code = DLBaseException.err_code + ["FEATURE_NOT_AVAILABLE"]
 
 
-class RLSError(DLBaseException):
-    err_code = DLBaseException.err_code + ["RLS"]
-
-
-class RLSConfigParsingError(RLSError):
-    err_code = RLSError.err_code + ["PARSE"]
-
-
 class DatasetActionNotAllowedError(DLBaseException):
     err_code = DLBaseException.err_code + ["ACTION_NOT_ALLOWED"]
 
@@ -22,6 +14,11 @@ class DatasetActionNotAllowedError(DLBaseException):
 class UnsupportedForEntityType(DLBaseException):
     err_code = DLBaseException.err_code + ["UNSUPPORTED"]
     default_message = "This entity type does not support this operation"
+
+
+class BadConnectionType(DLBaseException):
+    err_code = DLBaseException.err_code + ["BAD_CONN_TYPE"]
+    default_message = "Invalid connection type value"
 
 
 class DatasetRevisionMismatch(DLBaseException):
@@ -46,3 +43,8 @@ class TooManyFieldsError(DLValidationError):
 class DLValidationFatal(_DLValidationResult):
     err_code = _DLValidationResult.err_code + ["FATAL"]
     default_message = "Validation encountered a fatal error."
+
+
+class ConnectorIconNotFoundException(DLBaseException):
+    default_message = "Connector icon not found"
+    err_code = ["ICON_NOT_FOUND"]

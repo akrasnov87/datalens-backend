@@ -7,15 +7,19 @@ variable DL_B_BASE_SERVER {
 }
 
 variable BASE_LINUX {
-  default = "${DL_B_BASE_SERVER}ubuntu:22.04"
+  default = "ubuntu:22.04"
 }
 
 variable DL_B_PROJECT_ROOT {
   default = ".."
 }
 
+variable DL_B_SOURCES_ROOT {
+  default = ".."
+}
+
 variable DL_B_FILE_OPS_IMG {
-  default = "${DL_B_BASE_SERVER}debian:bookworm-slim"
+  default = "debian:bookworm-slim"
 }
 
 variable DL_B_EXT_CACHED_TARGET_BASE_CI {
