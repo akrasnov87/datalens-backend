@@ -18,7 +18,33 @@ class TemplateError(Exception):
 class Request:
     url: str
     method: str
-    headers: typing.Mapping[str, str] = attr.ib(factory=dict)
+    headers: typing.Mapping[str, str] = attr.ib(factory=dict, repr=False)
+
+
+@attr.s(auto_attribs=True)
+class RequestEventKeyTemplateHeader:
+    key: str
+    regex: typing.Optional[re.Pattern] = None  # Should contain result group
+
+    def generate_value(self, headers: typing.Mapping[str, str]) -> str:
+        try:
+            value = headers[self.key]
+        except KeyError as exc:
+            raise TemplateError(f"Header {self.key} not found in request headers") from exc
+
+        if self.regex is None:
+            return value
+
+        match = self.regex.match(value)
+        if match is None:
+            raise TemplateError(f"Header {self.key} value {value} does not match regex {self.regex}")
+
+        result = match.group("result")
+
+        if result is None:
+            raise TemplateError(f"Header {self.key} value {value} does not contain result group")
+
+        return result
 
 
 @attr.s(auto_attribs=True)
@@ -51,9 +77,12 @@ class RequestEventKeyTemplateHeader:
 class RequestEventKeyTemplate:
     key: str
     headers: tuple[RequestEventKeyTemplateHeader, ...]
+    header_value_separator: str = "%%"
 
     def generate_key(self, request: Request) -> str:
-        headers_values = ",".join(header.generate_value(request.headers) for header in self.headers)
+        headers_values = self.header_value_separator.join(
+            header.generate_value(request.headers) for header in self.headers
+        )
 
         return f"{self.key}:{headers_values}"
 
@@ -86,7 +115,7 @@ class SyncRequestRateLimiter:
     _patterns: list[RequestPattern] = attr.ib(factory=list)
 
     def check_limit(self, request: Request) -> bool:
-        logger.info("Checking rate limit for Request(%s)", Request)
+        logger.info("Checking rate limit for Request(%s)", request)
         for pattern in self._patterns:
             if not pattern.matches(request):
                 continue
@@ -95,7 +124,7 @@ class SyncRequestRateLimiter:
             try:
                 event_key = pattern.event_key_template.generate_key(request)
             except TemplateError as exc:
-                logger.warning("Template error for request", exc_info=exc)
+                logger.info("Template error for request", exc_info=exc)
                 continue
 
             result = self._event_limiter.check_limit(
@@ -116,7 +145,7 @@ class AsyncRequestRateLimiter:
     _patterns: list[RequestPattern] = attr.ib(factory=list)
 
     async def check_limit(self, request: Request) -> bool:
-        logger.info("Checking rate limit for Request(%s)", Request)
+        logger.info("Checking rate limit for Request(%s)", request)
         for pattern in self._patterns:
             if not pattern.matches(request):
                 continue
@@ -125,7 +154,7 @@ class AsyncRequestRateLimiter:
             try:
                 event_key = pattern.event_key_template.generate_key(request)
             except TemplateError as exc:
-                logger.warning("Template error for request", exc_info=exc)
+                logger.info("Template error for request", exc_info=exc)
                 continue
 
             result = await self._event_limiter.check_limit(

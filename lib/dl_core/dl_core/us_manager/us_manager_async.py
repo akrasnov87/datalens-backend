@@ -132,16 +132,16 @@ class AsyncUSManager(USManagerBase):
 
         return obj
 
-    async def save(self, entry: USEntry) -> None:
-        self.get_lifecycle_manager(entry=entry).pre_save_hook()
+    async def save(self, entry: USEntry, update_revision: Optional[bool] = None) -> None:
+        lifecycle_manager = self.get_lifecycle_manager(entry=entry)
+        lifecycle_manager.pre_save_hook()
 
         save_params = self._get_entry_save_params(entry)
         us_scope = save_params.pop("scope")
         us_type = save_params.pop("type")
         assert "data" in save_params and "unversioned_data" in save_params
 
-        # noinspection PyProtectedMember
-        if not entry._stored_in_db:
+        if not entry.stored_in_db:
             entry_loc = entry.entry_key
             assert entry_loc is not None, "Entry location must be set before saving US entry"
 
@@ -152,9 +152,11 @@ class AsyncUSManager(USManagerBase):
                 **save_params,
             )
             entry.uuid = resp["entryId"]
-            entry._stored_in_db = True
+            entry.stored_in_db = True
         else:
             # noinspection PyProtectedMember
+            save_params["update_revision"] = update_revision
+            assert entry.uuid is not None
             resp = await self._us_client.update_entry(entry.uuid, lock=entry._lock, **save_params)
 
         entry._us_resp = resp
@@ -168,7 +170,7 @@ class AsyncUSManager(USManagerBase):
 
         # noinspection PyProtectedMember
         await self._us_client.delete_entry(entry.uuid, lock=entry._lock)
-        entry._stored_in_db = False
+        entry.stored_in_db = False
 
         # noinspection PyBroadException
         try:

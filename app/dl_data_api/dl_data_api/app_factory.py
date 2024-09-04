@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import ssl
 from typing import Optional
 
 from dl_api_commons.aio.middlewares.auth_trust_middleware import auth_trust_middleware
@@ -19,7 +20,7 @@ from dl_api_lib.connector_availability.base import ConnectorAvailabilityConfig
 from dl_cache_engine.primitives import CacheTTLConfig
 from dl_configs.connectors_settings import ConnectorSettingsBase
 from dl_configs.enums import RequiredService
-from dl_configs.utils import get_root_certificates
+from dl_configs.utils import get_multiple_root_certificates
 from dl_constants.enums import ConnectionType
 from dl_core.aio.middlewares.services_registry import services_registry_middleware
 from dl_core.aio.middlewares.us_manager import (
@@ -87,7 +88,10 @@ class StandaloneDataApiAppFactory(DataApiAppFactory[DataApiAppSettingsOS], Stand
         sr_middleware_list: list[AIOHTTPMiddleware]
         usm_middleware_list: list[AIOHTTPMiddleware]
 
-        ca_data = get_root_certificates(path=self._settings.CA_FILE_PATH)
+        ca_data = get_multiple_root_certificates(
+            self._settings.CA_FILE_PATH,
+            *self._settings.EXTRA_CA_FILE_PATHS,
+        )
 
         conn_opts_factory = ConnOptionsMutatorsFactory()
         sr_factory = self.get_sr_factory(
@@ -159,8 +163,15 @@ class StandaloneDataApiAppFactory(DataApiAppFactory[DataApiAppSettingsOS], Stand
 
         import dl_zitadel
 
+        ca_data = get_multiple_root_certificates(
+            self._settings.CA_FILE_PATH,
+            *self._settings.EXTRA_CA_FILE_PATHS,
+        )
+
         zitadel_client = dl_zitadel.ZitadelAsyncClient(
-            base_client=httpx.AsyncClient(),
+            base_client=httpx.AsyncClient(
+                verify=ssl.create_default_context(cadata=ca_data.decode("ascii")),
+            ),
             base_url=self._settings.AUTH.BASE_URL,
             project_id=self._settings.AUTH.PROJECT_ID,
             client_id=self._settings.AUTH.CLIENT_ID,

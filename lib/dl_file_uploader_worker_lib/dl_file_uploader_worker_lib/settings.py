@@ -2,11 +2,14 @@ from typing import Optional
 
 import attr
 
-from dl_configs.connectors_settings import ConnectorsConfigType
+from dl_configs.settings_loaders.fallback_cfg_resolver import ObjectLikeConfig
 from dl_configs.settings_loaders.meta_definition import s_attrib
 from dl_configs.settings_loaders.settings_obj_base import SettingsBase
 from dl_configs.settings_submodels import GoogleAppSettings
-from dl_configs.utils import get_root_certificates_path
+from dl_configs.utils import (
+    get_root_certificates_path,
+    split_by_comma,
+)
 from dl_file_uploader_lib.settings import FileUploaderBaseSettings
 
 from dl_connector_bundle_chs3.chs3_base.core.settings import FileS3ConnectorSettings
@@ -25,7 +28,7 @@ class FileUploaderConnectorsSettings(SettingsBase):
     FILE: Optional[FileS3ConnectorSettings] = s_attrib("FILE", missing=None)  # type: ignore  # 2024-01-30 # TODO: Incompatible types in assignment (expression has type "Attribute[Any]", variable has type "FileS3ConnectorSettings | None")  [assignment]
 
 
-def file_uploader_connectors_settings_fallback(full_cfg: ConnectorsConfigType) -> FileUploaderConnectorsSettings:
+def file_uploader_connectors_settings_fallback(full_cfg: ObjectLikeConfig) -> FileUploaderConnectorsSettings:
     settings = file_s3_settings_fallback(full_cfg)
     return FileUploaderConnectorsSettings(**settings)
 
@@ -66,3 +69,8 @@ class FileUploaderWorkerSettings(FileUploaderBaseSettings):
     )
 
     CA_FILE_PATH: str = s_attrib("CA_FILE_PATH", missing=get_root_certificates_path())  # type: ignore  # 2024-01-24 # TODO: Incompatible types in assignment (expression has type "Attribute[Any]", variable has type "str")  [assignment]
+    EXTRA_CA_FILE_PATHS: tuple[str, ...] = s_attrib(  # type: ignore # 2024-07-29 # TODO
+        "EXTRA_CA_FILE_PATHS",
+        env_var_converter=split_by_comma,
+        missing_factory=tuple,
+    )

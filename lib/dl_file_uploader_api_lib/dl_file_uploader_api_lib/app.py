@@ -11,6 +11,7 @@ import attr
 from dl_api_commons.aio.middlewares.commit_rci import commit_rci_middleware
 from dl_api_commons.aio.middlewares.cors import cors_middleware
 from dl_api_commons.aio.middlewares.csrf import CSRFMiddleware
+from dl_api_commons.aio.middlewares.master_key import master_key_middleware
 from dl_api_commons.aio.middlewares.request_bootstrap import RequestBootstrap
 from dl_api_commons.aio.middlewares.request_id import RequestId
 from dl_api_commons.aio.middlewares.tracing import TracingService
@@ -21,7 +22,6 @@ from dl_api_commons.sentry_config import (
 )
 from dl_constants.api_constants import DLHeadersCommon
 from dl_core.aio.metrics_view import MetricsView
-from dl_core.aio.middlewares.master_key import master_key_middleware
 from dl_core.aio.ping_view import PingView
 from dl_core.aio.web_app_services.s3 import S3Service
 from dl_core.loader import (
@@ -100,7 +100,7 @@ class FileUploaderApiAppFactory(Generic[_TSettings], abc.ABC):
             self.CSRF_MIDDLEWARE_CLS(
                 csrf_header_name=self._settings.CSRF.HEADER_NAME,
                 csrf_time_limit=self._settings.CSRF.TIME_LIMIT,
-                csrf_secret=self._settings.CSRF.SECRET,
+                csrf_secrets=self._settings.CSRF.SECRET,
                 csrf_methods=self._settings.CSRF.METHODS,
             ).middleware,
             # TODO FIX: Add when json_body_middleware will be moved to dl_core

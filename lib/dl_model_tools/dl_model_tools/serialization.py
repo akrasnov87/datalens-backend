@@ -2,33 +2,26 @@
 RDL JSON - Redis DataLens JSON
 
 Serialization with support for custom objects like ``date`` & ``datetime``.
-
->>> data = dict(some_dt=datetime.datetime(2019, 6, 17, 7, 1, 41, 79585, tzinfo=datetime.timezone(datetime.timedelta(seconds=-1320))))
->>> dumped = json.dumps(data, cls=RedisDatalensDataJSONEncoder)
->>> json.loads(dumped)['some_dt']
-{'__dl_type__': 'datetime', 'value': [[2019, 6, 17, 7, 1, 41, 79585], -1320.0]}
->>> json.loads(dumped, cls=RedisDatalensDataJSONDecoder)['some_dt']
-datetime.datetime(2019, 6, 17, 7, 1, 41, 79585, tzinfo=datetime.timezone(datetime.timedelta(days=-1, seconds=85080)))
->>> # ^ negative timedeltas' repr is actually this weird.
->>> tricky_data = dict(normal=data, abnormal=json.loads(dumped))
->>> tricky_data_dumped = json.dumps(tricky_data, cls=RedisDatalensDataJSONEncoder)
->>> tricky_roundtrip = json.loads(tricky_data_dumped, cls=RedisDatalensDataJSONDecoder)
->>> # WARNING: not currently viable: `assert tricky_roundtrip == tricky_data, tricky_roundtrip`
 """
 
 from __future__ import annotations
 
 import abc
+import base64
 import datetime
 import decimal
+import ipaddress
 import json
 from typing import (
     Any,
+    Callable,
     ClassVar,
     Generic,
+    Optional,
     Type,
     TypeVar,
     Union,
+    get_args,
 )
 import uuid
 
@@ -36,14 +29,21 @@ from dl_constants.types import (
     TJSONExt,
     TJSONLike,
 )
+from dl_type_transformer.native_type import GenericNativeType
+from dl_type_transformer.native_type_schema import OneOfNativeTypeSchema
 
 
 _TS_TV = TypeVar("_TS_TV")
 
 
 class TypeSerializer(Generic[_TS_TV]):
-    typeobj: ClassVar[Type[_TS_TV]]  # type: ignore  # TODO: fix
     typename: ClassVar[str]
+
+    @classmethod
+    def typeobj(cls) -> Type[_TS_TV]:
+        # https://github.com/python/typeshed/issues/7811#issuecomment-1120840824
+        # TODO: replace with types.get_original_bases after switching to Python 3.12
+        return get_args(cls.__orig_bases__[0])[0]  # type: ignore
 
     @staticmethod
     @abc.abstractmethod
@@ -57,7 +57,6 @@ class TypeSerializer(Generic[_TS_TV]):
 
 
 class DateSerializer(TypeSerializer[datetime.date]):
-    typeobj = datetime.date
     typename = "date"
 
     @staticmethod
@@ -71,14 +70,12 @@ class DateSerializer(TypeSerializer[datetime.date]):
 
 
 class DatetimeSerializer(TypeSerializer[datetime.datetime]):
-    typeobj = datetime.datetime
     typename = "datetime"
 
     @staticmethod
     def to_jsonable(obj: datetime.datetime) -> TJSONLike:
-        tzinfo = (
-            obj.tzinfo.utcoffset(obj).total_seconds() if obj.tzinfo is not None else None  # type: ignore  # TODO: fix
-        )
+        utcoffset = obj.utcoffset()
+        tzinfo = utcoffset.total_seconds() if utcoffset is not None else None
         return (
             [obj.year, obj.month, obj.day, obj.hour, obj.minute, obj.second, obj.microsecond],
             tzinfo,
@@ -89,42 +86,40 @@ class DatetimeSerializer(TypeSerializer[datetime.datetime]):
         assert isinstance(value, (list, tuple))
         assert len(value) == 2
         parts, offset_sec = value
-        assert len(parts) == 7  # type: ignore  # TODO: fix
-        tzinfo = (
-            datetime.timezone(datetime.timedelta(seconds=offset_sec))  # type: ignore  # TODO: fix
-            if offset_sec is not None
-            else None
-        )
-        return datetime.datetime(*parts, tzinfo=tzinfo)  # type: ignore  # TODO: fix
+        assert isinstance(parts, (list, tuple))
+        assert len(parts) == 7
+        assert all(isinstance(elem, int) for elem in parts)
+
+        assert offset_sec is None or isinstance(offset_sec, float)
+        tzinfo = datetime.timezone(datetime.timedelta(seconds=offset_sec)) if offset_sec is not None else None
+        return datetime.datetime(*parts, tzinfo=tzinfo)  # type: ignore  # https://github.com/python/mypy/issues/6799
 
 
 class TimeSerializer(TypeSerializer[datetime.time]):
-    typeobj = datetime.time
     typename = "time"
 
     @staticmethod
     def to_jsonable(obj: datetime.time) -> TJSONLike:
         # Not expecting this to be valid for non-constant time tzinfos.
-        tzinfo = (
-            obj.tzinfo.utcoffset(datetime.datetime(1970, 1, 1)).total_seconds()  # type: ignore  # TODO: fix
-            if obj.tzinfo is not None
-            else None
-        )
-        return ([obj.hour, obj.minute, obj.second, obj.microsecond], tzinfo)
+        utcoffset = obj.tzinfo.utcoffset(datetime.datetime(1970, 1, 1)) if obj.tzinfo is not None else None
+        tzinfo = utcoffset.total_seconds() if utcoffset is not None else None
+        return [obj.hour, obj.minute, obj.second, obj.microsecond], tzinfo
 
     @staticmethod
     def from_jsonable(value: TJSONLike) -> datetime.time:
         assert isinstance(value, (list, tuple))
         assert len(value) == 2, value
         parts, offset_sec = value
-        assert len(parts) == 4, parts  # type: ignore  # TODO: fix
-        assert isinstance(offset_sec, (int, float)), offset_sec
+        assert isinstance(parts, (list, tuple))
+        assert len(parts) == 4, parts
+        assert all(isinstance(elem, int) for elem in parts)
+
+        assert offset_sec is None or isinstance(offset_sec, (int, float)), offset_sec
         tzinfo = datetime.timezone(datetime.timedelta(seconds=offset_sec)) if offset_sec is not None else None
-        return datetime.time(*parts, tzinfo=tzinfo)  # type: ignore  # TODO: fix
+        return datetime.time(*parts, tzinfo=tzinfo)  # type: ignore  # https://github.com/python/mypy/issues/6799
 
 
 class TimedeltaSerializer(TypeSerializer[datetime.timedelta]):
-    typeobj = datetime.timedelta
     typename = "timedelta"
 
     @staticmethod
@@ -138,7 +133,6 @@ class TimedeltaSerializer(TypeSerializer[datetime.timedelta]):
 
 
 class DecimalSerializer(TypeSerializer[decimal.Decimal]):
-    typeobj = decimal.Decimal
     typename = "decimal"
 
     @staticmethod
@@ -152,7 +146,6 @@ class DecimalSerializer(TypeSerializer[decimal.Decimal]):
 
 
 class UUIDSerializer(TypeSerializer[uuid.UUID]):
-    typeobj = uuid.UUID
     typename = "uuid"
 
     @staticmethod
@@ -165,59 +158,178 @@ class UUIDSerializer(TypeSerializer[uuid.UUID]):
         return uuid.UUID(value)
 
 
-COMMON_SERIALIZERS = [
+class BytesSerializer(TypeSerializer[bytes]):
+    typename = "bytes"
+
+    @staticmethod
+    def to_jsonable(value: bytes) -> TJSONLike:
+        return base64.b64encode(value).decode("ascii")
+
+    @staticmethod
+    def from_jsonable(value: TJSONLike) -> bytes:
+        assert isinstance(value, str)
+        return base64.b64decode(value, validate=True)
+
+
+class IPv4AddressSerializer(TypeSerializer[ipaddress.IPv4Address]):
+    typename = "ipv4_address"
+
+    @staticmethod
+    def to_jsonable(value: ipaddress.IPv4Address) -> TJSONLike:
+        return str(value)
+
+    @staticmethod
+    def from_jsonable(value: TJSONLike) -> ipaddress.IPv4Address:
+        assert isinstance(value, str)
+        return ipaddress.IPv4Address(value)
+
+
+class IPv6AddressSerializer(TypeSerializer[ipaddress.IPv6Address]):
+    typename = "ipv6_address"
+
+    @staticmethod
+    def to_jsonable(value: ipaddress.IPv6Address) -> TJSONLike:
+        return str(value)
+
+    @staticmethod
+    def from_jsonable(value: TJSONLike) -> ipaddress.IPv6Address:
+        assert isinstance(value, str)
+        return ipaddress.IPv6Address(value)
+
+
+class IPv4NetworkSerializer(TypeSerializer[ipaddress.IPv4Network]):
+    typename = "ipv4_network"
+
+    @staticmethod
+    def to_jsonable(value: ipaddress.IPv4Network) -> TJSONLike:
+        return str(value)
+
+    @staticmethod
+    def from_jsonable(value: TJSONLike) -> ipaddress.IPv4Network:
+        assert isinstance(value, str)
+        return ipaddress.IPv4Network(value)
+
+
+class IPv6NetworkSerializer(TypeSerializer[ipaddress.IPv6Network]):
+    typename = "ipv6_network"
+
+    @staticmethod
+    def to_jsonable(value: ipaddress.IPv6Network) -> TJSONLike:
+        return str(value)
+
+    @staticmethod
+    def from_jsonable(value: TJSONLike) -> ipaddress.IPv6Network:
+        assert isinstance(value, str)
+        return ipaddress.IPv6Network(value)
+
+
+class IPv4InterfaceSerializer(TypeSerializer[ipaddress.IPv4Interface]):
+    typename = "ipv4_interface"
+
+    @staticmethod
+    def to_jsonable(value: ipaddress.IPv4Interface) -> TJSONLike:
+        return str(value)
+
+    @staticmethod
+    def from_jsonable(value: TJSONLike) -> ipaddress.IPv4Interface:
+        assert isinstance(value, str)
+        return ipaddress.IPv4Interface(value)
+
+
+class IPv6InterfaceSerializer(TypeSerializer[ipaddress.IPv6Interface]):
+    typename = "ipv6_interface"
+
+    @staticmethod
+    def to_jsonable(value: ipaddress.IPv6Interface) -> TJSONLike:
+        return str(value)
+
+    @staticmethod
+    def from_jsonable(value: TJSONLike) -> ipaddress.IPv6Interface:
+        assert isinstance(value, str)
+        return ipaddress.IPv6Interface(value)
+
+
+class NativeTypeSerializer(TypeSerializer[GenericNativeType]):
+    typename = "dl_native_type"
+
+    schema = OneOfNativeTypeSchema()
+
+    @staticmethod
+    def to_jsonable(value: GenericNativeType) -> TJSONLike:
+        return NativeTypeSerializer.schema.dump(value)
+
+    @staticmethod
+    def from_jsonable(value: TJSONLike) -> GenericNativeType:
+        assert isinstance(value, dict)
+        return NativeTypeSerializer.schema.load(value)
+
+
+COMMON_SERIALIZERS: list[Type[TypeSerializer]] = [
     DateSerializer,
     DatetimeSerializer,
     TimeSerializer,
     TimedeltaSerializer,
     DecimalSerializer,
     UUIDSerializer,
+    BytesSerializer,
+    IPv4AddressSerializer,
+    IPv6AddressSerializer,
+    IPv4NetworkSerializer,
+    IPv6NetworkSerializer,
+    IPv4InterfaceSerializer,
+    IPv6InterfaceSerializer,
+    NativeTypeSerializer,
 ]
-assert len(set(cls.typename for cls in COMMON_SERIALIZERS)) == len(COMMON_SERIALIZERS), "uniqueness check"  # type: ignore  # 2024-01-24 # TODO: "type[object]" has no attribute "typename"  [attr-defined]
+assert len(set(cls.typename for cls in COMMON_SERIALIZERS)) == len(COMMON_SERIALIZERS), "uniqueness check"
 
 
 class RedisDatalensDataJSONEncoder(json.JSONEncoder):
-    JSONABLERS_MAP = {cls.typeobj: cls for cls in COMMON_SERIALIZERS}  # type: ignore  # 2024-01-24 # TODO: "type[object]" has no attribute "typeobj"  [attr-defined]
+    JSONABLERS_MAP = {cls.typeobj(): cls for cls in COMMON_SERIALIZERS}
 
-    def default(self, obj):  # type: ignore  # TODO: fix
+    def default(self, obj: Any) -> Any:
         typeobj = type(obj)
-        preprocessor = self.JSONABLERS_MAP.get(typeobj)
+        preprocessor: Optional[Type[TypeSerializer]]
+        if issubclass(typeobj, GenericNativeType):
+            preprocessor = NativeTypeSerializer
+        else:
+            preprocessor = self.JSONABLERS_MAP.get(typeobj)
         if preprocessor is not None:
-            return dict(__dl_type__=preprocessor.typename, value=preprocessor.to_jsonable(obj))  # type: ignore  # 2024-01-24 # TODO: "type[object]" has no attribute "typename"  [attr-defined]
+            return dict(__dl_type__=preprocessor.typename, value=preprocessor.to_jsonable(obj))
 
         return super().default(obj)  # effectively, raises `TypeError`
 
 
 class RedisDatalensDataJSONDecoder(json.JSONDecoder):
-    DEJSONABLERS_MAP = {cls.typename: cls for cls in COMMON_SERIALIZERS}  # type: ignore  # 2024-01-24 # TODO: "type[object]" has no attribute "typename"  [attr-defined]
-    # Transition
-    COMPAT_CONVERTERS_MAP = {
-        "date": lambda o: datetime.date(*[int(p) for p in o["value"].split("-")]),
-        "datetime": lambda o: datetime.datetime(  # type: ignore  # TODO: fix
-            *o["parts"],
-            tzinfo=None if o["offset_sec"] is None else datetime.timezone(datetime.timedelta(seconds=o["offset_sec"])),
-        ),
-    }
+    DEJSONABLERS_MAP = {cls.typename: cls for cls in COMMON_SERIALIZERS}
 
-    def __init__(self, *args, **kwargs):  # type: ignore  # TODO: fix
-        super().__init__(*args, object_hook=self.object_hook, **kwargs)
+    def __init__(
+        self,
+        *,
+        object_hook: Optional[Callable[[dict[str, Any]], Any]] = None,
+        parse_float: Optional[Callable[[str], Any]] = None,
+        parse_int: Optional[Callable[[str], Any]] = None,
+        parse_constant: Optional[Callable[[str], Any]] = None,
+        strict: bool = True,
+        object_pairs_hook: Optional[Callable[[list[tuple[str, Any]]], Any]] = None,
+    ) -> None:
+        assert object_hook is None
+        super().__init__(
+            object_hook=self.object_hook,
+            parse_float=parse_float,
+            parse_int=parse_int,
+            parse_constant=parse_constant,
+            strict=strict,
+            object_pairs_hook=object_pairs_hook,
+        )
 
-    def object_hook(self, obj):  # type: ignore  # TODO: fix
+    def object_hook(self, obj: dict[str, Any]) -> Any:
         # WARNING: this might collide with some unexpected objects that have a `__dl_type__` key.
         # A correct roundtrip way would be to wrap all objects with a `__dl_type__` key into another layer.
         dl_type = obj.get("__dl_type__")
         if dl_type is not None:
             postprocessor = self.DEJSONABLERS_MAP.get(dl_type)
             if postprocessor is not None:
-                return postprocessor.from_jsonable(obj["value"])  # type: ignore  # 2024-01-24 # TODO: "type[object]" has no attribute "from_jsonable"  [attr-defined]
-
-        # Transition
-        compat_dl_type = obj.get("dl_type")
-        if compat_dl_type is not None:
-            compat_converter = self.COMPAT_CONVERTERS_MAP.get(compat_dl_type)
-            if compat_converter is not None:
-                return compat_converter(obj)
-
+                return postprocessor.from_jsonable(obj["value"])
         return obj
 
 
@@ -265,7 +377,7 @@ class CacheMetadataSerialization:
     >>> full_data = CacheMetadataSerialization.serialize(metadata, data)
     >>> ser_obj = CacheMetadataSerialization(full_data)
     >>> assert ser_obj.metadata == metadata
-    >>> assert set_obj.data_bytes == data
+    >>> assert ser_obj.data_bytes == data
     """
 
     _sep = b"\n"

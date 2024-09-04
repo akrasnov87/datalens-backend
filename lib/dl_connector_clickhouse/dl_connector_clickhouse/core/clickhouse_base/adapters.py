@@ -60,8 +60,9 @@ from dl_core.connection_models import (
 )
 from dl_core.connectors.base.error_transformer import DBExcKWArgs
 from dl_core.connectors.ssl_common.adapter import BaseSSLCertAdapter
-from dl_core.db.conversion_base import get_type_transformer
-from dl_core.db.native_type import (
+from dl_dashsql.formatting.placeholder_dbapi import DBAPIQueryFormatterFactory
+from dl_dashsql.registry import get_dash_sql_param_literalizer
+from dl_type_transformer.native_type import (
     ClickHouseDateTime64NativeType,
     ClickHouseDateTime64WithTZNativeType,
     ClickHouseDateTimeWithTZNativeType,
@@ -69,8 +70,7 @@ from dl_core.db.native_type import (
     GenericNativeType,
     norm_native_type,
 )
-from dl_dashsql.formatting.placeholder_dbapi import DBAPIQueryFormatterFactory
-from dl_dashsql.registry import get_dash_sql_param_literalizer
+from dl_type_transformer.type_transformer import get_type_transformer
 from dl_utils.utils import make_url
 
 from dl_connector_clickhouse.core.clickhouse_base.ch_commons import (
@@ -87,10 +87,7 @@ if TYPE_CHECKING:
     from dl_core.connection_executors.models.scoped_rci import DBAdapterScopedRCI
     from dl_core.connection_models.common_models import SchemaIdent
 
-    from dl_connector_clickhouse.core.clickhouse_base.target_dto import (  # noqa: F401
-        BaseClickHouseConnTargetDTO,
-        ClickHouseConnTargetDTO,
-    )
+    from dl_connector_clickhouse.core.clickhouse_base.target_dto import BaseClickHouseConnTargetDTO
 
 LOGGER = logging.getLogger(__name__)
 
@@ -145,8 +142,6 @@ class BaseClickHouseAdapter(BaseClassicAdapter["BaseClickHouseConnTargetDTO"], B
         return get_ch_settings(
             max_execution_time=self._target_dto.max_execution_time,
             read_only_level=None,
-            insert_quorum=self._target_dto.insert_quorum,
-            insert_quorum_timeout=self._target_dto.insert_quorum_timeout,
             output_format_json_quote_denormals=1,
         )
 
@@ -413,9 +408,6 @@ class BaseAsyncClickHouseAdapter(AiohttpDBAdapter):
             **get_ch_settings(
                 read_only_level=read_only_level,
                 max_execution_time=self._target_dto.max_execution_time,
-                # doesn't matter until materializer uses async ch adapter
-                insert_quorum=self._target_dto.insert_quorum,
-                insert_quorum_timeout=self._target_dto.insert_quorum_timeout,
             ),
         )
 

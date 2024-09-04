@@ -5,7 +5,6 @@ import collections
 import logging
 from typing import (
     TYPE_CHECKING,
-    Any,
     Callable,
     Optional,
 )
@@ -34,12 +33,12 @@ from dl_core.db import (
     SchemaColumn,
     SchemaInfo,
 )
-from dl_core.db.native_type import ClickHouseNativeType
 from dl_sqlalchemy_chyt import (
     CHYTTablesConcat,
     CHYTTablesRange,
     CHYTTableSubselect,
 )
+from dl_type_transformer.native_type import ClickHouseNativeType
 
 from dl_connector_chyt.core.constants import (
     CONNECTION_TYPE_CHYT,

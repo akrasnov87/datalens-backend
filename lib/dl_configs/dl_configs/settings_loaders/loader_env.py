@@ -11,7 +11,6 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
     Optional,
     Type,
     TypeVar,
@@ -24,7 +23,6 @@ import attr
 import typeguard
 
 from dl_configs.connectors_settings import (
-    ConnectorsConfigType,
     ConnectorSettingsBase,
     SettingsFallbackType,
 )
@@ -37,6 +35,7 @@ from dl_configs.settings_loaders.env_remap import remap_env
 from dl_configs.settings_loaders.exc import SettingsLoadingException
 from dl_configs.settings_loaders.fallback_cfg_resolver import (
     FallbackConfigResolver,
+    ObjectLikeConfig,
     YamlFileConfigResolver,
 )
 from dl_configs.settings_loaders.meta_definition import (
@@ -690,13 +689,12 @@ def load_settings_from_env_with_fallback(
 def load_connectors_settings_from_env_with_fallback(
     settings_registry: dict[ConnectionType, Type[ConnectorSettingsBase]],
     fallbacks: dict[ConnectionType, SettingsFallbackType],
-    whitelist: Optional[Collection[ConnectionType]] = None,
     env: Optional[SDict] = None,
     fallback_cfg_resolver: Optional[FallbackConfigResolver] = None,
 ) -> dict[ConnectionType, ConnectorSettingsBase]:
-    settings_class = generate_connectors_settings_class(settings_registry, whitelist)
+    settings_class = generate_connectors_settings_class(settings_registry)
 
-    def connectors_fallback(full_cfg: ConnectorsConfigType):
+    def connectors_fallback(full_cfg: ObjectLikeConfig):
         full_settings = reduce(lambda settings, fallback: settings | fallback(full_cfg), fallbacks.values(), {})
         return settings_class(**full_settings)
 
