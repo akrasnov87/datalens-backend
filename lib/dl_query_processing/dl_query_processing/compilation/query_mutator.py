@@ -25,12 +25,6 @@ from dl_formula.inspect.expression import (
     is_bound_only_to,
     is_window_expression,
 )
-from dl_formula.mutation.general import (
-    OptimizeConstAndOrMutation,
-    OptimizeConstComparisonMutation,
-    OptimizeConstFuncMutation,
-    OptimizeUnaryBoolFunctions,
-)
 from dl_formula.mutation.lod import (
     DoubleAggregationCollapsingMutation,
     ExtAggregationToQueryForkMutation,
@@ -39,6 +33,14 @@ from dl_formula.mutation.lookup import LookupFunctionToQueryForkMutation
 from dl_formula.mutation.mutation import (
     FormulaMutation,
     apply_mutations,
+)
+from dl_formula.mutation.optimization import (
+    OptimizeAndOrComparisonMutation,
+    OptimizeBinaryOperatorComparisonMutation,
+    OptimizeConstAndOrMutation,
+    OptimizeConstComparisonMutation,
+    OptimizeConstFuncMutation,
+    OptimizeUnaryBoolFunctions,
 )
 from dl_formula.mutation.window import WindowFunctionToQueryForkMutation
 from dl_formula.validation.aggregation import AggregationChecker
@@ -260,6 +262,18 @@ class DefaultAtomicQueryMutator(AtomicQueryFormulaMutatorBase):
         return formula
 
 
+@attr.s
+class FiltersAtomicQueryMutator(DefaultAtomicQueryMutator):
+    def mutate_formula_list(
+        self,
+        formula_list: List[_COMPILED_FLA_TV],
+        query_part: QueryPart,
+    ) -> List[_COMPILED_FLA_TV]:
+        if query_part != QueryPart.filters:
+            return formula_list
+        return super().mutate_formula_list(formula_list, query_part)
+
+
 def formula_is_true(formula: formula_nodes.Formula, query_part: QueryPart) -> bool:
     return (
         query_part == QueryPart.filters
@@ -291,7 +305,7 @@ class OptimizingQueryMutator(QueryMutator):
         # Apply "preliminary" mutation
         # (must be applied before we scan for nested aggregations)
         if not self._disable_optimizations:
-            mutator: AtomicQueryMutatorBase = DefaultAtomicQueryMutator(
+            mutator = DefaultAtomicQueryMutator(
                 mutations=[
                     DoubleAggregationCollapsingMutation(),
                     OptimizeConstComparisonMutation(),
@@ -302,8 +316,16 @@ class OptimizingQueryMutator(QueryMutator):
             )
             compiled_query = mutator.mutate_query(compiled_query)
 
-        group_by_xonst_mutator = RemoveConstFromGroupByFormulaAtomicQueryMutator(self._dialect)
-        compiled_query = group_by_xonst_mutator.mutate_query(compiled_query)
+            filters_mutator = FiltersAtomicQueryMutator(
+                mutations=[
+                    OptimizeBinaryOperatorComparisonMutation(),
+                    OptimizeAndOrComparisonMutation(),
+                ]
+            )
+            compiled_query = filters_mutator.mutate_query(compiled_query)
+
+        group_by_const_mutator = RemoveConstFromGroupByFormulaAtomicQueryMutator(self._dialect)
+        compiled_query = group_by_const_mutator.mutate_query(compiled_query)
 
         filter_mutator = IgnoreFormulaAtomicQueryMutator(ignore_formula_checks=[formula_is_true])
         compiled_query = filter_mutator.mutate_query(compiled_query)

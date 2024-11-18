@@ -56,7 +56,8 @@ class InputRowItem(ControlRowItem, PlaceholderMixin):
     @attr.s(kw_only=True, frozen=True)
     class Props(SerializableConfig):
         multiline: Optional[bool] = attr.ib(default=None, metadata=skip_if_null())  # false if undefined
-        type: Literal["text", "password", "number"] = attr.ib(default="text")
+        type: Optional[Literal["text", "password", "number"]] = attr.ib(default="text", metadata=skip_if_null())
+        disabled: Optional[bool] = attr.ib(default=None, metadata=skip_if_null())
 
     component_id = "input"
 
@@ -78,6 +79,7 @@ class SelectRowItem(ControlRowItem, PlaceholderMixin):
     @attr.s(kw_only=True, frozen=True)
     class Props(SerializableConfig):
         show_search: Optional[bool] = attr.ib(default=None, metadata=remap_skip_if_null("showSearch"))
+        has_clear: Optional[bool] = attr.ib(default=None, metadata=remap_skip_if_null("hasClear"))
 
     component_id = "select"
 

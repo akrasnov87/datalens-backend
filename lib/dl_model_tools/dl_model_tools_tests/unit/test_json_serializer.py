@@ -1,177 +1,49 @@
-from __future__ import annotations
-
-import datetime
-import decimal
-import ipaddress
 import json
-import uuid
+
+import pytest
 
 from dl_model_tools.serialization import (
-    RedisDatalensDataJSONDecoder,
-    RedisDatalensDataJSONEncoder,
+    common_dumps,
+    common_loads,
+    safe_dumps,
 )
-from dl_type_transformer.native_type import (
-    ClickHouseDateTime64NativeType,
-    ClickHouseDateTime64WithTZNativeType,
-    ClickHouseDateTimeWithTZNativeType,
-    ClickHouseNativeType,
-    CommonNativeType,
-    GenericNativeType,
-    LengthedNativeType,
+from dl_model_tools_tests.unit.config import (
+    EXPECTED_DUMP,
+    SAMPLE_DATA,
+    CustomType,
 )
-
-
-TZINFO = datetime.timezone(datetime.timedelta(seconds=-1320))
-SAMPLE_DATA = dict(
-    # Scalars
-    some_int=42,
-    some_float=19.89,
-    some_str="Some say",
-    some_bool=True,
-    some_none=None,
-    # BI data values
-    some_dt=datetime.datetime(2019, 6, 17, 7, 1, 41, 79585, tzinfo=TZINFO),
-    some_date=datetime.date(2020, 7, 18),
-    some_time=datetime.time(11, 22, 33, 444555, tzinfo=TZINFO),
-    some_timedelta=datetime.timedelta(seconds=1320.0231),
-    some_decimal=decimal.Decimal("12345" * 9 + "." + "54321" * 9),
-    some_uuid=uuid.UUID("12345678123456781234567812345678"),
-    some_bytes=b"Another one bites",
-    some_ipv4_address=ipaddress.IPv4Address("192.0.2.5"),
-    some_ipv6_address=ipaddress.IPv6Address("2001:db8::1000"),
-    some_ipv4_network=ipaddress.IPv4Network("192.0.2.0/24"),
-    some_ipv6_network=ipaddress.IPv6Network("2001:db8::/64"),
-    some_ipv4_interface=ipaddress.IPv4Interface("192.0.2.5/24"),
-    some_ipv6_interface=ipaddress.IPv6Interface("2001:db8::1000/24"),
-    some_native_types=[
-        GenericNativeType(name="tinyblob"),
-        CommonNativeType(name="double_precision", nullable=True),
-        LengthedNativeType(name="nvarchar2", nullable=False, length=121),
-        ClickHouseNativeType(name="uint64", nullable=True, lowcardinality=True),
-        ClickHouseDateTimeWithTZNativeType(
-            name="datetimewithtz",
-            nullable=False,
-            lowcardinality=True,
-            timezone_name="Europe/Moscow",
-        ),
-        ClickHouseDateTime64NativeType(
-            name="datetime64",
-            nullable=False,
-            lowcardinality=True,
-            precision=3,
-        ),
-        ClickHouseDateTime64WithTZNativeType(
-            name="datetime64withtz",
-            nullable=False,
-            lowcardinality=True,
-            precision=3,
-            timezone_name="Europe/Moscow",
-        ),
-    ],
-)
-
-
-EXPECTED_DUMP = dict(
-    # Scalars are unchanged
-    some_int=42,
-    some_float=19.89,
-    some_str="Some say",
-    some_bool=True,
-    some_none=None,
-    # More complex types have custom dumpers
-    some_dt={"__dl_type__": "datetime", "value": [[2019, 6, 17, 7, 1, 41, 79585], -1320.0]},
-    some_date={"__dl_type__": "date", "value": "2020-07-18"},
-    some_time={"__dl_type__": "time", "value": [[11, 22, 33, 444555], -1320.0]},
-    some_timedelta={"__dl_type__": "timedelta", "value": 1320.0231},
-    some_decimal={
-        "__dl_type__": "decimal",
-        "value": "123451234512345123451234512345123451234512345.543215432154321543215432154321543215432154321",
-    },
-    some_uuid={"__dl_type__": "uuid", "value": "12345678-1234-5678-1234-567812345678"},
-    some_bytes={"__dl_type__": "bytes", "value": "QW5vdGhlciBvbmUgYml0ZXM="},
-    some_ipv4_address={"__dl_type__": "ipv4_address", "value": "192.0.2.5"},
-    some_ipv6_address={"__dl_type__": "ipv6_address", "value": "2001:db8::1000"},
-    some_ipv4_network={"__dl_type__": "ipv4_network", "value": "192.0.2.0/24"},
-    some_ipv6_network={"__dl_type__": "ipv6_network", "value": "2001:db8::/64"},
-    some_ipv4_interface={"__dl_type__": "ipv4_interface", "value": "192.0.2.5/24"},
-    some_ipv6_interface={"__dl_type__": "ipv6_interface", "value": "2001:db8::1000/24"},
-    some_native_types=[
-        {
-            "__dl_type__": "dl_native_type",
-            "value": {"name": "tinyblob", "native_type_class_name": "generic_native_type"},
-        },
-        {
-            "__dl_type__": "dl_native_type",
-            "value": {"name": "double_precision", "native_type_class_name": "common_native_type", "nullable": True},
-        },
-        {
-            "__dl_type__": "dl_native_type",
-            "value": {
-                "length": 121,
-                "name": "nvarchar2",
-                "native_type_class_name": "lengthed_native_type",
-                "nullable": False,
-            },
-        },
-        {
-            "__dl_type__": "dl_native_type",
-            "value": {
-                "lowcardinality": True,
-                "name": "uint64",
-                "native_type_class_name": "clickhouse_native_type",
-                "nullable": True,
-            },
-        },
-        {
-            "__dl_type__": "dl_native_type",
-            "value": {
-                "explicit_timezone": True,
-                "lowcardinality": True,
-                "name": "datetimewithtz",
-                "native_type_class_name": "clickhouse_datetimewithtz_native_type",
-                "nullable": False,
-                "timezone_name": "Europe/Moscow",
-            },
-        },
-        {
-            "__dl_type__": "dl_native_type",
-            "value": {
-                "lowcardinality": True,
-                "name": "datetime64",
-                "native_type_class_name": "clickhouse_datetime64_native_type",
-                "nullable": False,
-                "precision": 3,
-            },
-        },
-        {
-            "__dl_type__": "dl_native_type",
-            "value": {
-                "explicit_timezone": True,
-                "lowcardinality": True,
-                "name": "datetime64withtz",
-                "native_type_class_name": "clickhouse_datetime64withtz_native_type",
-                "nullable": False,
-                "precision": 3,
-                "timezone_name": "Europe/Moscow",
-            },
-        },
-    ],
-)
+from dl_testing.utils import get_log_record
 
 
 def test_json_serialization():
     data = SAMPLE_DATA
-    dumped = json.dumps(data, cls=RedisDatalensDataJSONEncoder)
+    dumped = common_dumps(data)
     dumped_dict = json.loads(dumped)
     assert dumped_dict == EXPECTED_DUMP
-    roundtrip = json.loads(dumped, cls=RedisDatalensDataJSONDecoder)
+    roundtrip = common_loads(dumped)
     assert roundtrip == data
 
 
 def test_json_tricky_serialization():
     tricky_data = dict(normal=SAMPLE_DATA, abnormal=EXPECTED_DUMP)
-    tricky_data_dumped = json.dumps(tricky_data, cls=RedisDatalensDataJSONEncoder)
-    tricky_roundtrip = json.loads(tricky_data_dumped, cls=RedisDatalensDataJSONDecoder)
+    tricky_data_dumped = common_dumps(tricky_data)
+    tricky_roundtrip = common_loads(tricky_data_dumped)
     assert tricky_roundtrip["normal"] == tricky_data["normal"], tricky_roundtrip
     # abnormal data contains __dl_type__ fields, so decoder considers them to be dumps of BI types and decodes them
     assert tricky_roundtrip["abnormal"] == tricky_data["normal"], tricky_roundtrip
+
+
+def test_safe_json_serialization(caplog):
+    unserializable_data = SAMPLE_DATA | dict(unserializable=CustomType())
+    with pytest.raises(TypeError, match="Object of type CustomType is not JSON serializable"):
+        common_dumps(unserializable_data)
+
+    safe_dumped = safe_dumps(unserializable_data)
+    roundtrip = common_loads(safe_dumped)
+    unserializable_value = roundtrip.pop("unserializable")
+    assert unserializable_value is None
+    assert roundtrip == SAMPLE_DATA
+
+    log_record = get_log_record(caplog, predicate=lambda r: r.funcName == "to_jsonable", single=True)
+    assert log_record.levelname == "WARNING"
+    assert log_record.msg == "Value of type CustomType is not serializable, skipping serialization"

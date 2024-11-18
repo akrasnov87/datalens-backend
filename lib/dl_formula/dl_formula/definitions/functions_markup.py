@@ -173,7 +173,7 @@ class MarkupTypeStrategy(Fixed):
     def __init__(self) -> None:
         super().__init__(DataType.MARKUP)
 
-    def get_from_args(self, arg_types):  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def get_from_args(self, arg_types: list[DataType]) -> DataType:
         if all(arg.casts_to(DataType.CONST_MARKUP) or arg.casts_to(DataType.CONST_STRING) for arg in arg_types):
             return DataType.CONST_MARKUP
         return DataType.MARKUP
@@ -273,6 +273,30 @@ class FuncBr(FuncMarkup):
     name = "br"
     arg_cnt = 0
     variants = make_variants("br")
+
+
+class FuncTooltipBase(FuncMarkup):
+    name = "tooltip"
+    variants = make_variants("tooltip")
+    scopes = Function.scopes & ~Scope.SUGGESTED & ~Scope.DOCUMENTED
+
+
+class FuncTooltip2(FuncTooltipBase):
+    arg_cnt = 2
+    arg_names = ["text", "tooltip"]
+    argument_types = [
+        # tooltip(markup|str, markup|str)
+        ArgTypeSequence([MARKUP_EFFECTIVELY, MARKUP_EFFECTIVELY]),
+    ]
+
+
+class FuncTooltip3(FuncTooltipBase):
+    arg_cnt = 3
+    arg_names = ["text", "tooltip", "placement"]
+    argument_types = [
+        # tooltip(markup|str, markup|str, str)
+        ArgTypeSequence([MARKUP_EFFECTIVELY, MARKUP_EFFECTIVELY, DataType.STRING]),
+    ]
 
 
 class NullImageMarkupNode:
@@ -389,4 +413,7 @@ DEFINITIONS_MARKUP = [
     FuncImage2,
     FuncImage3,
     FuncImage4,
+    # tooltip
+    FuncTooltip2,
+    FuncTooltip3,
 ]

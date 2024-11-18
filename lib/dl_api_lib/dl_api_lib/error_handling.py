@@ -16,7 +16,7 @@ from marshmallow import Schema
 from marshmallow import ValidationError as MValidationError
 from marshmallow import fields
 
-from dl_api_commons.exc import RequestTimeoutError
+from dl_api_commons import exc as api_commons_exc
 from dl_api_lib import exc
 from dl_constants.exc import (
     DEFAULT_ERR_CODE_API_PREFIX,
@@ -54,6 +54,7 @@ EXCEPTION_CODES = {
     common_exc.QueryConstructorError: status.BAD_REQUEST,
     common_exc.ResultRowCountLimitExceeded: status.BAD_REQUEST,
     common_exc.TableNameNotConfiguredError: status.BAD_REQUEST,
+    common_exc.MalformedCredentialsError: status.BAD_REQUEST,
     common_exc.NotAvailableError: status.BAD_REQUEST,
     common_exc.InvalidFieldError: status.BAD_REQUEST,
     common_exc.FieldNotFound: status.BAD_REQUEST,
@@ -84,8 +85,9 @@ EXCEPTION_CODES = {
     dl_query_processing.exc.GenericInvalidRequestError: status.BAD_REQUEST,
     dl_query_processing.exc.InvalidGroupByConfiguration: status.BAD_REQUEST,
     common_exc.WrongQueryParameterization: status.BAD_REQUEST,
-    RequestTimeoutError: status.FAILED_DEPENDENCY,
+    api_commons_exc.RequestTimeoutError: status.FAILED_DEPENDENCY,
     exc.ConnectorIconNotFoundException: status.NOT_FOUND,
+    api_commons_exc.FailedDependencyException: status.FAILED_DEPENDENCY,
 }
 
 
@@ -190,29 +192,24 @@ class RegularAPIErrorSchema(Schema):
     details = fields.Dict()  # In future will be replaced with schemas for each exception
     debug = fields.Dict()
 
-    def get_api_prefix(self) -> str:
-        # TODO CONSIDER: Warning in case of no api_prefix in context
-        return self.context.get("api_prefix") or DEFAULT_ERR_CODE_API_PREFIX
-
     def serialize_error_code(self, data: BIError) -> str:
         return ".".join(
             itertools.chain(
-                (
-                    GLOBAL_ERR_PREFIX,
-                    self.get_api_prefix(),
-                ),
+                (GLOBAL_ERR_PREFIX, DEFAULT_ERR_CODE_API_PREFIX),
                 data.application_code_stack,
             )
         )
 
 
 class PublicAPIErrorSchema(RegularAPIErrorSchema):
-    class Meta(RegularAPIErrorSchema.Meta):
-        PUBLIC_FORWARDED_ERROR_CODES: ClassVar[frozenset[tuple[str, ...]]] = frozenset(
-            (tuple(common_exc.MaterializationNotFinished.err_code),)
+    PUBLIC_FORWARDED_ERROR_CODES: ClassVar[frozenset[tuple[str, ...]]] = frozenset(
+        (
+            tuple(common_exc.MaterializationNotFinished.err_code),
+            tuple(common_exc.USIncorrectEntryIdForEmbed.err_code),
         )
-        PUBLIC_DEFAULT_MESSAGE = "Something went wrong"
-        PUBLIC_DEFAULT_ERR_CODE = "ERR.UNKNOWN"
+    )
+    PUBLIC_DEFAULT_MESSAGE = "Something went wrong"
+    PUBLIC_DEFAULT_ERR_CODE = "ERR.UNKNOWN"
 
     message = fields.Method(serialize="serialize_message")  # type: ignore  # TODO: fix
 
@@ -220,14 +217,13 @@ class PublicAPIErrorSchema(RegularAPIErrorSchema):
     details = fields.Constant({})  # type: ignore  # TODO: fix
 
     def serialize_error_code(self, data: BIError) -> str:
-        if tuple(data.application_code_stack) in self.Meta.PUBLIC_FORWARDED_ERROR_CODES:
+        if data.application_code_stack in self.PUBLIC_FORWARDED_ERROR_CODES:
             return super().serialize_error_code(data)
 
-        return self.Meta.PUBLIC_DEFAULT_ERR_CODE
+        return self.PUBLIC_DEFAULT_ERR_CODE
 
     def serialize_message(self, data: BIError) -> str:
-        if tuple(data.application_code_stack) in self.Meta.PUBLIC_FORWARDED_ERROR_CODES:
+        if data.application_code_stack in self.PUBLIC_FORWARDED_ERROR_CODES:
             return data.message
 
-        else:
-            return self.Meta.PUBLIC_DEFAULT_MESSAGE
+        return self.PUBLIC_DEFAULT_MESSAGE

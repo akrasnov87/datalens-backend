@@ -110,7 +110,7 @@ jobs:
         run: git branch --contains ${{ github.event.pull_request.base.sha }}
 
   gh_build_image:
-    runs-on: [ self-hosted, linux, light ]
+    runs-on: [ self-hosted, linux, k8s-runner-build ]
 
     needs: [ check-ci-allowed ]
 
@@ -138,26 +138,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.ROBOT_GITHUB_PACKAGES_WRITE_TOKEN }}
 
-      - name: Cleanup build folder
-        run: |
-          rm -rf ./* || true
-          rm -rf ./.??* || true
+      - uses: datalens-tech/cleanup-folder-action@v1
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
-      - name: Fix dubious ownership
-        run: .github/.scripts/git_config_save_directory.sh
-        env:
-          REPOSITORY_NAME: ${{ github.event.repository.name }}
+      - uses: datalens-tech/fix-dubious-ownership-action@v1
 
       - run: |
           export ROOT_DIR="$(realpath .)"
           /bin/bash ci/build_naive.sh
 
   router:
-    runs-on: [ self-hosted, linux, light ]
+    runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
     needs: gh_build_image
     container:
       image: "ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/datalens_ci_with_code:${{ github.sha }}"
@@ -168,20 +162,14 @@ jobs:
       affected: ${{ steps.get_affected.outputs.affected }}
       all_affected_with_skips: ${{ steps.get_affected.outputs.all_affected_with_skips }}
     steps:
-    - name: Cleanup build folder
-      run: |
-        rm -rf ./* || true
-        rm -rf ./.??* || true
+    - uses: datalens-tech/cleanup-folder-action@v1
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         ref: ${{ github.event.pull_request.head.sha }}
         repository: ${{ github.event.pull_request.head.repo.full_name }}
         fetch-depth: 0
-    - name: Fix dubious ownership
-      run: .github/.scripts/git_config_save_directory.sh
-      env:
-        REPOSITORY_NAME: ${{ github.event.repository.name }}
+    - uses: datalens-tech/fix-dubious-ownership-action@v1
     - run: git fetch origin main
     - name: Extract base commit
       run: |
@@ -246,7 +234,7 @@ jobs:
 
   pytest_split:
     name: Split pytest into jobs for each test type
-    runs-on: [ self-hosted, linux, light ]
+    runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
 
     needs: [ router, check-skip-tests-label ]
     if: ${{ needs.check-skip-tests-label.outputs.result != 'true' }}
@@ -261,30 +249,25 @@ jobs:
       split_base: ${{ steps.get_split.outputs.split_base }}
       split_fat: ${{ steps.get_split.outputs.split_fat }}
       split_ext_public: ${{ steps.get_split.outputs.split_ext_public }}
+      split_no_compose: ${{ steps.get_split.outputs.split_no_compose }}
     steps:
-      - name: Cleanup build folder
-        run: |
-          rm -rf ./* || true
-          rm -rf ./.??* || true
+      - uses: datalens-tech/cleanup-folder-action@v1
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 1
-      - name: Fix dubious ownership
-        run: .github/.scripts/git_config_save_directory.sh
-        env:
-          REPOSITORY_NAME: ${{ github.event.repository.name }}
+      - uses: datalens-tech/fix-dubious-ownership-action@v1
       - name: Run python script to split job for general and fat runners
         id: get_split
         run: |
           . /venv/bin/activate && echo '${{ needs.router.outputs.affected }}' >> /tmp/dl_test_targets.json
-          split-pytest-tasks base,fat,ext_public /src /tmp/dl_test_targets.json true true >> "$GITHUB_OUTPUT"
+          split-pytest-tasks base,fat,ext_public,no_compose /src /tmp/dl_test_targets.json true true >> "$GITHUB_OUTPUT"
 
   run_tests_base:
     name: "🐍[pytest]${{ matrix.value }}"
-    runs-on: [ self-hosted, linux, light ]
+    runs-on: [ self-hosted, linux, k8s-runner-light ]
     permissions:
       packages: write
       contents: read
@@ -309,7 +292,6 @@ jobs:
 
     steps:
       - run: echo "Going to run tests for  ${{ matrix.value }}"
-      - run: mkdir /report
       - run: echo "Running py tests for ${{ matrix.value }}"
       - name: Log in to the Container registry
         uses: docker/login-action@v2
@@ -328,16 +310,56 @@ jobs:
         # We could not put this into bash script, since job could be cancelled by user request
         if: always()  # yes! always
         run: bash /src/ci/stop_compose.sh "${{ matrix.value }}" "${{ job.container.network }}" "${{ env.compose_prj }}"
-      - uses: actions/upload-artifact@v3
-        if: "!cancelled()"
+
+  run_tests_no_compose:
+    name: "🐍[pytest][no_compose]${{ matrix.value }}"
+    runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
+    permissions:
+      packages: write
+      contents: read
+
+    needs: pytest_split
+    if: ${{ needs.pytest_split.outputs.split_no_compose != '[]' }}
+
+    container:
+      image: "ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/datalens_ci_with_code:${{ github.sha }}"
+      options: -v /var/run/docker.sock:/var/run/docker.sock
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        value: ${{fromJson(needs.pytest_split.outputs.split_no_compose)}}
+
+    steps:
+      - run: echo "Going to run tests for  ${{ matrix.value }}"
+      - run: echo "Running py tests for ${{ matrix.value }}"
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
         with:
-          name: "pytest_reports_${{ env.compose_prj }}"
-          path: /report/
-          retention-days: 1
+          registry: "ghcr.io"
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: echo compose_path="/src/$(echo ${{ matrix.value }} | cut -d ":" -f1)/" >>  "$GITHUB_ENV"
+      - run: cd "${{ env.compose_path }}" && echo compose_prj="$(basename "$PWD")_$(shuf -i 1000000-1000000000 -n 1)" >> "$GITHUB_ENV"
+      # We need to set custom compose project name to ensure "unique" container names in the host docker env
+      - name: run bash script with all logic for starting compose and running tests
+        run: |
+          bash /src/ci/execute_test_with_docker_compose.sh "${{ matrix.value }}" "${{ job.container.network }}" "${{ env.compose_prj }}" \
+            WE_ARE_IN_CI=1
+      - name: Stop compose if provided
+        # We could not put this into bash script, since job could be cancelled by user request
+        if: always()  # yes! always
+        run: bash /src/ci/stop_compose.sh "${{ matrix.value }}" "${{ job.container.network }}" "${{ env.compose_prj }}"
 
   run_tests_fat:
     name: "🐍[pytest][fat]${{ matrix.value }}"
-    runs-on: [ self-hosted, linux, fat ]
+    runs-on: [ self-hosted, linux, k8s-runner-fat ]
     permissions:
       packages: write
       contents: read
@@ -362,7 +384,6 @@ jobs:
 
     steps:
       - run: echo "Going to run tests for  ${{ matrix.value }}"
-      - run: mkdir /report
       - run: echo "Running py tests for ${{ matrix.value }}"
       - name: Log in to the Container registry
         uses: docker/login-action@v2
@@ -381,17 +402,11 @@ jobs:
         # We could not put this into bash script, since job could be cancelled by user request
         if: always()  # yes! always
         run: bash /src/ci/stop_compose.sh "${{ matrix.value }}" "${{ job.container.network }}" "${{ env.compose_prj }}"
-      - uses: actions/upload-artifact@v3
-        if: "!cancelled()"
-        with:
-          name: "pytest_reports_${{ env.compose_prj }}"
-          path: /report/
-          retention-days: 1
 
   run_tests_ext_public:
     name: "🐍[pytest][ext_public]${{ matrix.value }}"
     # using light runners for now, TBD: change when we have ext_public
-    runs-on: [ self-hosted, linux, light ]
+    runs-on: [ self-hosted, linux, k8s-runner-ext-public ]
     permissions:
       packages: read
       contents: read
@@ -416,7 +431,6 @@ jobs:
 
     steps:
       - run: echo "Going to run tests for  ${{ matrix.value }}"
-      - run: mkdir /report
       - run: echo "Running py tests for ${{ matrix.value }}"
       - name: Log in to the Container registry
         uses: docker/login-action@v2
@@ -440,15 +454,9 @@ jobs:
         # We could not put this into bash script, since job could be cancelled by user request
         if: always()  # yes! always
         run: bash /src/ci/stop_compose.sh "${{ matrix.value }}" "${{ job.container.network }}" "${{ env.compose_prj }}"
-      - uses: actions/upload-artifact@v3
-        if: "!cancelled()"
-        with:
-          name: "pytest_reports_${{ env.compose_prj }}"
-          path: /report/
-          retention-days: 1
 
   mypy:
-    runs-on: [ self-hosted, linux, light ]
+    runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
     needs: gh_build_image
     container:
       # until https://github.com/github/docs/issues/25520 is resolved, using vars
@@ -461,10 +469,7 @@ jobs:
     name: "🐲 mypy"
     timeout-minutes: ${{ inputs.mypy_timeout_minutes && fromJSON(inputs.mypy_timeout_minutes ) || 20 }}
     steps:
-      - name: Cleanup build folder
-        run: |
-          rm -rf ./* || true
-          rm -rf ./.??* || true
+      - uses: datalens-tech/cleanup-folder-action@v1
       - name: Checkout code, just to get access to .github/execute_mypy...
         uses: actions/checkout@v4
         with:
@@ -482,28 +487,24 @@ jobs:
     name: Test results
     runs-on: ubuntu-22.04
 
-    needs: [ check-skip-tests-label, pytest_split, run_tests_base, run_tests_fat, run_tests_ext_public ]
-    if: ${{ always() }}
+    needs:
+      - check-skip-tests-label
+      - pytest_split
+      - run_tests_base
+      - run_tests_fat
+      - run_tests_no_compose
+      - run_tests_ext_public
+
+    if: always() && !cancelled()
 
     steps:
-      - name: Test results
-        run: |
-          skip_tests=${{ needs.check-skip-tests-label.outputs.result }}
-          [[ $skip_tests == "true" ]] && exit 0
-          
-          pytest_split=${{ needs.pytest_split.result }}
-          [[ $pytest_split != "success" && $pytest_split != "skipped" ]] && echo "pytest_split failed" && exit 1
-          result_base=${{ needs.run_tests_base.result }}
-          [[ $result_base != "success" && $result_base != "skipped" ]] && echo "base failed" && exit 1
-          result_fat=${{ needs.run_tests_fat.result }}
-          [[ $result_fat != "success" && $result_fat != "skipped" ]] && echo "fat failed" && exit 1
-          result_ext_public=${{ needs.run_tests_ext_public.result }}
-          [[ $result_ext_public != "success" && $result_ext_public != "skipped" ]] && echo "ext_public failed" && exit 1
-          
-          echo "All tests passed"
+      - name: Collect Result
+        uses: ovsds/collect-needs-result-action@v1
+        with:
+          needs_json: ${{ toJson(needs) }}
 
   codestyle_all:
-    runs-on: [ self-hosted, linux, light ]
+    runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
     needs: gh_build_image
     container:
       # until https://github.com/github/docs/issues/25520 is resolved, using vars
@@ -512,10 +513,7 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Cleanup build folder
-        run: |
-          rm -rf ./* || true
-          rm -rf ./.??* || true
+      - uses: datalens-tech/cleanup-folder-action@v1
       - name: Checkout code
         uses: actions/checkout@v4
         with:

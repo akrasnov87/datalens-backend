@@ -1,4 +1,5 @@
 import itertools
+import json
 
 import pytest
 
@@ -12,6 +13,7 @@ from dl_constants.enums import (
     UserDataType,
 )
 
+from dl_connector_clickhouse.core.clickhouse.us_connection import ConnectionClickhouse
 from dl_connector_clickhouse.core.clickhouse_base.constants import CONNECTION_TYPE_CLICKHOUSE
 
 
@@ -118,3 +120,70 @@ class TestInfo(DefaultApiTestBase):
     def test_get_connector_icon_not_found(self, client):
         icons_resp = client.get("/api/v1/info/connectors/icons/unknown_conn_type")
         assert icons_resp.status_code == 404, icons_resp.json
+
+    def test_public_usage_checker(self, client, saved_dataset, saved_connection_id):
+        data = dict(datasets=[saved_dataset.id])
+        response = client.post(
+            "/api/v1/info/datasets_publicity_checker",
+            content_type="application/json",
+            data=json.dumps(data),
+        )
+        expected_resp = [
+            dict(
+                reason=None,
+                dataset_id=saved_dataset.id,
+                allowed=True,
+            )
+        ]
+
+        assert response.status_code == 200
+        assert response.json["result"] == expected_resp
+
+        data = dict(connections=[saved_connection_id])
+        response = client.post(
+            "/api/v1/info/connections_publicity_checker",
+            content_type="application/json",
+            data=json.dumps(data),
+        )
+        expected_resp = [
+            dict(
+                reason=None,
+                connection_id=saved_connection_id,
+                allowed=True,
+            )
+        ]
+        assert response.status_code == 200
+        assert response.json["result"] == expected_resp
+
+    def test_datasets_publicity_checker_connection_not_allowed(
+        self, client, monkeypatch, saved_dataset, saved_connection_id
+    ):
+        monkeypatch.setattr(ConnectionClickhouse, "allow_public_usage", False)
+        data = dict(datasets=[saved_dataset.id])
+        response = client.post(
+            "/api/v1/info/datasets_publicity_checker",
+            content_type="application/json",
+            data=json.dumps(data),
+        )
+        expected_resp = [
+            dict(
+                reason=f"The publication of this object or some of its dependencies is not allowed. "
+                f"Connections of type clickhouse are not available for publication (connection ID: {saved_connection_id})",
+                dataset_id=saved_dataset.id,
+                allowed=False,
+            )
+        ]
+
+        assert response.status_code == 200
+        assert response.json["result"] == expected_resp
+
+    def test_dataset_publicity_checker(self, client, dataset_id):
+        resp = client.post(
+            "/api/v1/info/datasets_publicity_checker",
+            content_type="application/json",
+            data=json.dumps(dict(datasets=[dataset_id])),
+        )
+        assert resp.status_code == 200
+        resp_data = resp.json
+        assert "result" in resp_data
+        assert len(resp_data["result"]) == 1 and resp_data["result"][0]["allowed"] == True, resp_data

@@ -56,6 +56,11 @@ class TableNameInvalidError(DataSourceConfigurationError):
     err_code = DataSourceConfigurationError.err_code + ["TABLE_NAME_INVALID"]
 
 
+class MalformedCredentialsError(DataSourceConfigurationError):
+    err_code = DataSourceConfigurationError.err_code + ["MALFORMED_CREDS"]
+    default_message = "Malformed credentials"
+
+
 class DatasetConfigurationError(DLBaseException):
     err_code = DLBaseException.err_code + ["DS_CONFIG"]
 
@@ -263,6 +268,10 @@ class USBadRequestException(USReqException):
 
 class USAlreadyExistsException(USBadRequestException):
     err_code = USBadRequestException.err_code + ["ALREADY_EXISTS"]
+
+
+class USIncorrectEntryIdForEmbed(USBadRequestException):
+    err_code = USBadRequestException.err_code + ["INCORRECT_ENTRY_ID_FOR_EMBED"]
 
 
 class USIncorrectTenantIdException(USReqException):

@@ -152,15 +152,22 @@ class BitrixGDSDefaultAdapter(AiohttpDBAdapter, ETBasedExceptionMaker):
             json.dumps({k: (v if k != "key" else "...") for k, v in payload.json_body.items()}),
         )
 
+        request_params: dict[str, Any] = dict(
+            table=payload.table,
+            consumer="datalens",
+            request_id=request_id,
+        )
+
+        limit = self._extract_limit(dba_query.query)
+        if limit is not None:
+            request_params["limit"] = limit
+
         with self.handle_execution_error(query_text):
             resp = await self._session.post(
                 url=api_url,
-                params={
-                    "table": payload.table,
-                    "consumer": "datalens",
-                    "request_id": request_id,
-                },
+                params=request_params,
                 json=payload.json_body,
+                allow_redirects=False,
             )
 
             if resp.status != 200:
@@ -218,6 +225,10 @@ class BitrixGDSDefaultAdapter(AiohttpDBAdapter, ETBasedExceptionMaker):
             froms = froms.element.froms[0]
         assert isinstance(froms, sa.sql.TableClause)
         return froms.name
+
+    def _extract_limit(self, query: ClauseElement | str) -> int | None:
+        assert isinstance(query, sa.sql.Select)
+        return query._limit  # type: ignore  # TODO: "Select" has no attribute "_limit"  [attr-defined]
 
     def _parse_response_body(self, body: Any, dba_query: DBAdapterQuery) -> dict:
         assert isinstance(dba_query.query, sa.sql.Select)
@@ -286,10 +297,18 @@ class BitrixGDSDefaultAdapter(AiohttpDBAdapter, ETBasedExceptionMaker):
             "key": self._target_dto.token,
         }
         api_url: str = f"https://{self._target_dto.portal}/bitrix/tools/biconnector/gds.php?show_tables"
-        resp = await self._session.post(
-            url=api_url,
-            json=body,
-        )
+
+        with self.handle_execution_error(api_url):
+            resp = await self._session.post(
+                url=api_url,
+                json=body,
+                allow_redirects=False,
+            )
+
+            if resp.status != 200:
+                message = await resp.text()
+                raise DatabaseQueryError(db_message=message)
+
         tables: list[str] = [table[0] for table in await resp.json()]
         return tables
 
@@ -399,6 +418,7 @@ class BitrixGDSDefaultAdapter(AiohttpDBAdapter, ETBasedExceptionMaker):
             "startDate": body["dateRange"].get("startDate"),
             "endDate": body["dateRange"].get("endDate"),
             "timeFilterColumn": body.get("configParams", dict()).get("timeFilterColumn"),
+            "limit": self._extract_limit(dba_query.query),
         }
 
         return body, flatten_body

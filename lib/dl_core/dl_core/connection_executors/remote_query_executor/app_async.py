@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
-from functools import partial
+import asyncio
+import ipaddress
 import logging
 import pickle
+import random
+import socket
 import sys
 from typing import (
     TYPE_CHECKING,
@@ -12,6 +15,7 @@ from typing import (
     Union,
 )
 
+import aiodns
 from aiohttp import web
 from aiohttp.typedefs import Handler
 
@@ -35,7 +39,7 @@ from dl_core.connection_executors.adapters.common_base import CommonBaseDirectAd
 from dl_core.connection_executors.models.constants import (
     HEADER_BODY_SIGNATURE,
     HEADER_REQUEST_ID,
-    HEADER_USE_JSON_SERIALIZER,
+    HEADER_USE_NEW_QE_SERIALIZER,
 )
 from dl_core.connection_executors.models.db_adapter_data import DBAdapterQuery
 from dl_core.connection_executors.models.scoped_rci import DBAdapterScopedRCI
@@ -52,6 +56,7 @@ from dl_core.connection_executors.remote_query_executor.crypto import get_hmac_h
 from dl_core.connection_executors.remote_query_executor.error_handler_rqe import RQEErrorHandler
 from dl_core.connection_executors.remote_query_executor.settings import RQESettings
 from dl_core.enums import RQEEventType
+from dl_core.exc import SourceTimeout
 from dl_core.loader import (
     CoreLibraryConfig,
     load_core_lib,
@@ -59,7 +64,7 @@ from dl_core.loader import (
 from dl_core.logging_config import configure_logging
 from dl_dashsql.typed_query.query_serialization import get_typed_query_serializer
 from dl_dashsql.typed_query.result_serialization import get_typed_query_result_serializer
-from dl_model_tools.serialization import hashable_dumps
+from dl_model_tools.msgpack import DLSafeMessagePackSerializer
 from dl_utils.aio import ContextVarExecutor
 
 
@@ -74,6 +79,10 @@ class BaseView(web.View):
     @property
     def tpe(self) -> ContextVarExecutor:
         return self.request.app["tpe"]
+
+    @property
+    def forbid_private_addr(self) -> bool:
+        return self.request.app["forbid_private_addr"]
 
 
 def adapter_factory(
@@ -171,14 +180,15 @@ class ActionHandlingView(BaseView):
             events.append((RQEEventType.raw_chunk.value, raw_chunk))
         events.append((RQEEventType.finished.value, None))
 
+        response_body: bytes
         with GenericProfiler("async_qe_serialization"):
-            if self.request.headers.get(HEADER_USE_JSON_SERIALIZER) == "1":
-                dumps = partial(hashable_dumps, sort_keys=False, check_circular=True)
-                response = web.json_response(events, dumps=dumps)
+            if self.request.headers.get(HEADER_USE_NEW_QE_SERIALIZER) == "1":
+                serializer = DLSafeMessagePackSerializer()
+                response_body = serializer.dumps(events)
             else:
-                response = web.Response(body=pickle.dumps(events))
+                response_body = pickle.dumps(events)
 
-        return response
+        return web.Response(body=response_body)
 
     async def execute_non_streamed_action(
         self,
@@ -237,6 +247,27 @@ class ActionHandlingView(BaseView):
         async with adapter:
             LOGGER.info("DBA for action was created: %s", adapter)
 
+            if self.forbid_private_addr:
+                target_host = adapter.get_target_host()
+                if target_host:
+                    try:
+                        ipaddress.ip_address(target_host)
+                        host = target_host
+                    except ValueError:
+                        resolver = aiodns.DNSResolver()
+                        try:
+                            resp = await resolver.gethostbyname(target_host, socket.AF_UNSPEC)
+                            host = resp.addresses[0]
+                        except aiodns.error.DNSError:
+                            host = None
+                            LOGGER.warning("Cannot resolve host: %s", target_host, exc_info=True)
+                    if host is None or ipaddress.ip_address(host).is_private:
+                        await asyncio.sleep(random.uniform(5, 20))
+                        query = None
+                        if isinstance(action, (act.ActionExecuteQuery, act.ActionNonStreamExecuteQuery)):
+                            query = action.db_adapter_query.debug_compiled_query
+                        raise SourceTimeout(db_message="Source timed out", query=query)
+
             if isinstance(action, act.ActionExecuteQuery):
                 return await self.handle_query_action(adapter, action.db_adapter_query)
 
@@ -272,7 +303,7 @@ def body_signature_validation_middleware(hmac_key: bytes) -> AIOHTTPMiddleware:
     return actual_middleware
 
 
-def create_async_qe_app(hmac_key: bytes) -> web.Application:
+def create_async_qe_app(hmac_key: bytes, forbid_private_addr: bool = False) -> web.Application:
     req_id_service = RequestId(
         header_name=HEADER_REQUEST_ID,
         accept_logging_ctx=True,
@@ -295,6 +326,7 @@ def create_async_qe_app(hmac_key: bytes) -> web.Application:
 
     # TODO FIX: Close on app exit
     app["tpe"] = ContextVarExecutor()
+    app["forbid_private_addr"] = forbid_private_addr
 
     app.router.add_route("get", "/ping", PingView)
     app.router.add_route("*", "/execute_action", ActionHandlingView)
@@ -317,7 +349,7 @@ def get_configured_qe_app() -> web.Application:
     if hmac_key is None:
         raise Exception("No `hmac_key` set.")
 
-    return create_async_qe_app(hmac_key.encode())
+    return create_async_qe_app(hmac_key.encode(), forbid_private_addr=settings.FORBID_PRIVATE_ADDRESSES)
 
 
 def async_qe_main() -> None:

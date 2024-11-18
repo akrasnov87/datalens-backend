@@ -52,8 +52,15 @@ class CoreSslConnectionSettings:
     PASSWORD: ClassVar[str] = "qwerty"
 
 
-DASHSQL_QUERY = r"""
-select
+class CoreReadonlyConnectionSettings:
+    DB_NAME: ClassVar[str] = "test_data"
+    HOST: ClassVar[str] = get_test_container_hostport("db-clickhouse-22-10", fallback_port=52204).host
+    PORT: ClassVar[int] = get_test_container_hostport("db-clickhouse-22-10", fallback_port=52204).port
+    USERNAME: ClassVar[str] = "readonly"
+    PASSWORD: ClassVar[str] = "qwerty"
+
+
+DASHSQL_QUERY = r"""select
     arrayJoin([11, 22, NULL]) as a,
     [33, 44] as b,
     toDateTime('2020-01-02 03:04:05', 'UTC') + a as ts

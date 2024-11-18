@@ -285,12 +285,15 @@ class AsyncUSManager(USManagerBase):
         entry_scope: str,
         entry_type: Optional[str] = None,
         all_tenants: bool = False,
+        creation_time: Optional[dict[str, Union[str, int, None]]] = None,
     ) -> AsyncIterable[dict]:
         return self._us_client.entries_iterator(
             scope=entry_scope,
             entry_type=entry_type,
             all_tenants=all_tenants,
+            creation_time=creation_time,
             include_data=False,
+            limit=self.ITER_ENTRIES_PAGE_SIZE,
         )
 
     async def get_collection(
@@ -329,6 +332,7 @@ class AsyncUSManager(USManagerBase):
             include_data=include_data,
             ids=ids,
             creation_time=creation_time,
+            limit=self.ITER_ENTRIES_PAGE_SIZE,
         )
 
         async for us_resp in us_entry_iterator:
