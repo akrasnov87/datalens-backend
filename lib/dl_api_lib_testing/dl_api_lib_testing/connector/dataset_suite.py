@@ -6,7 +6,6 @@ from dl_api_client.dsmaker.api.http_sync_base import SyncHttpClientBase
 from dl_api_client.dsmaker.primitives import Dataset
 from dl_api_lib.enums import DatasetAction
 from dl_api_lib_testing.dataset_base import DatasetTestBase
-from dl_core.us_connection_base import ConnectionBase
 from dl_core.us_manager.us_manager_sync import SyncUSManager
 from dl_testing.regulated_test import RegulatedTestCase
 

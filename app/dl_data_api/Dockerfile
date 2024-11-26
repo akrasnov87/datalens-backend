@@ -1,10 +1,6 @@
 #syntax=docker/dockerfile:1.4
 FROM bake_ctx_base_img
 
-RUN apt update && apt upgrade -y
-RUN apt install mc -y
-RUN EDITOR="mcedit mc"
-
 ENV APP_DIR="app/dl_data_api"
 
 RUN mkdir -p /code
