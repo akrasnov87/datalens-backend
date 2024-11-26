@@ -74,3 +74,10 @@ Head over to the [Knowledge Base](kb/index.md) for documentation on this repo.
 ## License
 
 `datalens-backend` is available under the Apache 2.0 license.
+
+## Тегирование
+
+<pre>
+git tag [версия]
+git push origin [версия]
+</pre>
