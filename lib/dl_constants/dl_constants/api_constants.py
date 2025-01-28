@@ -15,10 +15,13 @@ class DLCookies(str, enum.Enum):
 
 
 class DLContextKey(str, enum.Enum):
+    DISPLAY_MODE = "displayMode"
     DASH_ID = "dashId"
     CHART_ID = "chartId"
     CHART_KIND = "chartKind"
     DASH_TAB_ID = "dashTabId"
+    REPORT_ID = "reportId"
+    REPORT_PAGE = "reportPage"
 
 
 class DLHeadersCommon(DLHeaders):

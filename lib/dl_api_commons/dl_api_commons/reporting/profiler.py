@@ -143,10 +143,13 @@ class DefaultReportingProfiler(ReportingProfiler):
             is_public=int(self._is_public_env),
             is_embedded=int(self.rci.is_embedded),
             embed_id=getattr(self.rci.auth_data, "embed_id", None),
+            display_mode=x_dl_context.get(DLContextKey.DISPLAY_MODE),  # basic, embedded, etc.
             dash_id=x_dl_context.get(DLContextKey.DASH_ID),
             dash_tab_id=x_dl_context.get(DLContextKey.DASH_TAB_ID),
             chart_id=x_dl_context.get(DLContextKey.CHART_ID),
             chart_kind=x_dl_context.get(DLContextKey.CHART_KIND),
+            report_id=x_dl_context.get(DLContextKey.REPORT_ID),
+            report_page=x_dl_context.get(DLContextKey.REPORT_PAGE),
             response_status_code=response_status_code,
             workbook_id=start_record.workbook_id,
             **start_record.conn_reporting_data,

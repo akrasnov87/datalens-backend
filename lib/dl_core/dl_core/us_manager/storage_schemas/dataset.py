@@ -37,12 +37,13 @@ from dl_core.components.dependencies.primitives import (
     FieldInterDependencyItem,
 )
 from dl_core.fields import (
+    AllParameterValueConstraint,
+    BaseParameterValueConstraint,
     BIField,
     CalculationSpec,
     DirectCalculationSpec,
     FormulaCalculationSpec,
     ParameterCalculationSpec,
-    ParameterValueConstraint,
     RangeParameterValueConstraint,
     ResultSchema,
     SetParameterValueConstraint,
@@ -258,7 +259,7 @@ class BaseParameterValueConstraintSchema(DefaultStorageSchema):
 
 
 class AllParameterValueConstraintSchema(BaseParameterValueConstraintSchema):
-    TARGET_CLS = ParameterValueConstraint
+    TARGET_CLS = AllParameterValueConstraint
 
 
 class RangeParameterValueConstraintSchema(BaseParameterValueConstraintSchema):
@@ -282,7 +283,7 @@ class ParameterValueConstraintSchema(OneOfSchema):
         ParameterValueConstraintType.set.name: SetParameterValueConstraintSchema,
     }
 
-    def get_obj_type(self, obj: ParameterValueConstraint) -> str:
+    def get_obj_type(self, obj: BaseParameterValueConstraint) -> str:
         return getattr(obj, self.type_field).name
 
 
@@ -444,3 +445,4 @@ class DatasetStorageSchema(DefaultStorageSchema):
     rls = ma_fields.Nested(RLSSchema, allow_none=False)
     component_errors = ma_fields.Nested(ComponentErrorListSchema)
     obligatory_filters = ma_fields.List(ma_fields.Nested(ObligatoryFilterSchema))
+    schema_version = ma_fields.String(required=False, allow_none=False, load_default="1", dump_default="1")

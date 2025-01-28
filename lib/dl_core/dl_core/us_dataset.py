@@ -58,13 +58,14 @@ LOGGER = logging.getLogger(__name__)
 
 class Dataset(USEntry):
     dir_name = ""  # type: ignore  # TODO: fix
-    scope = "dataset"  # type: ignore  # TODO: fix
+    scope = "dataset"
 
     @attr.s
     class DataModel(BaseAttrsDataModel):
         name: str = attr.ib()
         revision_id: Optional[str] = attr.ib(default=None)
         load_preview_by_default: Optional[bool] = attr.ib(default=True)
+        schema_version: str = attr.ib(default="1")
         result_schema: ResultSchema = attr.ib(factory=ResultSchema)
         source_collections: list[DataSourceCollectionSpecBase] = attr.ib(factory=list)
         source_avatars: list[multisource.SourceAvatar] = attr.ib(factory=list)
@@ -132,7 +133,7 @@ class Dataset(USEntry):
 
         def spec_matches_parameters(existing_spec: DataSourceSpec) -> bool:
             # FIXME: Refactor
-            for key, value in parameters.items():  # type: ignore  # TODO: fix
+            for key, value in parameters.items():
                 if getattr(existing_spec, key, None) != value:
                     return False
             return True
@@ -220,3 +221,7 @@ class Dataset(USEntry):
 
     def rename_field_id_usages(self, old_id: str, new_id: str) -> None:
         self.error_registry.rename_pack(old_id=old_id, new_id=new_id)
+
+    @property
+    def schema_version(self) -> str:
+        return self.data.schema_version
