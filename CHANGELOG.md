@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2213.0] 11.02.2025
+
+Fixed:
+
+- обновлена версия 0.2202.2 -> 0.2213.0
+
 ## [0.2202.2] 04.02.2025
 
 Created:
