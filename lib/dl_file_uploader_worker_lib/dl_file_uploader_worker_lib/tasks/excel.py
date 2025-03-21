@@ -57,6 +57,7 @@ class ProcessExcelTask(BaseExecutorTask[task_interface.ProcessExcelTask, FileUpl
         dfile: Optional[DataFile] = None
         sources_to_update_by_sheet_id: dict[int, list[DataSource]] = defaultdict(list)
         usm = self._ctx.get_async_usm()
+        usm.set_tenant_override(self._ctx.tenant_resolver.resolve_tenant_def_by_tenant_id(self.meta.tenant_id))
         task_processor = self._ctx.make_task_processor(self._request_id)
         redis = self._ctx.redis_service.get_redis()
         connection_error_tracker = FileConnectionDataSourceErrorTracker(usm, task_processor, redis, self._request_id)
@@ -85,18 +86,11 @@ class ProcessExcelTask(BaseExecutorTask[task_interface.ProcessExcelTask, FileUpl
             conn: aiohttp.BaseConnector
             if self._ctx.secure_reader_settings.endpoint is not None:
                 secure_reader_endpoint = self._ctx.secure_reader_settings.endpoint
-                # TODO: after migration to aiohttp 3.9.4+ replace with
-                # ssl_context: ssl.SSLContext | True = True
-                ssl_context: Optional[ssl.SSLContext] = None
-                if self._ctx.secure_reader_settings.cafile is not None:
-                    ssl_context = ssl.SSLContext(protocol=ssl.PROTOCOL_TLS)
-                    ssl_context.load_verify_locations(cafile=self._ctx.secure_reader_settings.cafile)
-                # TODO: after migration to aiohttp 3.9.4+ replace condition with
-                # aiohttp.TCPConnector(ssl=ssl_context)
-                if ssl_context is not None:
-                    conn = aiohttp.TCPConnector(ssl=ssl_context)
-                else:
-                    conn = aiohttp.TCPConnector()
+                ssl_context = ssl.create_default_context(
+                    purpose=ssl.Purpose.SERVER_AUTH,
+                    cafile=self._ctx.secure_reader_settings.cafile,
+                )
+                conn = aiohttp.TCPConnector(ssl=ssl_context)
             else:
                 socket_path = self._ctx.secure_reader_settings.socket
                 secure_reader_endpoint = f"unix://{urllib.parse.quote_plus(socket_path)}"

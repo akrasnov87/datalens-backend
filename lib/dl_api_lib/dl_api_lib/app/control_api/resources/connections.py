@@ -4,8 +4,8 @@ import logging
 from typing import (
     TYPE_CHECKING,
     Any,
+    ClassVar,
     NoReturn,
-    Optional,
 )
 
 from flask import request
@@ -13,10 +13,13 @@ from flask_restx import abort
 from marshmallow import ValidationError as MValidationError
 
 from dl_api_commons.flask.middlewares.logging_context import put_to_request_context
+from dl_api_commons.flask.required_resources import RequiredResourceCommon
 from dl_api_connector.api_schema.connection_base import ConnectionOptionsSchema
 from dl_api_connector.api_schema.extras import (
     CreateMode,
     EditMode,
+    ExportMode,
+    ImportMode,
 )
 from dl_api_lib import exc
 from dl_api_lib.api_decorators import schematic_request
@@ -26,6 +29,7 @@ from dl_api_lib.enums import USPermissionKind
 from dl_api_lib.schemas.connection import (
     ConnectionInfoSourceSchemaQuerySchema,
     ConnectionInfoSourceSchemaResponseSchema,
+    ConnectionItemQuerySchema,
     ConnectionSourcesQuerySchema,
     ConnectionSourceTemplatesResponseSchema,
     GenericConnectionSchema,
@@ -65,10 +69,11 @@ def _handle_conn_test_exc(exception: Exception) -> NoReturn:
 @ns.route("/test_connection_params")
 class ConnectionParamsTester(BIResource):
     @schematic_request(ns=ns)
-    def post(self):  # type: ignore  # TODO: fix
+    def post(self) -> None | tuple[list | dict, int]:
         service_registry = self.get_service_registry()
         schema = GenericConnectionSchema(context=self.get_schema_ctx(schema_operations_mode=CreateMode.test))
-        body_json = dict(request.json)  # type: ignore  # 2024-01-24 # TODO: Argument 1 to "dict" has incompatible type "Any | None"; expected "SupportsKeysAndGetItem[Any, Any]"  [arg-type]
+        body_json = request.get_json()
+        assert isinstance(body_json, dict)
         body_json["name"] = "mocked_name"  # FIXME: BI-4639
         try:
             conn: ConnectionBase = schema.load(body_json)
@@ -86,12 +91,13 @@ class ConnectionParamsTester(BIResource):
             raise exc.UnsupportedForEntityType(f"Connector {conn_type} does not support testing") from err
         except Exception as err:
             _handle_conn_test_exc(err)
+        return None
 
 
 @ns.route("/test_connection/<connection_id>")
 class ConnectionTester(BIResource):
     @schematic_request(ns=ns)
-    def post(self, connection_id):  # type: ignore  # TODO: fix
+    def post(self, connection_id: str) -> None | tuple[list | dict, int]:
         usm = self.get_us_manager()
         service_registry = self.get_service_registry()
         conn = usm.get_by_id(connection_id, expected_type=ConnectionBase)
@@ -99,7 +105,8 @@ class ConnectionTester(BIResource):
         assert isinstance(conn_orig, ConnectionBase)  # for typing
         need_permission_on_entry(conn, USPermissionKind.read)
 
-        body_json = dict(request.json)  # type: ignore  # 2024-01-24 # TODO: Argument 1 to "dict" has incompatible type "Any | None"; expected "SupportsKeysAndGetItem[Any, Any]"  [arg-type]
+        body_json = request.get_json()
+        assert isinstance(body_json, dict)
 
         has_changes = len(body_json.keys()) > 0
         if has_changes:
@@ -123,13 +130,61 @@ class ConnectionTester(BIResource):
             raise exc.UnsupportedForEntityType(f"Connector {conn.conn_type.name} does not support testing") from err
         except Exception as e:
             _handle_conn_test_exc(e)
+        return None
+
+
+@ns.route("/import")
+class ConnectionsImportList(BIResource):
+    REQUIRED_RESOURCES: ClassVar[frozenset[RequiredResourceCommon]] = frozenset(
+        {RequiredResourceCommon.SKIP_AUTH, RequiredResourceCommon.US_HEADERS_TOKEN}
+    )
+
+    @put_to_request_context(endpoint_code="ConnectionImport")
+    @schematic_request(ns=ns)
+    def post(self) -> dict | tuple[list | dict, int]:
+        us_manager = self.get_service_us_manager()
+        notifications = []
+
+        conn_data = request.json and request.json["data"]["connection"]
+        assert conn_data
+
+        conn_type = conn_data["db_type"]
+        if not conn_type or conn_type not in ConnectionType:
+            raise exc.BadConnectionType(f"Invalid connection type value: {conn_type}")
+
+        conn_availability = self.get_service_registry().get_connector_availability()
+        conn_type_is_available = conn_availability.check_connector_is_available(ConnectionType[conn_type])
+        if not conn_type_is_available:
+            raise exc.UnsupportedForEntityType("Connector %s is not available in current env", conn_type)
+
+        conn_data["workbook_id"] = request.json and request.json["data"].get("workbook_id", None)
+        conn_data["type"] = conn_type
+
+        schema = GenericConnectionSchema(
+            context=self.get_schema_ctx(schema_operations_mode=ImportMode.create_from_import)
+        )
+        try:
+            conn: ConnectionBase = schema.load(conn_data)
+        except MValidationError as e:
+            return e.messages, 400
+
+        conn.validate_new_data_sync(services_registry=self.get_service_registry())
+
+        localizer = self.get_service_registry().get_localizer()
+        conn_warnings = conn.get_import_warnings_list(localizer=localizer)
+        if conn_warnings:
+            notifications.extend(conn_warnings)
+
+        us_manager.save(conn)
+
+        return dict(id=conn.uuid, notifications=notifications)
 
 
 @ns.route("/")
 class ConnectionsList(BIResource):
     @put_to_request_context(endpoint_code="ConnectionCreate")
     @schematic_request(ns=ns)
-    def post(self):  # type: ignore  # TODO: fix
+    def post(self) -> dict | tuple[list | dict, int]:
         us_manager = self.get_us_manager()
 
         conn_availability = self.get_service_registry().get_connector_availability()
@@ -161,13 +216,25 @@ class ConnectionItem(BIResource):
     @put_to_request_context(endpoint_code="ConnectionGet")
     @schematic_request(
         ns=ns,
+        query=ConnectionItemQuerySchema(),
         responses={
             # 200: ('Success', GetConnectionResponseSchema()),
         },
     )
-    def get(self, connection_id: str) -> dict:
-        conn = self.get_us_manager().get_by_id(connection_id, expected_type=ConnectionBase)
-        need_permission_on_entry(conn, USPermissionKind.read)
+    def get(self, connection_id: str, query: dict) -> dict:
+        us_manager = self.get_us_manager()
+
+        if "rev_id" in query:
+            conn = us_manager.get_by_id(
+                connection_id,
+                expected_type=ConnectionBase,
+                params={"revId": query["rev_id"]},
+            )
+            need_permission_on_entry(conn, USPermissionKind.edit)
+        else:
+            conn = us_manager.get_by_id(connection_id, expected_type=ConnectionBase)
+            need_permission_on_entry(conn, USPermissionKind.read)
+
         assert isinstance(conn, ConnectionBase)
 
         result = GenericConnectionSchema(context=self.get_schema_ctx(EditMode.edit)).dump(conn)
@@ -185,7 +252,7 @@ class ConnectionItem(BIResource):
 
     @put_to_request_context(endpoint_code="ConnectionUpdate")
     @schematic_request(ns=ns)
-    def put(self, connection_id):  # type: ignore  # TODO: fix
+    def put(self, connection_id: str) -> None | tuple[list | dict, int]:
         us_manager = self.get_us_manager()
 
         with us_manager.get_locked_entry_cm(ConnectionBase, connection_id) as conn:  # type: ignore  # TODO: fix
@@ -198,7 +265,9 @@ class ConnectionItem(BIResource):
             schema = schema_cls(context=schema_ctx)
 
             try:
-                changes = schema.load(request.json)  # type: ignore  # 2024-01-24 # TODO: Argument 1 to "load" of "Schema" has incompatible type "Any | None"; expected "Mapping[str, Any] | Iterable[Mapping[str, Any]]"  [arg-type]
+                body_json = request.get_json()
+                assert isinstance(body_json, dict)
+                changes = schema.load(body_json)
                 schema.update_object(conn, changes)
             except MValidationError as e:
                 return e.messages, 400
@@ -209,9 +278,43 @@ class ConnectionItem(BIResource):
                 original_version=conn_orig,
             )
             us_manager.save(conn)
+            return None
 
 
-def _dump_source_templates(tpls: Optional[list[DataSourceTemplate]]) -> Optional[list[dict[str, Any]]]:
+@ns.route("/export/<connection_id>")
+class ConnectionExportItem(BIResource):
+    REQUIRED_RESOURCES: ClassVar[frozenset[RequiredResourceCommon]] = frozenset(
+        {RequiredResourceCommon.SKIP_AUTH, RequiredResourceCommon.US_HEADERS_TOKEN}
+    )
+
+    @put_to_request_context(endpoint_code="ConnectionExport")
+    @schematic_request(
+        ns=ns,
+        responses={},
+    )
+    def get(self, connection_id: str) -> dict:
+        notifications: list[dict] = []
+
+        conn = self.get_service_us_manager().get_by_id(connection_id, expected_type=ConnectionBase)
+        need_permission_on_entry(conn, USPermissionKind.read)
+        assert isinstance(conn, ConnectionBase)
+
+        if not conn.allow_export:
+            raise exc.UnsupportedForEntityType(f"Connector {conn.conn_type.name} does not support export")
+
+        result = GenericConnectionSchema(context=self.get_schema_ctx(ExportMode.export)).dump(conn)
+        result.update(options=ConnectionOptionsSchema().dump(conn.get_options()))
+        result.pop("id")
+
+        localizer = self.get_service_registry().get_localizer()
+        conn_warnings = conn.get_export_warnings_list(localizer=localizer)
+        if conn_warnings:
+            notifications.extend(conn_warnings)
+
+        return dict(connection=result, notifications=notifications)
+
+
+def _dump_source_templates(tpls: list[DataSourceTemplate] | None) -> list[dict[str, Any]] | None:
     if tpls is None:
         return None
     return [dict(tpl._asdict(), parameter_hash=tpl.get_param_hash()) for tpl in tpls]
@@ -220,13 +323,13 @@ def _dump_source_templates(tpls: Optional[list[DataSourceTemplate]]) -> Optional
 @ns.route("/<connection_id>/info/metadata_sources")
 class ConnectionInfoMetadataSources(BIResource):
     @schematic_request(ns=ns, responses={200: ("Success", ConnectionSourceTemplatesResponseSchema())})
-    def get(self, connection_id: str) -> dict[str, Optional[list[dict[str, Any]]]]:
+    def get(self, connection_id: str) -> dict[str, list[dict[str, Any]] | None]:
         connection: ConnectionBase = self.get_us_manager().get_by_id(connection_id, expected_type=ConnectionBase)
 
         localizer = self.get_service_registry().get_localizer()
         source_template_templates = connection.get_data_source_template_templates(localizer=localizer)
 
-        source_templates: Optional[list[DataSourceTemplate]] = []
+        source_templates: list[DataSourceTemplate] | None = []
         try:
             need_permission_on_entry(connection, USPermissionKind.read)
         except USPermissionRequired:
@@ -247,7 +350,7 @@ class ConnectionInfoSources(BIResource):
         query=ConnectionSourcesQuerySchema(),
         responses={200: ("Success", ConnectionSourceTemplatesResponseSchema())},
     )
-    def get(self, connection_id, query):  # type: ignore  # TODO: fix
+    def get(self, connection_id: str, query: dict) -> dict:
         connection = self.get_us_manager().get_by_id(connection_id, expected_type=ConnectionBase)
 
         service_registry = self.get_service_registry()
@@ -285,7 +388,7 @@ class ConnectionInfoSourceSchema(BIResource):
         body=ConnectionInfoSourceSchemaQuerySchema(),
         responses={200: ("Success", ConnectionInfoSourceSchemaResponseSchema())},
     )
-    def post(self, connection_id: str, body: dict):  # type: ignore  # TODO: fix
+    def post(self, connection_id: str, body: dict) -> dict:
         connection = self.get_us_manager().get_by_id(connection_id, expected_type=ConnectionBase)
         sr = self.get_service_registry()
 

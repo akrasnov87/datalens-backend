@@ -67,7 +67,7 @@ from dl_core.base_models import (
 from dl_core.connectors.base.data_source_migration import get_data_source_migrator
 from dl_core.constants import DatasetConstraints
 from dl_core.data_source.base import DataSource
-from dl_core.data_source.collection import DataSourceCollectionBase
+from dl_core.data_source.collection import DataSourceCollection
 from dl_core.data_source.sql import BaseSQLDataSource
 from dl_core.data_source.type_mapping import get_data_source_class
 from dl_core.db import (
@@ -148,18 +148,15 @@ class DatasetValidator(DatasetBaseWrapper):
 
     # TODO: refactor the class's structure (separate into several classes: one per action)
     _validation_mode = True
-    _is_bleeding_edge_user: bool = False
 
     def __init__(
         self,
         ds: Dataset,
         us_manager: USManagerBase,
         is_data_api: bool = False,
-        is_bleeding_edge_user: bool = False,
     ):
         super().__init__(ds=ds, us_manager=us_manager)
         self._is_data_api = is_data_api
-        self._is_bleeding_edge_user = is_bleeding_edge_user
 
         self._ds_ca = DatasetComponentAbstraction(dataset=self._ds, us_entry_buffer=self._us_manager.get_entry_buffer())
         self._remapped_source_ids: dict[str, str] = {}
@@ -289,11 +286,22 @@ class DatasetValidator(DatasetBaseWrapper):
 
     def _get_field_errors(self, field: BIField) -> list[FormulaErrorCtx]:
         errors = self.formula_compiler.get_field_errors(field=field)
+        if not self._has_sources:
+            errors.append(
+                FormulaErrorCtx(
+                    message="Data source is not set for the dataset",
+                    code=tuple(common_exc.DataSourceNotFound.err_code),
+                    level=MessageLevel.ERROR,
+                )
+            )
+            return errors
         try:
             formula_info = self.formula_compiler.compile_field_formula(field=field, collect_errors=True)
             assert self._column_reg is not None
             formula_comp_query = single_formula_comp_query_for_validation(
-                formula=formula_info, ds_accessor=self._ds_accessor, column_reg=self._column_reg
+                formula=formula_info,
+                ds_accessor=self._ds_accessor,
+                column_reg=self._column_reg,
             )
             formula_comp_multi_query = self.process_compiled_query(compiled_query=formula_comp_query)
             multi_translator = self.make_multi_query_translator()
@@ -707,6 +715,14 @@ class DatasetValidator(DatasetBaseWrapper):
                 )
                 self._ds.rename_field_id_usages(old_id=field_id, new_id=new_field_id)
                 return
+            if (
+                self._is_data_api
+                and old_field.calc_mode == CalcMode.parameter
+                and old_field.value_constraint != field_data_dict.get("value_constraint")
+                and field_data_dict.get("value_constraint") is not None
+            ):
+                raise exc.DatasetActionNotAllowedError("parameter value_constraint cannot be updated")
+
             # Update existing field
             new_field = old_field.clone(**field_data_dict)
             if new_field == old_field:
@@ -952,7 +968,7 @@ class DatasetValidator(DatasetBaseWrapper):
         }[component_ref.component_type]
 
         for other_component in self._ds_ca.iter_dataset_components_by_type(component_type=component_ref.component_type):
-            if not isinstance(other_component, (DataSourceCollectionBase, SourceAvatar, BIField)):
+            if not isinstance(other_component, (DataSourceCollection, SourceAvatar, BIField)):
                 raise TypeError(f"Component type {type(other_component)} is not supported here")
 
             other_component_id = other_component.guid if isinstance(other_component, BIField) else other_component.id
@@ -1221,6 +1237,8 @@ class DatasetValidator(DatasetBaseWrapper):
         self._ds.error_registry.remove_errors(id=source_id)
 
         if action == DatasetAction.add_source:
+            for field in self._ds.error_registry.for_type(ComponentType.field):
+                self._ds.error_registry.remove_errors(id=field.id, code=common_exc.DataSourceNotFound.err_code)
             add_source(title=source_data.get("title") or None)  # type: ignore  # TODO: fix
             self.refresh_data_source(source_id=source_id, old_raw_schema=None)
             new_title = source_data["title"]

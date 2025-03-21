@@ -36,10 +36,8 @@ from dl_core.connection_models.common_models import (
 import dl_core.exc as core_exc
 from dl_core.us_connection_base import ConnectionBase
 from dl_core_testing.database import (
-    C,
     Db,
     DbTable,
-    make_table,
 )
 from dl_core_testing.testcases.connection import BaseConnectionTestClass
 from dl_testing.regulated_test import RegulatedTestCase
@@ -92,19 +90,9 @@ class DefaultSyncAsyncConnectionExecutorCheckBase(BaseConnectionExecutorTestClas
             table_name=sample_table.name,
         )
 
-    @pytest.fixture(scope="class")
-    def db_table_columns(self, db: Db) -> list[C]:
-        return C.full_house()
-
-    @pytest.fixture(scope="function")
-    def db_table(self, db: Db, db_table_columns: list[C]) -> Generator[DbTable, None, None]:
-        db_table = make_table(db, columns=db_table_columns)
-        yield db_table
-        db.drop_table(db_table.table)
-
     @pytest.fixture(scope="function")
     def nonexistent_table_ident(self, existing_table_ident: TableIdent) -> TableIdent:
-        return existing_table_ident.clone(table_name=f"nonexistent_table_{shortuuid.uuid()}")
+        return existing_table_ident.clone(table_name=f"nonexistent_table_{shortuuid.uuid().lower()}")
 
     def check_db_version(self, db_version: Optional[str]) -> None:
         pass
@@ -136,7 +124,6 @@ class DefaultSyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutorC
     def test_get_table_names(
         self,
         sample_table: DbTable,
-        db: Db,
         sync_connection_executor: SyncConnExecutorBase,
     ) -> None:
         # at the moment, checks that sample table is listed among the others
@@ -144,7 +131,12 @@ class DefaultSyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutorC
         tables = [sample_table]
         expected_table_names = set(table.name for table in tables)
 
-        actual_tables = sync_connection_executor.get_tables(SchemaIdent(db_name=db.name, schema_name=None))
+        actual_tables = sync_connection_executor.get_tables(
+            SchemaIdent(
+                db_name=sample_table.db.name,
+                schema_name=sample_table.schema,
+            )
+        )
         actual_table_names = [tid.table_name for tid in actual_tables]
 
         assert set(actual_table_names).issuperset(expected_table_names)
@@ -153,7 +145,6 @@ class DefaultSyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutorC
         self,
         sync_connection_executor: SyncConnExecutorBase,
         existing_table_ident: TableIdent,
-        db_table: DbTable,
     ) -> None:
         assert sync_connection_executor.is_table_exists(existing_table_ident)
 
@@ -192,14 +183,18 @@ class DefaultSyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutorC
         }
 
     def test_type_recognition(
-        self, request: pytest.FixtureRequest, db: Db, sync_connection_executor: SyncConnExecutorBase
+        self,
+        request: pytest.FixtureRequest,
+        db: Db,
+        sample_table_schema: Optional[str],
+        sync_connection_executor: SyncConnExecutorBase,
     ) -> None:
         for schema_name, type_schema in self.get_schemas_for_type_recognition().items():
             columns = [
                 sa.Column(name=f"c_{shortuuid.uuid().lower()}", type_=column_data.sa_type)
                 for column_data in type_schema
             ]
-            sa_table = db.table_from_columns(columns=columns)
+            sa_table = db.table_from_columns(columns=columns, schema=sample_table_schema)
 
             db.create_table(sa_table)
             request.addfinalizer(functools.partial(db.drop_table, sa_table))
@@ -249,7 +244,6 @@ class DefaultSyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutorC
         case: str,
         sync_connection_executor: SyncConnExecutorBase,
         existing_table_ident: TableIdent,
-        db_table: DbTable,
     ) -> None:
         # Just tests that the adapter can successfully retrieve the schema.
         # Data source tests check this in more detail
@@ -362,7 +356,6 @@ class DefaultAsyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutor
         self,
         async_connection_executor: AsyncConnExecutorBase,
         existing_table_ident: TableIdent,
-        db_table: DbTable,
     ) -> None:
         # Just tests that the adapter can successfully retrieve the schema.
         # Data source tests check this in more detail

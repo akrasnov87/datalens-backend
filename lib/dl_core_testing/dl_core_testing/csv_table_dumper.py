@@ -64,6 +64,7 @@ class CsvTableDumper:
         self,
         raw_csv_data: str,
         table_schema: Sequence[tuple[str, UserDataType]],
+        schema_name: Optional[str] = None,
         table_name_prefix: Optional[str] = None,
         nullable: bool = True,
         chunk_size: Optional[int] = None,
@@ -71,7 +72,11 @@ class CsvTableDumper:
         table_name_prefix = table_name_prefix or "table_"
         if not table_name_prefix.endswith("_"):
             table_name_prefix = f"{table_name_prefix}_"
-        table_name = f"{table_name_prefix}{shortuuid.uuid()}"
+        table_name = f"{table_name_prefix}{shortuuid.uuid()}".lower()
+
+        # TODO: BI-6104 This is a workaround for Oracle. Remove it when the issue is fixed.
+        if self.db.config.conn_type.name == "oracle":
+            table_name = table_name.upper()
 
         type_schema = [user_type for col_name, user_type in table_schema]
         data = self._load_table_data(raw_csv_data=raw_csv_data, type_schema=type_schema)
@@ -87,5 +92,12 @@ class CsvTableDumper:
             for col_idx, (name, user_type) in enumerate(table_schema)
         ]
 
-        db_table = make_table(db=self.db, name=table_name, columns=columns, rows=len(data), chunk_size=chunk_size)
+        db_table = make_table(
+            db=self.db,
+            schema=schema_name,
+            name=table_name,
+            columns=columns,
+            rows=len(data),
+            chunk_size=chunk_size,
+        )
         return db_table

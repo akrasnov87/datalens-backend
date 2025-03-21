@@ -4,12 +4,14 @@ from http import HTTPStatus
 import logging
 from typing import (
     Any,
+    ClassVar,
     Dict,
     Sequence,
 )
 import uuid
 
 from dl_api_commons.flask.middlewares.logging_context import put_to_request_context
+from dl_api_commons.flask.required_resources import RequiredResourceCommon
 from dl_api_connector.api_schema.top_level import resolve_entry_loc_from_api_req_body
 from dl_api_lib import (
     exc,
@@ -30,7 +32,10 @@ from dl_api_lib.schemas import main as dl_api_main_schemas
 import dl_api_lib.schemas.data
 import dl_api_lib.schemas.dataset_base
 import dl_api_lib.schemas.validation
-from dl_constants.enums import ManagedBy
+from dl_constants.enums import (
+    DataSourceCreatedVia,
+    ManagedBy,
+)
 from dl_constants.exc import (
     CODE_OK,
     DEFAULT_ERR_CODE_API_PREFIX,
@@ -85,7 +90,7 @@ class DatasetCollection(DatasetResource):
             200: ("Success", dl_api_main_schemas.CreateDatasetResponseSchema()),
         },
     )
-    def post(self, body):  # type: ignore  # TODO: fix
+    def post(self, body: dict) -> dict:
         """Create dataset"""
         us_manager = self.get_us_manager()
         dataset = Dataset.create_from_dict(
@@ -117,14 +122,14 @@ class DatasetItem(BIResource):
     @schematic_request(
         ns=ns,
         responses={
-            200: ("Success", None),  # type: ignore  # TODO: fix
-            404: ("Not found", None),  # type: ignore  # TODO: fix
+            200: ("Success", None),
+            404: ("Not found", None),
         },
     )
-    def delete(self, dataset_id):
+    def delete(self, dataset_id: str) -> None:
         """Delete dataset"""
         us_manager = self.get_us_manager()
-        ds, _ = DatasetResource.get_dataset(dataset_id=dataset_id, body={})
+        ds, _ = DatasetResource.get_dataset(dataset_id=dataset_id, body={}, load_dependencies=False)
         utils.need_permission_on_entry(ds, USPermissionKind.admin)
 
         us_manager.delete(ds)
@@ -140,8 +145,8 @@ class DatasetItemFields(BIResource):
             200: ("Success", dl_api_lib.schemas.data.DatasetFieldsResponseSchema()),
         },
     )
-    def get(self, dataset_id):  # type: ignore  # TODO: fix
-        ds, _ = DatasetResource.get_dataset(dataset_id=dataset_id, body={})
+    def get(self, dataset_id: str) -> dict:
+        ds, _ = DatasetResource.get_dataset(dataset_id=dataset_id, body={}, load_dependencies=False)
         fields = [
             {
                 "title": f.title,
@@ -168,11 +173,10 @@ class DatasetCopy(DatasetResource):
             400: ("Failed", dl_api_lib.schemas.main.BadRequestResponseSchema()),
         },
     )
-    def post(self, dataset_id, body):  # type: ignore  # TODO: fix
+    def post(self, dataset_id: str, body: dict) -> dict:
         copy_us_key = body["new_key"]
         us_manager = self.get_us_manager()
         ds, _ = self.get_dataset(dataset_id=dataset_id, body={})
-        us_manager.load_dependencies(ds)
         orig_ds_loc = ds.entry_key
         copy_ds_loc: PathEntryLocation
 
@@ -196,16 +200,28 @@ class DatasetVersionItem(DatasetResource):
     @put_to_request_context(endpoint_code="DatasetGet")
     @schematic_request(
         ns=ns,
+        query=dl_api_lib.schemas.main.GetDatasetVersionQuerySchema(),
         responses={
             200: ("Success", dl_api_lib.schemas.main.GetDatasetVersionResponseSchema()),
             400: ("Failed", dl_api_lib.schemas.main.BadRequestResponseSchema()),
         },
     )
-    def get(self, dataset_id, version):  # type: ignore  # TODO: fix
+    def get(self, dataset_id: str, version: str, query: dict) -> dict:
         """Get dataset version"""
         us_manager = self.get_us_manager()
-        ds, _ = self.get_dataset(dataset_id=dataset_id, body={})
-        utils.need_permission_on_entry(ds, USPermissionKind.read)
+
+        if "rev_id" in query:
+            ds, _ = self.get_dataset(dataset_id=dataset_id, body={}, params={"revId": query["rev_id"]})
+            utils.need_permission_on_entry(ds, USPermissionKind.edit)
+            # raw entry to avoid double deserialization
+            ds_raw = us_manager.get_migrated_entry(dataset_id)
+            # latest data revision_id for concurrent edit checks
+            revision_id = ds_raw["data"]["revision_id"]
+        else:
+            ds, _ = self.get_dataset(dataset_id=dataset_id, body={})
+            utils.need_permission_on_entry(ds, USPermissionKind.read)
+            revision_id = ds.revision_id
+
         ds_dict = ds.as_dict()  # FIXME
         # TODO FIX: determine desired behaviour in case of workbooks
         ds_dict["key"] = ds.raw_us_key
@@ -216,8 +232,9 @@ class DatasetVersionItem(DatasetResource):
 
         ds_dict["is_favorite"] = ds.is_favorite
 
-        us_manager.load_dependencies(ds)
         ds_dict.update(self.make_dataset_response_data(dataset=ds, us_entry_buffer=us_manager.get_entry_buffer()))
+        ds_dict["dataset"]["revision_id"] = revision_id
+
         return ds_dict
 
     @put_to_request_context(endpoint_code="DatasetUpdate")
@@ -268,6 +285,124 @@ class DatasetVersionItem(DatasetResource):
             return self.make_dataset_response_data(dataset=ds, us_entry_buffer=us_manager.get_entry_buffer())
 
 
+@ns.route("/export/<dataset_id>")
+class DatasetExportItem(DatasetResource):
+    REQUIRED_RESOURCES: ClassVar[frozenset[RequiredResourceCommon]] = frozenset(
+        {RequiredResourceCommon.SKIP_AUTH, RequiredResourceCommon.US_HEADERS_TOKEN}
+    )
+
+    @put_to_request_context(endpoint_code="DatasetExport")
+    @schematic_request(
+        ns=ns,
+        body=dl_api_lib.schemas.main.DatasetExportRequestSchema(),
+        responses={
+            200: ("Success", dl_api_lib.schemas.main.DatasetExportResponseSchema()),
+            400: ("Failed", dl_api_lib.schemas.main.BadRequestResponseSchema()),
+        },
+    )
+    def post(self, dataset_id: str, body: dict) -> dict:
+        """Export dataset"""
+
+        notifications = []
+        us_manager = self.get_service_us_manager()
+        ds, _ = self.get_dataset(dataset_id=dataset_id, body={})
+        utils.need_permission_on_entry(ds, USPermissionKind.read)
+        ds_dict = ds.as_dict()
+
+        dl_loc = ds.entry_key
+        ds_name = None
+        if isinstance(dl_loc, WorkbookEntryLocation):
+            ds_name = dl_loc.entry_name
+
+        us_manager.load_dependencies(ds)
+        ds_dict.update(
+            self.make_dataset_response_data(
+                dataset=ds, us_entry_buffer=us_manager.get_entry_buffer(), conn_id_mapping=body["id_mapping"]
+            )
+        )
+        if ds_name:
+            ds_dict["dataset"]["name"] = ds_name
+
+        ds_dict["dataset"]["revision_id"] = None
+
+        localizer = self.get_service_registry().get_localizer()
+        ds_warnings = ds.get_export_warnings_list(localizer=localizer)
+        if ds_warnings:
+            notifications.extend(ds_warnings)
+
+        return dict(dataset=ds_dict["dataset"], notifications=notifications)
+
+
+@ns.route("/import")
+class DatasetImportCollection(DatasetResource):
+    REQUIRED_RESOURCES: ClassVar[frozenset[RequiredResourceCommon]] = frozenset(
+        {RequiredResourceCommon.SKIP_AUTH, RequiredResourceCommon.US_HEADERS_TOKEN}
+    )
+
+    @classmethod
+    def generate_dataset_location(cls, body: dict) -> EntryLocation:
+        name = body.get("name", "Dataset {}".format(str(uuid.uuid4())))
+        return resolve_entry_loc_from_api_req_body(
+            name=name,
+            workbook_id=body.get("workbook_id"),
+            dir_path=body.get("dir_path", "datasets"),
+        )
+
+    @classmethod
+    def replace_conn_ids(cls, data: dict, conn_id_mapping: dict) -> None:
+        for sources in data["dataset"]["sources"]:
+            sources["connection_id"] = conn_id_mapping[sources["connection_id"]]
+
+    @put_to_request_context(endpoint_code="DatasetImport")
+    @schematic_request(
+        ns=ns,
+        body=dl_api_main_schemas.DatasetImportRequestSchema(),
+        responses={
+            200: ("Success", dl_api_main_schemas.DatasetImportResponseSchema()),
+        },
+    )
+    def post(self, body: dict) -> dict:
+        """Import dataset"""
+
+        notifications: list[dict] = []
+
+        name = body["data"]["dataset"].pop("name", None)
+        if name:
+            body["data"]["name"] = name
+
+        data = body["data"]
+
+        self.replace_conn_ids(data, body["id_mapping"])
+
+        us_manager = self.get_service_us_manager()
+        dataset = Dataset.create_from_dict(
+            Dataset.DataModel(name=""),
+            ds_key=self.generate_dataset_location(data),
+            us_manager=us_manager,
+        )
+        ds_editor = DatasetComponentEditor(dataset=dataset)
+
+        ds_editor.set_created_via(created_via=DataSourceCreatedVia.workbook_copy)
+
+        result_schema = data["dataset"].get("result_schema", [])
+        if len(result_schema) > DatasetConstraints.FIELD_COUNT_LIMIT_SOFT:
+            raise dl_query_processing.exc.DatasetTooManyFieldsFatal()
+
+        loader = self.create_dataset_api_loader()
+        loader.populate_dataset_from_body(dataset=dataset, body=data["dataset"], us_manager=us_manager)
+
+        us_manager.save(dataset)
+
+        LOGGER.info("New dataset was saved with ID %s", dataset.uuid)
+
+        localizer = self.get_service_registry().get_localizer()
+        ds_warnings = dataset.get_import_warnings_list(localizer=localizer)
+        if ds_warnings:
+            notifications.extend(ds_warnings)
+
+        return dict(id=dataset.uuid, notifications=notifications)
+
+
 @ns.route("/validators/dataset")
 @ns.route("/<dataset_id>/versions/<version>/validators/schema")
 class DatasetVersionValidator(DatasetResource):
@@ -280,9 +415,15 @@ class DatasetVersionValidator(DatasetResource):
             400: ("Failed", dl_api_lib.schemas.validation.DatasetValidationResponseSchema()),
         },
     )
-    def post(self, dataset_id: str = None, version: str = None, body: dict = None):  # type: ignore  # TODO: fix
+    def post(
+        self,
+        dataset_id: str | None = None,
+        version: str | None = None,
+        body: dict | None = None,
+    ) -> tuple[dict, HTTPStatus]:
         """Validate dataset version schema"""
         us_manager = self.get_us_manager()
+        assert body is not None
         dataset, _ = self.get_dataset(dataset_id=dataset_id, body=body)
         dataset_validator_factory = self.get_service_registry().get_dataset_validator_factory()
         ds_validator = dataset_validator_factory.get_dataset_validator(ds=dataset, us_manager=us_manager)
@@ -332,9 +473,16 @@ class DatasetVersionFieldValidator(DatasetResource):
             400: ("Failed", dl_api_lib.schemas.validation.FieldValidationResponseSchema()),
         },
     )
-    def post(self, *, dataset_id: str = None, version: str = None, body):  # type: ignore  # TODO: fix
+    def post(
+        self,
+        *,
+        dataset_id: str | None = None,
+        version: str | None = None,
+        body: dict | None = None,
+    ) -> tuple[dict, HTTPStatus]:
         """Validate formula field of dataset version"""
         us_manager = self.get_us_manager()
+        assert body is not None
         dataset, _ = self.get_dataset(dataset_id=dataset_id, body=body)
         dataset_validator_factory = self.get_service_registry().get_dataset_validator_factory()
         ds_validator = dataset_validator_factory.get_dataset_validator(ds=dataset, us_manager=us_manager)

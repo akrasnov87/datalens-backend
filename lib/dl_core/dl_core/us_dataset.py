@@ -17,6 +17,7 @@ from dl_constants.enums import (
     DataSourceType,
     FieldType,
     ManagedBy,
+    NotificationLevel,
     UserDataType,
 )
 from dl_core import multisource
@@ -32,20 +33,19 @@ from dl_core.components.ids import (
     resolve_id_collisions,
 )
 from dl_core.data_source_spec.base import DataSourceSpec
-from dl_core.data_source_spec.collection import (
-    DataSourceCollectionSpec,
-    DataSourceCollectionSpecBase,
-)
+from dl_core.data_source_spec.collection import DataSourceCollectionSpec
 from dl_core.data_source_spec.sql import StandardSQLDataSourceSpec
 from dl_core.db import SchemaColumn
 from dl_core.fields import (
     DirectCalculationSpec,
     ResultSchema,
 )
+from dl_core.i18n.localizer import Translatable
 from dl_core.us_entry import (
     BaseAttrsDataModel,
     USEntry,
 )
+from dl_i18n.localizer_base import Localizer
 from dl_rls.rls import RLS
 
 
@@ -67,7 +67,7 @@ class Dataset(USEntry):
         load_preview_by_default: Optional[bool] = attr.ib(default=True)
         schema_version: str = attr.ib(default="1")
         result_schema: ResultSchema = attr.ib(factory=ResultSchema)
-        source_collections: list[DataSourceCollectionSpecBase] = attr.ib(factory=list)
+        source_collections: list[DataSourceCollectionSpec] = attr.ib(factory=list)
         source_avatars: list[multisource.SourceAvatar] = attr.ib(factory=list)
         avatar_relations: list[multisource.AvatarRelation] = attr.ib(factory=list)
         rls: RLS = attr.ib(factory=RLS)
@@ -225,3 +225,31 @@ class Dataset(USEntry):
     @property
     def schema_version(self) -> str:
         return self.data.schema_version
+
+    def get_import_warnings_list(self, localizer: Localizer) -> list[dict]:
+        warnings_list = []
+        CODE_PREFIX = "NOTIF.WB_IMPORT.DS."
+
+        if self.rls.items:
+            warnings_list.append(
+                dict(
+                    message=localizer.translate(Translatable("notif_rls")),
+                    level=NotificationLevel.info,
+                    code=CODE_PREFIX + "RLS",
+                )
+            )
+        return warnings_list
+
+    def get_export_warnings_list(self, localizer: Localizer) -> list[dict]:
+        warnings_list = []
+        CODE_PREFIX = "NOTIF.WB_EXPORT.DS."
+
+        if self.rls.items:
+            warnings_list.append(
+                dict(
+                    message=localizer.translate(Translatable("notif_rls")),
+                    level=NotificationLevel.info,
+                    code=CODE_PREFIX + "RLS",
+                )
+            )
+        return warnings_list

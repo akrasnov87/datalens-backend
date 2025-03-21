@@ -234,12 +234,9 @@ class DataSourceRole(Enum):
     materialization = "materialization"
 
 
-class DataSourceCollectionType(Enum):
-    collection = "collection"
-
-
 class DataSourceCreatedVia(DynamicEnum):
     user = AutoEnumValue()
+    workbook_copy = AutoEnumValue()
 
 
 class RLSSubjectType(Enum):
@@ -252,7 +249,7 @@ class RLSSubjectType(Enum):
 
 
 class RLSPatternType(Enum):
-    value = "user"
+    value = "value"
     all = "all"
     userid = "userid"
 

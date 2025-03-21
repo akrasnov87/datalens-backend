@@ -4,12 +4,10 @@ from copy import deepcopy
 import logging
 from typing import (
     Any,
-    List,
     Optional,
-    Set,
-    Tuple,
 )
 
+from dl_api_commons.flask.required_resources import RequiredResourceCommon
 from dl_api_lib.api_common.dataset_loader import (
     DatasetApiLoader,
     DatasetUpdateInfo,
@@ -24,6 +22,7 @@ from dl_api_lib.enums import (
     BI_TYPE_AGGREGATIONS,
     CASTS_BY_TYPE,
 )
+from dl_api_lib.exc import DLValidationError
 from dl_api_lib.query.registry import (
     get_compeng_dialect,
     is_compeng_executable,
@@ -83,11 +82,21 @@ class DatasetResource(BIResource):
         )
 
     @classmethod
-    def get_dataset(cls, dataset_id: Optional[str], body: dict) -> Tuple[Dataset, DatasetUpdateInfo]:
-        us_manager = cls.get_us_manager()
+    def get_dataset(
+        cls,
+        dataset_id: Optional[str],
+        body: dict,
+        load_dependencies: bool = True,
+        params: Optional[dict] = None,
+    ) -> tuple[Dataset, DatasetUpdateInfo]:
+        us_manager = (
+            cls.get_service_us_manager()
+            if RequiredResourceCommon.US_HEADERS_TOKEN in cls.REQUIRED_RESOURCES
+            else cls.get_us_manager()
+        )
         if dataset_id:
             try:
-                dataset = us_manager.get_by_id(dataset_id, expected_type=Dataset)
+                dataset = us_manager.get_by_id(dataset_id, expected_type=Dataset, params=params)
             except UnexpectedUSEntryType as e:
                 raise USObjectNotFoundException("Dataset with id {} does not exist".format(dataset_id)) from e
         else:
@@ -95,6 +104,9 @@ class DatasetResource(BIResource):
                 Dataset.DataModel(name=""),  # TODO: Remove name - it's not used, but is required
                 us_manager=us_manager,
             )
+
+        if load_dependencies:
+            us_manager.load_dependencies(dataset)
 
         loader = cls.create_dataset_api_loader()
         update_info = loader.update_dataset_from_body(
@@ -110,6 +122,7 @@ class DatasetResource(BIResource):
         dataset: Dataset,
         service_registry: ServicesRegistry,
         us_entry_buffer: USEntryBuffer,
+        conn_id_mapping: Optional[dict] = None,
     ) -> dict:
         ds_accessor = DatasetComponentAccessor(dataset=dataset)
         dsrc_coll_factory = service_registry.get_data_source_collection_factory(us_entry_buffer=us_entry_buffer)
@@ -124,6 +137,11 @@ class DatasetResource(BIResource):
 
             origin_dsrc = dsrc_coll.get_strict(role=DataSourceRole.origin)
             connection_id = dsrc_coll.get_connection_id(DataSourceRole.origin)
+            if conn_id_mapping:
+                try:
+                    connection_id = conn_id_mapping[connection_id]
+                except KeyError:
+                    raise DLValidationError(f"Error to find {connection_id} in connection_id_mapping")
             sources.append(
                 {
                     "id": source_id,
@@ -162,11 +180,14 @@ class DatasetResource(BIResource):
 
         # rls
         rls = {}
+        rls_v2 = {}
         if allow_rls_for_dataset(dataset):
             for field in dataset.result_schema:
                 field_rls = [e for e in dataset.rls.items if e.field_guid == field.guid]
                 rls[field.guid] = FieldRLSSerializer.to_text_config(field_rls)
+                rls_v2[field.guid] = FieldRLSSerializer.to_v2_config(field_rls)
         data["rls"] = rls
+        data["rls2"] = rls_v2
 
         data["obligatory_filters"] = ds_accessor.get_obligatory_filter_list()
 
@@ -254,7 +275,7 @@ class DatasetResource(BIResource):
 
         opt_data["sources"] = dict(items=[])
         connection_ids = set()
-        connection_types: Set[Optional[ConnectionType]] = set()
+        connection_types: set[Optional[ConnectionType]] = set()
         for source_id in ds_accessor.get_data_source_id_list():
             dsrc_coll_spec = ds_accessor.get_data_source_coll_spec_strict(source_id=source_id)
             dsrc_coll = dsrc_coll_factory.get_data_source_collection(spec=dsrc_coll_spec)
@@ -297,7 +318,7 @@ class DatasetResource(BIResource):
                 )
             )
 
-        compatible_conn_types: List[dict] = []
+        compatible_conn_types: list[dict] = []
         for conn_type in capabilities.get_compatible_connection_types():
             if connection_ids:  # There already are connections in the dataset
                 continue
@@ -350,12 +371,15 @@ class DatasetResource(BIResource):
 
         return {"options": opt_data}
 
-    def make_dataset_response_data(self, dataset: Dataset, us_entry_buffer: USEntryBuffer) -> dict:
+    def make_dataset_response_data(
+        self, dataset: Dataset, us_entry_buffer: USEntryBuffer, conn_id_mapping: Optional[dict] = None
+    ) -> dict:
         service_registry = self.get_service_registry()
         ds_dict = self.dump_dataset_data(
             dataset=dataset,
             us_entry_buffer=us_entry_buffer,
             service_registry=service_registry,
+            conn_id_mapping=conn_id_mapping,
         )
         ds_dict.update(
             self.dump_option_data(
