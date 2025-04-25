@@ -1,5 +1,5 @@
 {
-    "title": "ClickHouse",
+    "title": "Greenplum",
     "rows": [
         {
             "items": [
@@ -18,16 +18,29 @@
             "items": [
                 {
                     "id": "label",
-                    "text": "HTTP interface port"
+                    "text": "Port"
                 },
                 {
                     "id": "input",
                     "name": "port",
-                    "defaultValue": "8443",
+                    "defaultValue": "5432",
                     "width": "s",
                     "controlProps": {
                         "type": "number"
                     }
+                }
+            ]
+        },
+        {
+            "items": [
+                {
+                    "id": "label",
+                    "text": "Path to database"
+                },
+                {
+                    "id": "input",
+                    "name": "db_name",
+                    "width": "l"
                 }
             ]
         },
@@ -53,8 +66,8 @@
                 {
                     "id": "input",
                     "name": "password",
-                    "defaultValue": "",
                     "width": "m",
+                    "fakeValue": "******",
                     "controlProps": {
                         "type": "password"
                     }
@@ -66,42 +79,40 @@
             "name": "cache_ttl_sec"
         },
         {
-            "items": [
-                {
-                    "id": "label",
-                    "text": "Raw SQL level",
-                    "align": "start",
-                    "helpText": "- We do not recommend combining subqueries in datasets with RLS or restrictions on viewing tables.\n- SQL queries from charts enter the connection directly and do not take into account the RLS configured in the datasets."
-                },
-                {
-                    "id": "radio_group",
-                    "name": "raw_sql_level",
-                    "options": [
-                        {
-                            "content": {
-                                "text": "Forbid"
-                            },
-                            "value": "off"
+            "type": "raw_sql_level",
+            "name": "raw_sql_level",
+            "defaultValue": "off",
+            "switchOffValue": "off",
+            "label": {
+                "id": "label",
+                "text": "Raw SQL level",
+                "align": "start",
+                "helpText": "- We do not recommend combining subqueries in datasets with RLS or restrictions on viewing tables.\n- SQL queries from charts enter the connection directly and do not take into account the RLS configured in the datasets."
+            },
+            "radioGroup": {
+                "id": "radio_group",
+                "name": "raw_sql_level",
+                "options": [
+                    {
+                        "content": {
+                            "text": "Allow subselects in datasets",
+                            "hintText": "This option allows you to describe dataset sources using SQL queries"
                         },
-                        {
-                            "content": {
-                                "text": "Allow subselects in datasets",
-                                "hintText": "This option allows you to describe dataset sources using SQL queries"
-                            },
-                            "value": "subselect"
+                        "value": "subselect"
+                    },
+                    {
+                        "content": {
+                            "text": "Allow subselects in datasets and QL-charts",
+                            "hintText": "This option allows you to describe dataset sources using SQL queries and create QL charts",
+                            "textEndIcon": {
+                                "name": "CircleExclamation",
+                                "view": "error"
+                            }
                         },
-                        {
-                            "content": {
-                                "text": "Allow subselects in datasets and queries from charts",
-                                "hintText": "This option allows you to describe dataset sources using SQL queries and create QL charts"
-                            },
-                            "value": "dashsql"
-                        }
-                    ],
-                    "defaultValue": "off",
-                    "controlProps": {}
-                }
-            ]
+                        "value": "dashsql"
+                    }
+                ]
+            }
         },
         {
             "type": "collapse",
@@ -116,17 +127,20 @@
                     "displayConditions": {
                         "advanced_settings": "opened"
                     },
-                    "text": "TLS",
-                    "helpText": "When the option is enabled, the HTTPS protocol is used when interacting with the database, and when disabled \u2014 HTTP"
+                    "text": "Specifying collate in the request"
                 },
                 {
                     "id": "radio_button",
-                    "name": "secure",
+                    "name": "enforce_collate",
                     "displayConditions": {
                         "advanced_settings": "opened"
                     },
-                    "defaultValue": "on",
+                    "defaultValue": "auto",
                     "options": [
+                        {
+                            "text": "Auto",
+                            "value": "auto"
+                        },
                         {
                             "text": "Off",
                             "value": "off"
@@ -136,24 +150,6 @@
                             "value": "on"
                         }
                     ]
-                }
-            ]
-        },
-        {
-            "items": [
-                {
-                    "id": "label",
-                    "displayConditions": {
-                        "advanced_settings": "opened"
-                    },
-                    "text": "CA Certificate"
-                },
-                {
-                    "id": "file-input",
-                    "name": "ssl_ca",
-                    "displayConditions": {
-                        "advanced_settings": "opened"
-                    }
                 }
             ]
         },
@@ -186,48 +182,10 @@
                     ]
                 }
             ]
-        },
-        {
-            "items": [
-                {
-                    "id": "label",
-                    "displayConditions": {
-                        "advanced_settings": "opened"
-                    },
-                    "text": "Readonly",
-                    "align": "start"
-                },
-                {
-                    "id": "select",
-                    "name": "readonly",
-                    "displayConditions": {
-                        "advanced_settings": "opened"
-                    },
-                    "defaultValue": "2",
-                    "width": "s",
-                    "availableValues": [
-                        {
-                            "content": "0",
-                            "value": "0"
-                        },
-                        {
-                            "content": "1",
-                            "value": "1"
-                        },
-                        {
-                            "content": "2",
-                            "value": "2"
-                        }
-                    ],
-                    "controlProps": {
-                        "showSearch": false
-                    }
-                }
-            ]
         }
     ],
     "apiSchema": {
-        "create": {
+        "edit": {
             "items": [
                 {
                     "name": "host",
@@ -241,31 +199,16 @@
                 },
                 {
                     "name": "username",
-                    "required": false,
+                    "required": true,
+                    "defaultAction": "include"
+                },
+                {
+                    "name": "db_name",
+                    "required": true,
                     "defaultAction": "include"
                 },
                 {
                     "name": "password",
-                    "required": false,
-                    "defaultAction": "include"
-                },
-                {
-                    "name": "secure",
-                    "required": false,
-                    "defaultAction": "include"
-                },
-                {
-                    "name": "ssl_ca",
-                    "required": false,
-                    "defaultAction": "include"
-                },
-                {
-                    "name": "data_export_forbidden",
-                    "required": false,
-                    "defaultAction": "include"
-                },
-                {
-                    "name": "readonly",
                     "required": false,
                     "defaultAction": "include"
                 },
@@ -281,7 +224,12 @@
                     "defaultAction": "include"
                 },
                 {
-                    "name": "type",
+                    "name": "enforce_collate",
+                    "required": false,
+                    "defaultAction": "include"
+                },
+                {
+                    "name": "data_export_forbidden",
                     "required": false,
                     "defaultAction": "include"
                 }
@@ -301,37 +249,17 @@
                     "defaultAction": "include"
                 },
                 {
+                    "name": "db_name",
+                    "required": true,
+                    "defaultAction": "include"
+                },
+                {
                     "name": "username",
-                    "required": false,
+                    "required": true,
                     "defaultAction": "include"
                 },
                 {
                     "name": "password",
-                    "required": false,
-                    "defaultAction": "include"
-                },
-                {
-                    "name": "secure",
-                    "required": false,
-                    "defaultAction": "include"
-                },
-                {
-                    "name": "ssl_ca",
-                    "required": false,
-                    "defaultAction": "include"
-                },
-                {
-                    "name": "data_export_forbidden",
-                    "required": false,
-                    "defaultAction": "include"
-                },
-                {
-                    "name": "readonly",
-                    "required": false,
-                    "defaultAction": "include"
-                },
-                {
-                    "name": "type",
                     "required": false,
                     "defaultAction": "include"
                 }

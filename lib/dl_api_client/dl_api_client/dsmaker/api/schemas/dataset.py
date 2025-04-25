@@ -8,16 +8,19 @@ from typing import (
 )
 
 from marshmallow import (
+    EXCLUDE,
+    ValidationError,
+)
+from marshmallow import (
     post_dump,
+    post_load,
     pre_load,
 )
-from marshmallow import EXCLUDE
 from marshmallow import fields as ma_fields
 from marshmallow_oneofschema import OneOfSchema
 
 from dl_api_client.dsmaker.api.schemas.base import DefaultSchema
 from dl_api_client.dsmaker.primitives import (
-    AllParameterValueConstraint,
     ArrayFloatParameterValue,
     ArrayIntParameterValue,
     ArrayStrParameterValue,
@@ -34,6 +37,7 @@ from dl_api_client.dsmaker.primitives import (
     DateParameterValue,
     DateTimeParameterValue,
     DateTimeTZParameterValue,
+    DefaultParameterValueConstraint,
     DirectJoinPart,
     EqualsParameterValueConstraint,
     FloatParameterValue,
@@ -45,6 +49,7 @@ from dl_api_client.dsmaker.primitives import (
     JoinCondition,
     MarkupParameterValue,
     NotEqualsParameterValueConstraint,
+    NullParameterValueConstraint,
     ObligatoryFilter,
     ParameterValue,
     RangeParameterValueConstraint,
@@ -80,8 +85,8 @@ from dl_constants.enums import (
 from dl_model_tools.schema.dynamic_enum_field import DynamicEnumField
 from dl_model_tools.schema.oneofschema import OneOfSchemaWithDumpLoadHooks
 from dl_rls.models import (
-    RLS2ConfigEntry,
-    RLS2Subject,
+    RLSEntry,
+    RLSSubject,
 )
 
 
@@ -199,8 +204,8 @@ class ValueSchema(OneOfSchemaWithDumpLoadHooks):
         return getattr(obj, self.type_field).name
 
 
-class AllParameterValueConstraintSchema(DefaultSchema[AllParameterValueConstraint]):
-    TARGET_CLS = AllParameterValueConstraint
+class NullParameterValueConstraintSchema(DefaultSchema[NullParameterValueConstraint]):
+    TARGET_CLS = NullParameterValueConstraint
 
 
 class RangeParameterValueConstraintSchema(DefaultSchema[RangeParameterValueConstraint]):
@@ -234,6 +239,10 @@ class RegexParameterValueConstraintSchema(DefaultSchema[RegexParameterValueConst
     pattern = ma_fields.String()
 
 
+class DefaultParameterValueConstraintSchema(DefaultSchema[DefaultParameterValueConstraint]):
+    TARGET_CLS = DefaultParameterValueConstraint
+
+
 class CollectionParameterValueConstraintSchema(DefaultSchema[CollectionParameterValueConstraint]):
     TARGET_CLS = CollectionParameterValueConstraint
 
@@ -244,12 +253,14 @@ class CollectionParameterValueConstraintSchema(DefaultSchema[CollectionParameter
 class ParameterValueConstraintSchema(OneOfSchema):
     type_field = "type"
     type_schemas = {
-        ParameterValueConstraintType.all.name: AllParameterValueConstraintSchema,
+        ParameterValueConstraintType.null.name: NullParameterValueConstraintSchema,
+        ParameterValueConstraintType.all.name: NullParameterValueConstraintSchema,
         ParameterValueConstraintType.range.name: RangeParameterValueConstraintSchema,
         ParameterValueConstraintType.set.name: SetParameterValueConstraintSchema,
         ParameterValueConstraintType.equals.name: EqualsParameterValueConstraintSchema,
         ParameterValueConstraintType.not_equals.name: NotEqualsParameterValueConstraintSchema,
         ParameterValueConstraintType.regex.name: RegexParameterValueConstraintSchema,
+        ParameterValueConstraintType.default.name: DefaultParameterValueConstraintSchema,
         ParameterValueConstraintType.collection.name: CollectionParameterValueConstraintSchema,
     }
 
@@ -279,6 +290,7 @@ class ResultFieldSchema(DefaultSchema[ResultField]):
     managed_by = ma_fields.Enum(ManagedBy, allow_none=True, dump_default=ManagedBy.user)
     default_value = ma_fields.Nested(ValueSchema, allow_none=True)
     value_constraint = ma_fields.Nested(ParameterValueConstraintSchema, allow_none=True)
+    template_enabled = ma_fields.Bool(allow_none=True)
 
     # Only locally used
     created_ = ma_fields.Boolean(load_default=True, load_only=True, attribute="created_")  # Always True
@@ -436,11 +448,11 @@ class ComponentErrorListSchema(DefaultSchema[ComponentErrorRegistry]):
     items = ma_fields.List(ma_fields.Nested(ComponentErrorPackSchema))
 
 
-class RLS2ConfigEntrySchema(DefaultSchema[RLS2ConfigEntry]):
-    TARGET_CLS = RLS2ConfigEntry
+class RLS2ConfigEntrySchema(DefaultSchema[RLSEntry]):
+    TARGET_CLS = RLSEntry
 
-    class RLS2SubjectSchema(DefaultSchema[RLS2Subject]):
-        TARGET_CLS = RLS2Subject
+    class RLSSubjectSchema(DefaultSchema[RLSSubject]):
+        TARGET_CLS = RLSSubject
 
         subject_id = ma_fields.String(required=True)
         subject_type = ma_fields.Enum(RLSSubjectType)
@@ -449,7 +461,7 @@ class RLS2ConfigEntrySchema(DefaultSchema[RLS2ConfigEntry]):
     field_guid = ma_fields.String(dump_default=None, load_default=None)
     allowed_value = ma_fields.String(dump_default=None, load_default=None)
     pattern_type = ma_fields.Enum(RLSPatternType, load_default=RLSPatternType.value)
-    subject = ma_fields.Nested(RLS2SubjectSchema, required=True)
+    subject = ma_fields.Nested(RLSSubjectSchema, required=True)
 
 
 class DatasetContentInternalSchema(DefaultSchema[Dataset]):
@@ -475,4 +487,22 @@ class DatasetContentInternalSchema(DefaultSchema[Dataset]):
     component_errors = ma_fields.Nested(ComponentErrorListSchema, required=False)
     obligatory_filters = ma_fields.Nested(ObligatoryFilterSchema, many=True, load_default=list)
     revision_id = ma_fields.String(allow_none=True, dump_default=None, load_default=None)
-    load_preview_by_default = ma_fields.Boolean(allow_none=True, dump_default=True, load_default=True)
+    load_preview_by_default = ma_fields.Boolean(dump_default=True, load_default=True)
+    template_enabled = ma_fields.Boolean(dump_default=False, load_default=False)
+    data_export_forbidden = ma_fields.Boolean(dump_default=False, load_default=False)
+
+    @post_load
+    def validate_rls2(self, item: Dict[str, Any], *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        for key, entries in item["rls2"].items():
+            for entry in entries:
+                if entry.pattern_type == RLSPatternType.value and entry.allowed_value is None:
+                    raise ValidationError(
+                        "RLS validation error: allowed_value must be not None for 'value' RLS pattern type"
+                    )
+                if entry.pattern_type != RLSPatternType.value and entry.allowed_value is not None:
+                    raise ValidationError(
+                        f"RLS validation error: allowed_value must be None for '{entry.pattern_type}' RLS pattern type"
+                    )
+                entry.field_guid = key
+                entry.subject.subject_name = entry.subject.subject_name or entry.subject.subject_id
+        return item

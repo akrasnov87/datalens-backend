@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from dl_core.us_connection_base import DataSourceTemplate
+from dl_core.us_connection_base import (
+    DataSourceTemplate,
+    make_subselect_datasource_template,
+)
 from dl_i18n.localizer_base import Localizer
 
 from dl_connector_postgresql.core.postgresql.constants import (
@@ -24,7 +27,7 @@ class ConnectionPostgreSQL(ConnectionPostgreSQLBase):
         return PostgresConnDTO(
             conn_id=self.uuid,
             host=self.data.host,
-            multihosts=self.parse_multihosts(),  # type: ignore  # TODO: fix
+            multihosts=self.parse_multihosts(),
             port=self.data.port,
             db_name=self.data.db_name,
             username=self.data.username,
@@ -35,11 +38,15 @@ class ConnectionPostgreSQL(ConnectionPostgreSQLBase):
         )
 
     def get_data_source_template_templates(self, localizer: Localizer) -> list[DataSourceTemplate]:
-        return self._make_subselect_templates(
-            source_type=SOURCE_TYPE_PG_SUBSELECT,
-            field_doc_key="PG_SUBSELECT/subsql",
-            localizer=localizer,
-        )
+        return [
+            make_subselect_datasource_template(
+                connection_id=self.uuid,  # type: ignore
+                source_type=SOURCE_TYPE_PG_SUBSELECT,
+                localizer=localizer,
+                disabled=not self.is_subselect_allowed,
+                field_doc_key="PG_SUBSELECT/subsql",
+            )
+        ]
 
     @property
     def allow_public_usage(self) -> bool:

@@ -61,6 +61,21 @@ class MalformedCredentialsError(DataSourceConfigurationError):
     default_message = "Malformed credentials"
 
 
+class ConnectionTemplateDisabledError(DataSourceConfigurationError):
+    err_code = DataSourceConfigurationError.err_code + ["CONNECTION_TEMPLATE_DISABLED"]
+    default_message = "Template is disabled for this connection"
+
+
+class TemplateInvalidError(DataSourceConfigurationError):
+    err_code = DataSourceConfigurationError.err_code + ["TEMPLATE_INVALID"]
+    default_message = "Invalid template"
+
+
+class ParameterValueInvalidError(DataSourceConfigurationError):
+    err_code = DataSourceConfigurationError.err_code + ["PARAMETER_VALUE_INVALID"]
+    default_message = "Invalid parameter value"
+
+
 class DatasetConfigurationError(DLBaseException):
     err_code = DLBaseException.err_code + ["DS_CONFIG"]
 

@@ -33,6 +33,7 @@ from dl_constants.enums import (
     BinaryJoinOperator,
     ConnectionType,
     ManagedBy,
+    RLSSubjectType,
     UserDataType,
 )
 from dl_constants.exc import (
@@ -131,9 +132,16 @@ class DatasetResource(BIResource):
         # generate info about sources
         sources = []
         preview_enabled_result = True
+        dataset_parameter_values = ds_accessor.get_parameter_values()
+        dataset_template_enabled = ds_accessor.get_template_enabled()
+
         for source_id in ds_accessor.get_data_source_id_list():
             dsrc_coll_spec = ds_accessor.get_data_source_coll_spec_strict(source_id=source_id)
-            dsrc_coll = dsrc_coll_factory.get_data_source_collection(spec=dsrc_coll_spec)
+            dsrc_coll = dsrc_coll_factory.get_data_source_collection(
+                spec=dsrc_coll_spec,
+                dataset_parameter_values=dataset_parameter_values,
+                dataset_template_enabled=dataset_template_enabled,
+            )
 
             origin_dsrc = dsrc_coll.get_strict(role=DataSourceRole.origin)
             connection_id = dsrc_coll.get_connection_id(DataSourceRole.origin)
@@ -184,8 +192,11 @@ class DatasetResource(BIResource):
         if allow_rls_for_dataset(dataset):
             for field in dataset.result_schema:
                 field_rls = [e for e in dataset.rls.items if e.field_guid == field.guid]
-                rls[field.guid] = FieldRLSSerializer.to_text_config(field_rls)
-                rls_v2[field.guid] = FieldRLSSerializer.to_v2_config(field_rls)
+                if field_rls:
+                    rls[field.guid] = FieldRLSSerializer.to_text_config(field_rls)
+                field_rls2 = [e for e in field_rls if e.subject.subject_type != RLSSubjectType.notfound]
+                if field_rls2:
+                    rls_v2[field.guid] = field_rls2
         data["rls"] = rls
         data["rls2"] = rls_v2
 
@@ -202,6 +213,9 @@ class DatasetResource(BIResource):
         data["revision_id"] = dataset.revision_id
 
         data["load_preview_by_default"] = dataset.load_preview_by_default
+        data["template_enabled"] = dataset.template_enabled
+
+        data["data_export_forbidden"] = dataset.data_export_forbidden
 
         return {"dataset": data}
 
@@ -232,10 +246,17 @@ class DatasetResource(BIResource):
         one_source_id = dataset.get_single_data_source_id()
         db_info: Optional[DbInfo]
 
+        dataset_parameter_values = ds_accessor.get_parameter_values()
+        dataset_template_enabled = ds_accessor.get_template_enabled()
+
         if one_source_id is not None:
             try:
                 dsrc_coll_spec = ds_accessor.get_data_source_coll_spec_strict(source_id=one_source_id)
-                dsrc_coll = dsrc_coll_factory.get_data_source_collection(spec=dsrc_coll_spec)
+                dsrc_coll = dsrc_coll_factory.get_data_source_collection(
+                    spec=dsrc_coll_spec,
+                    dataset_parameter_values=dataset_parameter_values,
+                    dataset_template_enabled=dataset_template_enabled,
+                )
                 dsrc = dsrc_coll.get_strict(role=role)
                 db_info = dsrc.get_cached_db_info()
             except ReferencedUSEntryNotFound:
@@ -276,9 +297,14 @@ class DatasetResource(BIResource):
         opt_data["sources"] = dict(items=[])
         connection_ids = set()
         connection_types: set[Optional[ConnectionType]] = set()
+
         for source_id in ds_accessor.get_data_source_id_list():
             dsrc_coll_spec = ds_accessor.get_data_source_coll_spec_strict(source_id=source_id)
-            dsrc_coll = dsrc_coll_factory.get_data_source_collection(spec=dsrc_coll_spec)
+            dsrc_coll = dsrc_coll_factory.get_data_source_collection(
+                spec=dsrc_coll_spec,
+                dataset_parameter_values=dataset_parameter_values,
+                dataset_template_enabled=dataset_template_enabled,
+            )
             if dsrc_coll.managed_by != ManagedBy.user:
                 continue
             dsrc = dsrc_coll.get_strict(role=DataSourceRole.origin)
@@ -338,7 +364,11 @@ class DatasetResource(BIResource):
         )
         for avatar in ds_accessor.get_avatar_list():
             dsrc_coll_spec = ds_accessor.get_data_source_coll_spec_strict(source_id=avatar.source_id)
-            dsrc_coll = dsrc_coll_factory.get_data_source_collection(spec=dsrc_coll_spec)
+            dsrc_coll = dsrc_coll_factory.get_data_source_collection(
+                spec=dsrc_coll_spec,
+                dataset_parameter_values=dataset_parameter_values,
+                dataset_template_enabled=dataset_template_enabled,
+            )
             dsrc = dsrc_coll.get_strict(role=DataSourceRole.origin)
             opt_data["source_avatars"]["items"].append(
                 dict(

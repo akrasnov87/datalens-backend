@@ -53,8 +53,8 @@ class BaseParameterValueConstraint:
 
 
 @attr.s(frozen=True)
-class AllParameterValueConstraint(BaseParameterValueConstraint):
-    type: ParameterValueConstraintType = attr.ib(default=ParameterValueConstraintType.all)
+class NullParameterValueConstraint(BaseParameterValueConstraint):
+    type: ParameterValueConstraintType = attr.ib(default=ParameterValueConstraintType.null)
 
     def _is_valid(self, value: Any) -> bool:
         return True
@@ -102,11 +102,21 @@ class RegexParameterValueConstraint(BaseParameterValueConstraint):
     pattern: str = attr.ib()
     type: ParameterValueConstraintType = attr.ib(default=ParameterValueConstraintType.regex)
 
+    @property
+    def _full_pattern(self) -> str:
+        return f"^{self.pattern}$"
+
     def _is_valid(self, value: Any) -> bool:
         if not isinstance(value, str):
             value = str(value)
 
-        return re.match(self.pattern, value) is not None
+        return re.match(self._full_pattern, value) is not None
+
+
+@attr.s(frozen=True)
+class DefaultParameterValueConstraint(RegexParameterValueConstraint):
+    type: ParameterValueConstraintType = attr.ib(default=ParameterValueConstraintType.default)
+    pattern: str = attr.ib(init=False, default="[a-zA-Z0-9]*")
 
 
 @attr.s(frozen=True)
@@ -185,6 +195,7 @@ class ParameterCalculationSpec(CalculationSpec):
     # Value constraint of the parameter
     # (defines the restrictions and origins of possible values).
     value_constraint: Optional[BaseParameterValueConstraint] = attr.ib(kw_only=True, default=None)
+    template_enabled: bool = attr.ib(kw_only=True, default=False)
 
 
 _CALCULATION_SPECS_BY_MODE = {
@@ -376,6 +387,11 @@ class BIField(NamedTuple):  # TODO: Convert to attr.s
     def value_constraint(self) -> Optional[BaseParameterValueConstraint]:
         assert isinstance(self.calc_spec, ParameterCalculationSpec)
         return self.calc_spec.value_constraint
+
+    @property
+    def template_enabled(self) -> bool:
+        assert isinstance(self.calc_spec, ParameterCalculationSpec)
+        return self.calc_spec.template_enabled
 
     @property
     def autoaggregated(self) -> bool:

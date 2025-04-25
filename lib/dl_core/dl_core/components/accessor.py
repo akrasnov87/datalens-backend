@@ -1,30 +1,23 @@
-from __future__ import annotations
-
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-)
-
 import attr
 
+from dl_constants.enums import CalcMode
+from dl_core.base_models import ObligatoryFilter
+from dl_core.data_source_spec.collection import DataSourceCollectionSpec
 import dl_core.exc as exc
-
-
-if TYPE_CHECKING:
-    from dl_core.base_models import ObligatoryFilter
-    from dl_core.data_source_spec.collection import DataSourceCollectionSpec
-    from dl_core.multisource import (
-        AvatarRelation,
-        SourceAvatar,
-    )
-    from dl_core.us_dataset import Dataset
+from dl_core.multisource import (
+    AvatarRelation,
+    SourceAvatar,
+)
+from dl_core.us_dataset import Dataset
+from dl_model_tools.typed_values import BIValue
+from dl_query_processing.compilation.specs import ParameterValueSpec
 
 
 @attr.s(frozen=True)
 class DatasetComponentAccessor:
     _dataset: Dataset = attr.ib(kw_only=True)
 
-    def get_avatar_list(self, source_id: Optional[str] = None) -> list[SourceAvatar]:
+    def get_avatar_list(self, source_id: str | None = None) -> list[SourceAvatar]:
         """
         Return list of source avatars
         :param source_id: limit result to avatars with this source ID
@@ -37,7 +30,7 @@ class DatasetComponentAccessor:
     def has_avatar(self, avatar_id: str) -> bool:
         return self.get_avatar_opt(avatar_id=avatar_id) is not None
 
-    def get_avatar_opt(self, avatar_id: str) -> Optional[SourceAvatar]:
+    def get_avatar_opt(self, avatar_id: str) -> SourceAvatar | None:
         for avatar in self._dataset.data.source_avatars:
             if avatar.id == avatar_id:
                 return avatar
@@ -49,7 +42,7 @@ class DatasetComponentAccessor:
             raise exc.SourceAvatarNotFound(f"Unknown source avatar: {avatar_id}")
         return avatar
 
-    def get_root_avatar_opt(self) -> Optional[SourceAvatar]:
+    def get_root_avatar_opt(self) -> SourceAvatar | None:
         for avatar in self._dataset.data.source_avatars:
             if avatar.is_root:
                 return avatar
@@ -67,7 +60,7 @@ class DatasetComponentAccessor:
     def get_data_source_coll_spec_list(self) -> list[DataSourceCollectionSpec]:
         return [dsrc_coll_spec for dsrc_coll_spec in self._dataset.data.source_collections]
 
-    def get_data_source_coll_spec_opt(self, source_id: str) -> Optional[DataSourceCollectionSpec]:
+    def get_data_source_coll_spec_opt(self, source_id: str) -> DataSourceCollectionSpec | None:
         for dsrc_coll_spec in self._dataset.data.source_collections:
             if dsrc_coll_spec.id == source_id:
                 return dsrc_coll_spec
@@ -80,7 +73,7 @@ class DatasetComponentAccessor:
         return dsrc_coll_spec
 
     def get_avatar_relation_list(
-        self, left_avatar_id: Optional[str] = None, right_avatar_id: Optional[str] = None
+        self, left_avatar_id: str | None = None, right_avatar_id: str | None = None
     ) -> list[AvatarRelation]:
         """
         Return list of relations
@@ -98,9 +91,9 @@ class DatasetComponentAccessor:
 
     def has_avatar_relation(
         self,
-        relation_id: Optional[str] = None,
-        left_avatar_id: Optional[str] = None,
-        right_avatar_id: Optional[str] = None,
+        relation_id: str | None = None,
+        left_avatar_id: str | None = None,
+        right_avatar_id: str | None = None,
     ) -> bool:
         return (
             self.get_avatar_relation_opt(
@@ -113,10 +106,10 @@ class DatasetComponentAccessor:
 
     def get_avatar_relation_opt(
         self,
-        relation_id: Optional[str] = None,
-        left_avatar_id: Optional[str] = None,
-        right_avatar_id: Optional[str] = None,
-    ) -> Optional[AvatarRelation]:
+        relation_id: str | None = None,
+        left_avatar_id: str | None = None,
+        right_avatar_id: str | None = None,
+    ) -> AvatarRelation | None:
         for relation in self._dataset.data.avatar_relations:
             if (
                 relation_id is not None
@@ -128,9 +121,9 @@ class DatasetComponentAccessor:
 
     def get_avatar_relation_strict(
         self,
-        relation_id: Optional[str] = None,
-        left_avatar_id: Optional[str] = None,
-        right_avatar_id: Optional[str] = None,
+        relation_id: str | None = None,
+        left_avatar_id: str | None = None,
+        right_avatar_id: str | None = None,
     ) -> AvatarRelation:
         relation = self.get_avatar_relation_opt(
             relation_id=relation_id,
@@ -146,8 +139,8 @@ class DatasetComponentAccessor:
 
     def has_obligatory_filter(
         self,
-        obfilter_id: Optional[str] = None,
-        field_guid: Optional[str] = None,
+        obfilter_id: str | None = None,
+        field_guid: str | None = None,
     ) -> bool:
         return (
             self.get_obligatory_filter_opt(
@@ -159,9 +152,9 @@ class DatasetComponentAccessor:
 
     def get_obligatory_filter_opt(
         self,
-        obfilter_id: Optional[str] = None,
-        field_guid: Optional[str] = None,
-    ) -> Optional[ObligatoryFilter]:
+        obfilter_id: str | None = None,
+        field_guid: str | None = None,
+    ) -> ObligatoryFilter | None:
         if obfilter_id is not None:
             for filter_object in self._dataset.data.obligatory_filters:
                 if filter_object.id == obfilter_id:
@@ -177,10 +170,46 @@ class DatasetComponentAccessor:
 
     def get_obligatory_filter_strict(
         self,
-        obfilter_id: Optional[str] = None,
-        field_guid: Optional[str] = None,
+        obfilter_id: str | None = None,
+        field_guid: str | None = None,
     ) -> ObligatoryFilter:
         obfilter = self.get_obligatory_filter_opt(obfilter_id=obfilter_id, field_guid=field_guid)
         if obfilter is None:
             raise exc.ObligatoryFilterNotFound(f"Unknown obligatory filter: {obfilter_id, field_guid}")
         return obfilter
+
+    def get_parameter_values(self) -> dict[str, BIValue]:
+        result: dict[str, BIValue] = {}
+
+        for field in self._dataset.result_schema.fields:
+            if field.calc_mode != CalcMode.parameter or field.default_value is None or not field.template_enabled:
+                continue
+
+            if field.value_constraint and not field.value_constraint.is_valid(field.default_value):
+                raise exc.ParameterValueInvalidError(
+                    f"Default value for field {field.title} is not valid: {field.default_value}"
+                )
+
+            result[field.title] = field.default_value
+
+        return result
+
+    def get_parameter_values_from_specs(
+        self,
+        parameter_value_specs: list[ParameterValueSpec],
+    ) -> dict[str, BIValue]:
+        result = {}
+        for parameter_value_spec in parameter_value_specs:
+            field = self._dataset.result_schema.by_guid(parameter_value_spec.field_id)
+            if field.template_enabled:
+                assert field.default_value is not None
+                if field.value_constraint and not field.value_constraint.is_valid(parameter_value_spec.value):
+                    raise exc.ParameterValueInvalidError(
+                        f"Default value for field {field.title} is not valid: {parameter_value_spec.value}"
+                    )
+
+                result[field.title] = attr.evolve(field.default_value, value=parameter_value_spec.value)
+        return result
+
+    def get_template_enabled(self) -> bool:
+        return self._dataset.template_enabled

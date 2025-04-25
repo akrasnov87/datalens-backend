@@ -34,13 +34,16 @@ from dl_constants.enums import (
     NotificationLevel,
     RawSQLLevel,
     UserDataType,
+    is_raw_sql_level_dashsql_allowed,
+    is_raw_sql_level_subselect_allowed,
+    is_raw_sql_level_template_allowed,
 )
 from dl_core import connection_models
 from dl_core.base_models import (
     ConnCacheableDataModelMixin,
     ConnectionDataModelBase,
     ConnectionRef,
-    ConnSubselectDataModelMixin,
+    ConnRawSqlLevelDataModelMixin,
     DefaultConnectionRef,
     EntryLocation,
     WorkbookEntryLocation,
@@ -102,6 +105,37 @@ class DataSourceTemplate(NamedTuple):
         )
 
 
+def make_subselect_datasource_template(
+    connection_id: str,
+    source_type: DataSourceType,
+    localizer: Localizer,
+    disabled: bool,
+    template_enabled: bool = False,
+    title: str = "SQL",
+    field_doc_key: str = "ANY_SUBSELECT/subsql",
+) -> DataSourceTemplate:
+    return DataSourceTemplate(
+        title=title,
+        tab_title=localizer.translate(Translatable("source_templates-tab_title-sql")),
+        source_type=source_type,
+        form=[
+            {
+                "name": "subsql",
+                "input_type": "sql",
+                "default": "select 1 as a",
+                "required": True,  # Note: `required` means `disallow an empty value` (e.g. an empty string).
+                "title": localizer.translate(Translatable("source_templates-label-subquery")),
+                "field_doc_key": field_doc_key,
+                "template_enabled": template_enabled,
+            },
+        ],
+        disabled=disabled,
+        group=[],
+        connection_id=connection_id,
+        parameters={},
+    )
+
+
 @attr.s(frozen=True)
 class RequiredParameterInfo:
     name: str = attr.ib(kw_only=True)
@@ -143,7 +177,6 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
     conn_type: ConnectionType
     source_type: ClassVar[Optional[DataSourceType]] = None
     allowed_source_types: ClassVar[Optional[frozenset[DataSourceType]]] = None
-    allow_dashsql: ClassVar[bool] = False
     allow_cache: ClassVar[bool] = False
     allow_export: ClassVar[bool] = False
     is_always_internal_source: ClassVar[bool] = False
@@ -238,8 +271,11 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
         return get_type_transformer(self.conn_type)
 
     @property
+    def is_subselect_allowed(self) -> bool:
+        return False
+
+    @property
     def is_dashsql_allowed(self) -> bool:
-        """Placeholder, should normally be overridden by `SubselectMixin`"""
         return False
 
     @property
@@ -248,6 +284,10 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
 
     @property
     def is_typed_query_allowed(self) -> bool:
+        return False
+
+    @property
+    def is_datasource_template_allowed(self) -> bool:
         return False
 
     @property
@@ -378,7 +418,7 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
         return [
             dict(
                 message=localizer.translate(Translatable("notif_check-creds")),
-                level=NotificationLevel.info.value,
+                level=NotificationLevel.info,
                 code=CODE_PREFIX + "CHECK_CREDENTIALS",
             )
         ]
@@ -388,7 +428,7 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
         return [
             dict(
                 message=localizer.translate(Translatable("notif_check-creds")),
-                level=NotificationLevel.info.value,
+                level=NotificationLevel.info,
                 code=CODE_PREFIX + "CHECK_CREDENTIALS",
             )
         ]
@@ -473,58 +513,40 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
         return conn_executor.get_tables(SchemaIdent(db_name=db_name, schema_name=schema_name))
 
 
-class SubselectMixin:
-    # Not included: DataModel.raw_sql_level
+class RawSqlLevelConnectionMixin(ConnectionBase):
+    allow_dashsql: ClassVar[bool] = False
+
+    @property
+    def _raw_sql_level(self) -> RawSQLLevel:
+        assert isinstance(self.data, ConnRawSqlLevelDataModelMixin)
+        return self.data.raw_sql_level
 
     @property
     def is_subselect_allowed(self) -> bool:
-        return self.data.raw_sql_level in (RawSQLLevel.subselect, RawSQLLevel.dashsql)  # type: ignore  # TODO: fix
+        return is_raw_sql_level_subselect_allowed(self._raw_sql_level)
+
+    @property
+    def _is_raw_sql_level_template_allowed(self) -> bool:
+        return is_raw_sql_level_template_allowed(self._raw_sql_level)
 
     @property
     def is_dashsql_allowed(self) -> bool:
-        if not self.allow_dashsql:  # type: ignore  # TODO: fix
+        if not self.allow_dashsql:
             return False
-        if self.data.raw_sql_level == RawSQLLevel.dashsql:  # type: ignore  # TODO: fix
-            return True
-        return False
 
-    def _make_subselect_templates(
-        self,
-        source_type: DataSourceType,
-        localizer: Localizer,
-        title: str = "SQL",
-        field_doc_key: str = "ANY_SUBSELECT/subsql",
-    ) -> list[DataSourceTemplate]:
-        allowed = self.is_subselect_allowed
-        return [
-            DataSourceTemplate(
-                title=title,
-                tab_title=localizer.translate(Translatable("source_templates-tab_title-sql")),
-                source_type=source_type,
-                form=[
-                    {
-                        "name": "subsql",
-                        "input_type": "sql",
-                        "default": "select 1 as a",
-                        "required": True,  # Note: `required` means `disallow an empty value` (e.g. an empty string).
-                        "title": localizer.translate(Translatable("source_templates-label-subquery")),
-                        "field_doc_key": field_doc_key,
-                    },
-                ],
-                disabled=not allowed,
-                group=[],
-                connection_id=self.uuid,  # type: ignore  # TODO: fix
-                parameters={},
-            ),
-        ]
+        return is_raw_sql_level_dashsql_allowed(self._raw_sql_level)
 
 
-class ConnectionSQL(SubselectMixin, ConnectionBase):
+class ConnectionSQL(RawSqlLevelConnectionMixin, ConnectionBase):
     has_schema: ClassVar[bool] = False
     default_schema_name: ClassVar[Optional[str]] = None
 
     @attr.s(kw_only=True)
-    class DataModel(ConnCacheableDataModelMixin, ConnSubselectDataModelMixin, ConnectionBase.DataModel):
+    class DataModel(
+        ConnCacheableDataModelMixin,
+        ConnRawSqlLevelDataModelMixin,
+        ConnectionBase.DataModel,
+    ):
         host: Optional[str] = attr.ib(default=None)
         port: Optional[int] = attr.ib(default=None)
         db_name: Optional[str] = attr.ib(default=None)
@@ -542,6 +564,10 @@ class ConnectionSQL(SubselectMixin, ConnectionBase):
     @property
     def db_name(self) -> Optional[str]:
         return self.data.db_name
+
+    @property
+    def is_datasource_template_allowed(self) -> bool:
+        return self._is_raw_sql_level_template_allowed
 
     def get_parameter_combinations(
         self,
@@ -602,29 +628,36 @@ class ClassicConnectionSQL(ConnectionSQL):
 CONNECTOR_SETTINGS_TV = TypeVar("CONNECTOR_SETTINGS_TV", bound=ConnectorSettingsBase)
 
 
-class ConnectionHardcodedDataMixin(Generic[CONNECTOR_SETTINGS_TV], metaclass=abc.ABCMeta):
+def _get_connector_settings(
+    usm: USManagerBase,
+    conn_type: ConnectionType,
+    settings_type: Type[CONNECTOR_SETTINGS_TV],
+) -> CONNECTOR_SETTINGS_TV:
+    sr = usm.get_services_registry()
+    connector_settings = sr.get_connectors_settings(conn_type)
+
+    if connector_settings is None:
+        try:
+            connector_settings = settings_type()
+        except Exception as exc:
+            raise ValueError(f"Failed to instantiate settings of type {settings_type}") from exc
+
+    assert isinstance(connector_settings, settings_type)
+    return connector_settings
+
+
+class ConnectionSettingsMixin(ConnectionBase, Generic[CONNECTOR_SETTINGS_TV], metaclass=abc.ABCMeta):
     """Connector type specific data is loaded from dl_configs.connectors_settings"""
 
-    conn_type: ConnectionType
     settings_type: Type[CONNECTOR_SETTINGS_TV]
-    us_manager: SyncUSManager
-
-    # TODO: remove
-    @classmethod
-    def _get_connector_settings(cls, usm: SyncUSManager) -> CONNECTOR_SETTINGS_TV:
-        sr = usm.get_services_registry()
-        connectors_settings = sr.get_connectors_settings(cls.conn_type)
-        assert connectors_settings is not None
-        assert isinstance(connectors_settings, cls.settings_type)
-        return connectors_settings
 
     @property
     def _connector_settings(self) -> CONNECTOR_SETTINGS_TV:
-        sr = self.us_manager.get_services_registry()
-        connectors_settings = sr.get_connectors_settings(self.conn_type)
-        assert connectors_settings is not None
-        assert isinstance(connectors_settings, self.settings_type)
-        return connectors_settings
+        return _get_connector_settings(self.us_manager, self.conn_type, self.settings_type)
+
+    @classmethod
+    def _get_connector_settings(cls, usm: SyncUSManager) -> CONNECTOR_SETTINGS_TV:
+        return _get_connector_settings(usm, cls.conn_type, cls.settings_type)
 
 
 class HiddenDatabaseNameMixin(ConnectionSQL):

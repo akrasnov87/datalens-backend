@@ -71,6 +71,8 @@ class BaseDataSourceTestClass(
             us_entry_buffer=sync_us_manager.get_entry_buffer(),
             connection=saved_connection,
             spec=initial_data_source_spec,
+            dataset_parameter_values={},
+            dataset_template_enabled=False,
         )
         return dsrc
 
@@ -196,6 +198,8 @@ class DataSourceTestByViewClass(
         if len(schema) == len(view_schema):
             sc_mismatch = [sc for sc, vsc in zip(schema, view_schema, strict=True) if sc != vsc]
             vsc_mismatch = [vsc for sc, vsc in zip(schema, view_schema, strict=True) if sc != vsc]
+            if sc_mismatch != vsc_mismatch:
+                print(f"{schema=}\n{view_schema=}")
             assert sc_mismatch == vsc_mismatch
 
         assert schema == tuple(view_schema)

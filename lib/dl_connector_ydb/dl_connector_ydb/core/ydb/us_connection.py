@@ -14,6 +14,7 @@ from dl_core.us_connection_base import (
     ClassicConnectionSQL,
     ConnectionBase,
     DataSourceTemplate,
+    make_subselect_datasource_template,
 )
 from dl_core.utils import secrepr
 from dl_i18n.localizer_base import Localizer
@@ -47,6 +48,9 @@ class YDBConnection(ClassicConnectionSQL):
 
         token: Optional[str] = attr.ib(default=None, repr=secrepr)
 
+        ssl_enable: bool = attr.ib(kw_only=True, default=False)
+        ssl_ca: Optional[str] = attr.ib(kw_only=True, default=None)
+
         @classmethod
         def get_secret_keys(cls) -> set[DataKey]:
             return {
@@ -65,6 +69,8 @@ class YDBConnection(ClassicConnectionSQL):
             username=self.data.username,
             password=self.data.token,
             auth_type=self.data.auth_type,
+            ssl_enable=self.data.ssl_enable,
+            ssl_ca=self.data.ssl_ca,
         )
 
     def get_data_source_template_templates(self, localizer: Localizer) -> list[DataSourceTemplate]:
@@ -87,11 +93,14 @@ class YDBConnection(ClassicConnectionSQL):
                 group=[],
                 connection_id=self.uuid,  # type: ignore  # TODO: fix
             ),
-        ] + self._make_subselect_templates(
-            title="Subselect over YDB",
-            source_type=SOURCE_TYPE_YDB_SUBSELECT,
-            localizer=localizer,
-        )
+            make_subselect_datasource_template(
+                connection_id=self.uuid,  # type: ignore
+                source_type=SOURCE_TYPE_YDB_SUBSELECT,
+                localizer=localizer,
+                disabled=not self.is_subselect_allowed,
+                title="Subselect over YDB",
+            ),
+        ]
 
     def get_tables(
         self,

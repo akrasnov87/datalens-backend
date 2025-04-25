@@ -1,3 +1,4 @@
+from frozendict import frozendict
 import pytest
 
 from dl_formula_testing.testcases.base import FormulaConnectorTestBase
@@ -8,7 +9,7 @@ import dl_connector_trino_tests.db.config as test_config
 
 class TrinoFormulaTestBase(FormulaConnectorTestBase):
     dialect = D.TRINO
-    supports_arrays = False  # TODO: @khamitovdr - fix n.func.GET_ITEM and turn this to True
+    supports_arrays = True
     supports_uuid = False  # TODO: @khamitovdr - ckeck if UUID is supported
 
     @pytest.fixture(scope="class")
@@ -18,3 +19,14 @@ class TrinoFormulaTestBase(FormulaConnectorTestBase):
     @pytest.fixture(scope="class")
     def table_schema_name(self) -> str:
         return "default"
+
+    @pytest.fixture(scope="class")
+    def engine_params(self) -> dict:
+        engine_params = {
+            "connect_args": frozendict(
+                {
+                    "timezone": "UTC",
+                }
+            ),
+        }
+        return engine_params

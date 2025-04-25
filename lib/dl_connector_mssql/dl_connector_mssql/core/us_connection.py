@@ -12,6 +12,7 @@ from dl_core.us_connection_base import (
     ClassicConnectionSQL,
     ConnectionBase,
     DataSourceTemplate,
+    make_subselect_datasource_template,
 )
 from dl_i18n.localizer_base import Localizer
 
@@ -40,7 +41,7 @@ class ConnectionMSSQL(ClassicConnectionSQL):
         return MSSQLConnDTO(
             conn_id=self.uuid,
             host=self.data.host,
-            multihosts=self.parse_multihosts(),  # type: ignore  # TODO: fix
+            multihosts=self.parse_multihosts(),
             port=self.data.port,
             db_name=self.data.db_name,
             username=self.data.username,
@@ -48,11 +49,15 @@ class ConnectionMSSQL(ClassicConnectionSQL):
         )
 
     def get_data_source_template_templates(self, localizer: Localizer) -> list[DataSourceTemplate]:
-        return self._make_subselect_templates(
-            source_type=SOURCE_TYPE_MSSQL_SUBSELECT,
-            field_doc_key="MSSQL_SUBSELECT/subsql",
-            localizer=localizer,
-        )
+        return [
+            make_subselect_datasource_template(
+                connection_id=self.uuid,  # type: ignore
+                source_type=SOURCE_TYPE_MSSQL_SUBSELECT,
+                localizer=localizer,
+                disabled=not self.is_subselect_allowed,
+                field_doc_key="MSSQL_SUBSELECT/subsql",
+            )
+        ]
 
     def get_parameter_combinations(
         self,

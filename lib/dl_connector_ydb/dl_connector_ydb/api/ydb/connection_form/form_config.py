@@ -39,6 +39,7 @@ from dl_api_connector.form_config.models.rows.base import (
 )
 from dl_api_connector.form_config.models.shortcuts.rows import RowConstructor
 from dl_configs.connectors_settings import ConnectorSettingsBase
+from dl_constants.enums import RawSQLLevel
 from dl_i18n.localizer_base import Localizer
 
 from dl_connector_ydb.api.ydb.connection_info import YDBConnectionInfoProvider
@@ -112,6 +113,8 @@ class YDBConnectionFormFactory(ConnectionFormFactory):
             FormFieldApiSchema(name=names_source.host, required=True),  # type: ignore  # 2024-01-24 # TODO: "type[Enum]" has no attribute "host"  [attr-defined]
             FormFieldApiSchema(name=names_source.port, required=True),  # type: ignore  # 2024-01-24 # TODO: "type[Enum]" has no attribute "port"  [attr-defined]
             FormFieldApiSchema(name=names_source.db_name, required=True),  # type: ignore  # 2024-01-24 # TODO: "type[Enum]" has no attribute "db_name"  [attr-defined]
+            FormFieldApiSchema(name=CommonFieldName.ssl_enable),
+            FormFieldApiSchema(name=CommonFieldName.ssl_ca),
         ]
 
     def _get_default_db_section(self, rc: RowConstructor, connector_settings: YDBConnectorSettings) -> list[FormRow]:
@@ -194,13 +197,25 @@ class YDBConnectionFormFactory(ConnectionFormFactory):
                     display_conditions={YDBFieldName.auth_type: YDBAuthTypeMode.password.value}, mode=self.mode
                 ),
                 C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec),
-                rc.raw_sql_level_row(),
+                rc.raw_sql_level_row_v2(raw_sql_levels=[RawSQLLevel.subselect, RawSQLLevel.dashsql]),
+                rc.collapse_advanced_settings_row(),
+                *rc.ssl_rows(
+                    enabled_name=CommonFieldName.ssl_enable,
+                    enabled_help_text=self._localizer.translate(Translatable("label_ydb-ssl-enabled-tooltip")),
+                    enabled_default_value=connector_settings.DEFAULT_SSL_ENABLE_VALUE,
+                ),
             ]
         else:
             rows = [
                 *db_section_rows,
                 C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec),
-                rc.raw_sql_level_row(),
+                rc.raw_sql_level_row_v2(raw_sql_levels=[RawSQLLevel.subselect, RawSQLLevel.dashsql]),
+                rc.collapse_advanced_settings_row(),
+                *rc.ssl_rows(
+                    enabled_name=CommonFieldName.ssl_enable,
+                    enabled_help_text=self._localizer.translate(Translatable("label_ydb-ssl-enabled-tooltip")),
+                    enabled_default_value=connector_settings.DEFAULT_SSL_ENABLE_VALUE,
+                ),
             ]
         return ConnectionForm(
             title=YDBConnectionInfoProvider.get_title(self._localizer),

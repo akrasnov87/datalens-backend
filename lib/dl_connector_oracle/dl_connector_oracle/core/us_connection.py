@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import (
     Callable,
     ClassVar,
+    Optional,
 )
 
 import attr
@@ -12,6 +13,7 @@ from dl_core.us_connection_base import (
     ClassicConnectionSQL,
     ConnectionBase,
     DataSourceTemplate,
+    make_subselect_datasource_template,
 )
 from dl_i18n.localizer_base import Localizer
 
@@ -38,21 +40,32 @@ class ConnectionSQLOracle(ClassicConnectionSQL):
     @attr.s(kw_only=True)
     class DataModel(ClassicConnectionSQL.DataModel):
         db_name_type: OracleDbNameType = attr.ib(default=OracleDbNameType.service_name)
+        ssl_enable: bool = attr.ib(kw_only=True, default=False)
+        ssl_ca: Optional[str] = attr.ib(kw_only=True, default=None)
 
     def get_conn_dto(self) -> OracleConnDTO:
         return OracleConnDTO(
             conn_id=self.uuid,
             host=self.data.host,
-            multihosts=self.parse_multihosts(),  # type: ignore  # TODO: fix
+            multihosts=self.parse_multihosts(),
             port=self.data.port,
             db_name=self.data.db_name,
             db_name_type=self.data.db_name_type,
             username=self.data.username,
             password=self.password,  # type: ignore  # 2024-01-24 # TODO: Argument "password" to "OracleConnDTO" has incompatible type "str | None"; expected "str"  [arg-type]
+            ssl_enable=self.data.ssl_enable,
+            ssl_ca=self.data.ssl_ca,
         )
 
     def get_data_source_template_templates(self, localizer: Localizer) -> list[DataSourceTemplate]:
-        return self._make_subselect_templates(source_type=SOURCE_TYPE_ORACLE_SUBSELECT, localizer=localizer)
+        return [
+            make_subselect_datasource_template(
+                connection_id=self.uuid,  # type: ignore
+                source_type=SOURCE_TYPE_ORACLE_SUBSELECT,
+                localizer=localizer,
+                disabled=not self.is_subselect_allowed,
+            )
+        ]
 
     def get_parameter_combinations(
         self, conn_executor_factory: Callable[[ConnectionBase], SyncConnExecutorBase]

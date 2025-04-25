@@ -37,15 +37,16 @@ from dl_core.components.dependencies.primitives import (
     FieldInterDependencyItem,
 )
 from dl_core.fields import (
-    AllParameterValueConstraint,
     BaseParameterValueConstraint,
     BIField,
     CalculationSpec,
     CollectionParameterValueConstraint,
+    DefaultParameterValueConstraint,
     DirectCalculationSpec,
     EqualsParameterValueConstraint,
     FormulaCalculationSpec,
     NotEqualsParameterValueConstraint,
+    NullParameterValueConstraint,
     ParameterCalculationSpec,
     RangeParameterValueConstraint,
     RegexParameterValueConstraint,
@@ -262,8 +263,8 @@ class BaseParameterValueConstraintSchema(DefaultStorageSchema):
     type = ma_fields.Enum(ParameterValueConstraintType)
 
 
-class AllParameterValueConstraintSchema(BaseParameterValueConstraintSchema):
-    TARGET_CLS = AllParameterValueConstraint
+class NullParameterValueConstraintSchema(BaseParameterValueConstraintSchema):
+    TARGET_CLS = NullParameterValueConstraint
 
 
 class RangeParameterValueConstraintSchema(BaseParameterValueConstraintSchema):
@@ -297,6 +298,10 @@ class RegexParameterValueConstraintSchema(BaseParameterValueConstraintSchema):
     pattern = ma_fields.String()
 
 
+class DefaultParameterValueConstraintSchema(BaseParameterValueConstraintSchema):
+    TARGET_CLS = DefaultParameterValueConstraint
+
+
 class CollectionParameterValueConstraintSchema(BaseParameterValueConstraintSchema):
     TARGET_CLS = CollectionParameterValueConstraint
 
@@ -307,9 +312,15 @@ class CollectionParameterValueConstraintSchema(BaseParameterValueConstraintSchem
 class ParameterValueConstraintSchema(OneOfSchema):
     type_field = "type"
     type_schemas = {
-        ParameterValueConstraintType.all.name: AllParameterValueConstraintSchema,
+        ParameterValueConstraintType.null.name: NullParameterValueConstraintSchema,
+        ParameterValueConstraintType.all.name: NullParameterValueConstraintSchema,
         ParameterValueConstraintType.range.name: RangeParameterValueConstraintSchema,
         ParameterValueConstraintType.set.name: SetParameterValueConstraintSchema,
+        ParameterValueConstraintType.equals.name: EqualsParameterValueConstraintSchema,
+        ParameterValueConstraintType.not_equals.name: NotEqualsParameterValueConstraintSchema,
+        ParameterValueConstraintType.regex.name: RegexParameterValueConstraintSchema,
+        ParameterValueConstraintType.default.name: DefaultParameterValueConstraintSchema,
+        ParameterValueConstraintType.collection.name: CollectionParameterValueConstraintSchema,
     }
 
     def get_obj_type(self, obj: BaseParameterValueConstraint) -> str:
@@ -332,6 +343,7 @@ class ParameterCalculationSpecSchema(DefaultStorageSchema):
     TARGET_CLS = ParameterCalculationSpec
     default_value = ma_fields.Nested(ValueSchema, allow_none=True)
     value_constraint = ma_fields.Nested(ParameterValueConstraintSchema, allow_none=True)
+    template_enabled = ma_fields.Bool(load_default=False)
 
 
 class ResultSchemaStorageSchema(DefaultStorageSchema):
@@ -465,7 +477,9 @@ class DatasetStorageSchema(DefaultStorageSchema):
 
     name = ma_fields.String(allow_none=True, load_default=None)
     revision_id = ma_fields.String(allow_none=True, dump_default=None, load_default=None)
-    load_preview_by_default = ma_fields.Boolean(allow_none=True, dump_default=True, load_default=True)
+    load_preview_by_default = ma_fields.Boolean(dump_default=True, load_default=True)
+    template_enabled = ma_fields.Boolean(dump_default=False, load_default=False)
+    data_export_forbidden = ma_fields.Boolean(dump_default=False, load_default=False)
     result_schema = ma_fields.Nested(ResultSchemaStorageSchema, allow_none=False)
     result_schema_aux = ma_fields.Nested(ResultSchemaAuxSchema, allow_none=False)
     source_collections = ma_fields.List(ma_fields.Nested(DataSourceCollectionSpecStorageSchema, allow_none=False))

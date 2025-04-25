@@ -15,14 +15,15 @@ import marshmallow as ma
 from dl_constants.enums import DataSourceType
 from dl_core.base_models import (
     ConnCacheableDataModelMixin,
-    ConnSubselectDataModelMixin,
+    ConnRawSqlLevelDataModelMixin,
 )
 from dl_core.connection_executors.sync_base import SyncConnExecutorBase
 from dl_core.us_connection_base import (
     ConnectionBase,
-    ConnectionHardcodedDataMixin,
+    ConnectionSettingsMixin,
     DataSourceTemplate,
-    SubselectMixin,
+    RawSqlLevelConnectionMixin,
+    make_subselect_datasource_template,
 )
 from dl_core.utils import secrepr
 from dl_i18n.localizer_base import Localizer
@@ -45,10 +46,10 @@ if TYPE_CHECKING:
     from dl_core.services_registry.top_level import ServicesRegistry
 
 
-class BaseConnectionCHYT(  # type: ignore  # 2024-01-24 # TODO: Definition of "us_manager" in base class "USEntry" is incompatible with definition in base class "ConnectionHardcodedDataMixin"  [misc]
-    SubselectMixin,
+class BaseConnectionCHYT(
+    RawSqlLevelConnectionMixin,
+    ConnectionSettingsMixin[CHYTConnectorSettings],
     ConnectionBase,
-    ConnectionHardcodedDataMixin[CHYTConnectorSettings],
     abc.ABC,
 ):
     allow_dashsql: ClassVar[bool] = True
@@ -61,7 +62,7 @@ class BaseConnectionCHYT(  # type: ignore  # 2024-01-24 # TODO: Definition of "u
     chyt_subselect_source_type: ClassVar[DataSourceType]
 
     @attr.s(kw_only=True)
-    class DataModel(ConnCacheableDataModelMixin, ConnSubselectDataModelMixin, ConnectionBase.DataModel):
+    class DataModel(ConnCacheableDataModelMixin, ConnRawSqlLevelDataModelMixin, ConnectionBase.DataModel):
         alias: str = attr.ib()
         max_execution_time: Optional[int] = attr.ib(default=None)
 
@@ -166,12 +167,15 @@ class BaseConnectionCHYT(  # type: ignore  # 2024-01-24 # TODO: Definition of "u
                 ],
                 **common,
             ),
-        ] + self._make_subselect_templates(
-            title="SQL query via CHYT",
-            source_type=self.chyt_subselect_source_type,
-            field_doc_key="YTsaurus/CHYT_SUBSELECT/subsql",
-            localizer=localizer,
-        )
+            make_subselect_datasource_template(
+                connection_id=self.uuid,  # type: ignore
+                source_type=self.chyt_subselect_source_type,
+                localizer=localizer,
+                disabled=not self.is_subselect_allowed,
+                title="SQL query via CHYT",
+                field_doc_key="YTsaurus/CHYT_SUBSELECT/subsql",
+            ),
+        ]
 
 
 class ConnectionCHYTToken(BaseConnectionCHYT):

@@ -133,10 +133,8 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    env:
-      REPO_OWNER: ${{ github.repository_owner }}
-      REPO_NAME: ${{ github.event.repository.name }}
-      GIT_SHA: "${{ github.sha }}"
+    outputs:
+      IMAGE: ${{ steps.build_image.outputs.IMAGE }}
 
     steps:
       - name: Log in to the Container registry
@@ -154,15 +152,25 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
       - uses: datalens-tech/fix-dubious-ownership-action@v1
 
-      - run: |
+      - id: build_image
+        run: |
           export ROOT_DIR="$(realpath .)"
           /bin/bash ci/build_naive.sh
+
+          IMAGE=ghcr.io/$REPO_OWNER/$REPO_NAME/datalens_ci_with_code:$GIT_SHA
+          echo "IMAGE=$IMAGE"
+          echo "IMAGE=$IMAGE" >> $GITHUB_OUTPUT
+        env:
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          # if pull_request_target use head sha, otherwise use github.sha
+          GIT_SHA: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
 
   router:
     runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
     needs: gh_build_image
     container:
-      image: "ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/datalens_ci_with_code:${{ github.sha }}"
+      image: ${{ needs.gh_build_image.outputs.IMAGE }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -247,12 +255,15 @@ jobs:
     name: Split pytest into jobs for each test type
     runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
 
-    needs: [ router, check-skip-tests-label ]
+    needs:
+      - router
+      - check-skip-tests-label
+      - gh_build_image
     if: ${{ needs.check-skip-tests-label.outputs.result != 'true' }}
 
     # if: ${{ github.event.inputs.run_mypy_only != 'true' }}
     container:
-      image: "ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/datalens_ci_with_code:${{ github.sha }}"
+      image: ${{ needs.gh_build_image.outputs.IMAGE }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -283,11 +294,13 @@ jobs:
       packages: write
       contents: read
 
-    needs: pytest_split
+    needs:
+      - pytest_split
+      - gh_build_image
     if: ${{ needs.pytest_split.outputs.split_base != '[]' }}
 
     container:
-      image: "ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/datalens_ci_with_code:${{ github.sha }}"
+      image: ${{ needs.gh_build_image.outputs.IMAGE }}
       options: -v /var/run/docker.sock:/var/run/docker.sock
       credentials:
         username: ${{ github.actor }}
@@ -339,11 +352,13 @@ jobs:
       packages: write
       contents: read
 
-    needs: pytest_split
+    needs:
+      - pytest_split
+      - gh_build_image
     if: ${{ needs.pytest_split.outputs.split_no_compose != '[]' }}
 
     container:
-      image: "ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/datalens_ci_with_code:${{ github.sha }}"
+      image: ${{ needs.gh_build_image.outputs.IMAGE }}
       options: -v /var/run/docker.sock:/var/run/docker.sock
       credentials:
         username: ${{ github.actor }}
@@ -395,11 +410,13 @@ jobs:
       packages: write
       contents: read
 
-    needs: pytest_split
+    needs:
+      - pytest_split
+      - gh_build_image
     if: ${{ needs.pytest_split.outputs.split_fat != '[]' }}
 
     container:
-      image: "ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/datalens_ci_with_code:${{ github.sha }}"
+      image: ${{ needs.gh_build_image.outputs.IMAGE }}
       options: -v /var/run/docker.sock:/var/run/docker.sock
       credentials:
         username: ${{ github.actor }}
@@ -452,11 +469,13 @@ jobs:
       packages: read
       contents: read
 
-    needs: pytest_split
+    needs:
+      - pytest_split
+      - gh_build_image
     if: ${{ needs.pytest_split.outputs.split_ext_public != '[]' }}
 
     container:
-      image: "ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/datalens_ci_with_code:${{ github.sha }}"
+      image: ${{ needs.gh_build_image.outputs.IMAGE }}
       options: -v /var/run/docker.sock:/var/run/docker.sock
       credentials:
         username: ${{ github.actor }}
@@ -509,8 +528,7 @@ jobs:
     runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
     needs: gh_build_image
     container:
-      # until https://github.com/github/docs/issues/25520 is resolved, using vars
-      image: "ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/datalens_ci_with_code:${{ github.sha }}"
+      image: ${{ needs.gh_build_image.outputs.IMAGE }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -557,8 +575,7 @@ jobs:
     runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
     needs: gh_build_image
     container:
-      # until https://github.com/github/docs/issues/25520 is resolved, using vars
-      image: "ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/datalens_ci_with_code:${{ github.sha }}"
+      image: ${{ needs.gh_build_image.outputs.IMAGE }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -577,6 +594,6 @@ jobs:
           VENV_PATH: /venv
       - name: Find directories and check requirements
         run: |
-          task cq:find_and_check_requirements
+          task cq:find_and_check_requirements STRICT=true
         env:
           VENV_PATH: /venv

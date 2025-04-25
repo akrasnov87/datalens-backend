@@ -7,7 +7,7 @@ variable DL_B_BASE_SERVER {
 }
 
 variable BASE_LINUX {
-  default = "ubuntu:22.04"
+  default = "ubuntu:24.04"
 }
 
 variable DL_B_PROJECT_ROOT {

@@ -181,11 +181,27 @@ class DatasetValidator(DatasetBaseWrapper):
             f"Unsupported type of USManager ({type(us_manager).__qualname__}). " f"Only SyncUSManager supported."
         )
 
+    def _get_action_order_index(self, action: Action) -> int:
+        # Fields with calc_mode=parameter should be added first so that sources can reference them
+        if (
+            isinstance(action, FieldAction)
+            and action.action == DatasetAction.add_field
+            and isinstance(action.field, UpdateField)
+            and action.field.calc_mode == CalcMode.parameter
+        ):
+            return 0
+
+        return 100
+
+    def _sort_action_batch(self, action_batch: Sequence[Action]) -> Sequence[Action]:
+        return sorted(action_batch, key=self._get_action_order_index)
+
     @generic_profiler("validator-apply-action-batch")
     def apply_batch(self, action_batch: Sequence[Action]) -> None:
         self.update_unpatched_fields()  # TODO: remove after all fields have been patched
+        sorted_action_batch = self._sort_action_batch(action_batch)
         try:
-            for action_patch in action_batch:
+            for action_patch in sorted_action_batch:
                 self.apply_action(
                     item_data=action_patch,
                 )
@@ -660,6 +676,12 @@ class DatasetValidator(DatasetBaseWrapper):
             elif "guid_formula" in field_data_dict and "formula" not in field_data_dict:
                 field_data_dict["formula"] = ""
 
+            if self._is_data_api:
+                # forbidden fields to be mutated via Data API
+                for field_name in ("value_constraint", "template_enabled"):
+                    if field_name in field_data_dict:
+                        del field_data_dict[field_name]
+
         if action in (DatasetAction.update_field, DatasetAction.delete_field):
             try:
                 old_field = self.get_field_by_id(field_id)
@@ -715,13 +737,6 @@ class DatasetValidator(DatasetBaseWrapper):
                 )
                 self._ds.rename_field_id_usages(old_id=field_id, new_id=new_field_id)
                 return
-            if (
-                self._is_data_api
-                and old_field.calc_mode == CalcMode.parameter
-                and old_field.value_constraint != field_data_dict.get("value_constraint")
-                and field_data_dict.get("value_constraint") is not None
-            ):
-                raise exc.DatasetActionNotAllowedError("parameter value_constraint cannot be updated")
 
             # Update existing field
             new_field = old_field.clone(**field_data_dict)
@@ -1517,6 +1532,8 @@ class DatasetValidator(DatasetBaseWrapper):
             id="",
             spec=new_dsrc_spec,
             us_entry_buffer=self._us_manager.get_entry_buffer(),
+            dataset_parameter_values={},
+            dataset_template_enabled=False,
         )
         new_dsrc_parameters = new_dsrc_dummy.get_parameters()
         return new_dsrc_parameters, new_dsrc_spec.source_type

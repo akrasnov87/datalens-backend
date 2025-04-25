@@ -47,7 +47,7 @@ from dl_constants.enums import (
     UserDataType,
     WhereClauseOperation,
 )
-from dl_rls.models import RLS2ConfigEntry
+from dl_rls.models import RLSEntry
 
 
 class Action(Enum):
@@ -465,8 +465,8 @@ class BaseParameterValueConstraint:
 
 
 @attr.s
-class AllParameterValueConstraint(BaseParameterValueConstraint):
-    type: ParameterValueConstraintType = ParameterValueConstraintType.all
+class NullParameterValueConstraint(BaseParameterValueConstraint):
+    type: ParameterValueConstraintType = ParameterValueConstraintType.null
 
 
 @attr.s
@@ -498,6 +498,11 @@ class NotEqualsParameterValueConstraint(BaseParameterValueConstraint):
 class RegexParameterValueConstraint(BaseParameterValueConstraint):
     type: ParameterValueConstraintType = ParameterValueConstraintType.regex
     pattern: str = attr.ib()
+
+
+@attr.s
+class DefaultParameterValueConstraint(BaseParameterValueConstraint):
+    type: ParameterValueConstraintType = ParameterValueConstraintType.default
 
 
 class CollectionParameterValueConstraint(BaseParameterValueConstraint):
@@ -561,6 +566,7 @@ class _ResultField(ApiProxyObject):
     managed_by: ManagedBy = attr.ib(default=ManagedBy.user, converter=ManagedBy.normalize)  # type: ignore  # 2024-01-24 # TODO: Unsupported converter, only named functions, types and lambdas are currently supported  [misc]
     default_value: Optional[ParameterValue] = attr.ib(default=None)
     value_constraint: Optional[BaseParameterValueConstraint] = attr.ib(default=None)
+    template_enabled: Optional[bool] = attr.ib(default=None)
 
     def set_name(self, name: str) -> None:
         if self.title is None:
@@ -573,11 +579,13 @@ class _ResultField(ApiProxyObject):
             self.formula = ""
             self.default_value = None
             self.value_constraint = None
+            self.template_enabled = None
         elif self.formula and not self.source and self.default_value is None:
             self.calc_mode = CalcMode.formula
             self.source = ""
             self.default_value = None
             self.value_constraint = None
+            self.template_enabled = None
         elif self.default_value is not None and not self.source and not self.formula:
             self.calc_mode = CalcMode.parameter
             self.source = ""
@@ -937,13 +945,15 @@ class Dataset(ApiProxyObject):
     name: str = attr.ib(default=None)
     revision_id: Optional[str] = attr.ib(default=None)
     load_preview_by_default: Optional[bool] = attr.ib(default=True)
+    template_enabled: bool = attr.ib(default=False)
+    data_export_forbidden: Optional[bool] = attr.ib(default=False)
     sources: Container[DataSource] = attr.ib(factory=Container, converter=Container)
     source_avatars: Container[SourceAvatar] = attr.ib(factory=Container, converter=Container)
     avatar_relations: Container[AvatarRelation] = attr.ib(factory=Container, converter=Container)
     result_schema: Container[ResultField] = attr.ib(factory=Container, converter=Container)
     result_schema_aux: ResultSchemaAux = attr.ib(factory=ResultSchemaAux)
     rls: dict = attr.ib(factory=dict)
-    rls2: dict[str, List[RLS2ConfigEntry]] = attr.ib(factory=dict)
+    rls2: dict[str, List[RLSEntry]] = attr.ib(factory=dict)
     component_errors: ComponentErrorRegistry = attr.ib(factory=ComponentErrorRegistry)
     obligatory_filters: List[ObligatoryFilter] = attr.ib(default=attr.Factory(list))
 

@@ -28,7 +28,7 @@ from dl_core.db.elements import SchemaColumn
 from dl_core.services_registry.file_uploader_client_factory import FileSourceDesc
 from dl_core.us_connection_base import (
     ConnectionBase,
-    ConnectionHardcodedDataMixin,
+    ConnectionSettingsMixin,
     DataSourceTemplate,
 )
 from dl_core.utils import (
@@ -50,7 +50,10 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 
-class BaseFileS3Connection(ConnectionHardcodedDataMixin[FileS3ConnectorSettings], ConnectionClickhouseBase):
+class BaseFileS3Connection(
+    ConnectionSettingsMixin[FileS3ConnectorSettings],
+    ConnectionClickhouseBase,
+):
     is_always_internal_source: ClassVar[bool] = True
     allow_cache: ClassVar[bool] = True
     settings_type = FileS3ConnectorSettings
@@ -138,7 +141,7 @@ class BaseFileS3Connection(ConnectionHardcodedDataMixin[FileS3ConnectorSettings]
             replace_secret=self.get_replace_secret(),
             protocol="https" if cs.SECURE else "http",
             host=cs.HOST,
-            multihosts=parse_comma_separated_hosts(cs.HOST),  # type: ignore  # 2024-01-30 # TODO: Argument "multihosts" to "BaseFileS3ConnDTO" has incompatible type "tuple[str, ...]"; expected "Iterable[_T_co]"  [arg-type]
+            multihosts=parse_comma_separated_hosts(cs.HOST),
             port=cs.PORT,
             username=cs.USERNAME,
             password=cs.PASSWORD,
