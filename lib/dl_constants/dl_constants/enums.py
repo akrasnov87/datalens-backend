@@ -334,6 +334,30 @@ class RawSQLLevel(Enum):
     dashsql = "dashsql"  # unwrapped raw SQL with `execute` permissions
 
 
+RAW_SQL_LEVEL_SORTED = [
+    RawSQLLevel.off,
+    RawSQLLevel.subselect,
+    RawSQLLevel.template,
+    RawSQLLevel.dashsql,
+]
+
+
+def sort_raw_sql_levels(
+    raw_sql_levels: list[RawSQLLevel],
+) -> list[RawSQLLevel]:
+    """
+    Sorts raw_sql_levels in a way that the most permissive level is first.
+    """
+    if not raw_sql_levels:
+        return []
+
+    raw_sql_levels = sorted(
+        raw_sql_levels,
+        key=lambda x: RAW_SQL_LEVEL_SORTED.index(x),
+    )
+    return raw_sql_levels
+
+
 def is_raw_sql_level_subselect_allowed(raw_sql_level: RawSQLLevel) -> bool:
     return raw_sql_level in (
         RawSQLLevel.subselect,
@@ -425,3 +449,25 @@ class MigrationStatus(Enum):
     migrated_up = "migrated_up"
     migrated_down = "migrated_down"
     error = "error"
+
+
+class OperationsMode(Enum):
+    pass
+
+
+class CreateMode(OperationsMode):
+    create = auto()
+    test = auto()
+
+
+class ImportMode(OperationsMode):
+    create_from_import = auto()
+
+
+class EditMode(OperationsMode):
+    edit = auto()
+    test = auto()
+
+
+class ExportMode(OperationsMode):
+    export = auto()

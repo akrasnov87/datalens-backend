@@ -13,7 +13,7 @@ on:
 
 jobs:
   build:
-    runs-on: [ self-hosted, linux, light ]
+    runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
     permissions:
       contents: read
       packages: write
@@ -36,6 +36,9 @@ jobs:
           registry: "ghcr.io/${{ github.repository_owner }}"
           username: ${{ github.actor }}
           password: ${{ secrets.ROBOT_GITHUB_PACKAGES_WRITE_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Build and push
         uses: docker/build-push-action@v4

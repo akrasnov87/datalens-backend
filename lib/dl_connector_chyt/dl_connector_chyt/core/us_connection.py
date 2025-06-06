@@ -24,6 +24,7 @@ from dl_core.us_connection_base import (
     DataSourceTemplate,
     RawSqlLevelConnectionMixin,
     make_subselect_datasource_template,
+    make_table_datasource_template,
 )
 from dl_core.utils import secrepr
 from dl_i18n.localizer_base import Localizer
@@ -105,21 +106,14 @@ class BaseConnectionCHYT(
             parameters={},
         )
         return [
-            DataSourceTemplate(
-                title="YTsaurus table via CHYT",
-                tab_title=localizer.translate(Translatable("source_templates-tab_title-table")),
+            make_table_datasource_template(
+                connection_id=self.uuid,  # type: ignore
                 source_type=self.chyt_table_source_type,
-                form=[
-                    {
-                        "name": "table_name",
-                        "input_type": "text",
-                        "default": "",
-                        "required": True,
-                        "title": localizer.translate(Translatable("source_templates-label-ytsaurus_table")),
-                        "field_doc_key": "YTsaurus/CHYT_TABLE/table_name",
-                    },
-                ],
-                **common,
+                localizer=localizer,
+                title="YTsaurus table via CHYT",
+                template_enabled=self.is_datasource_template_allowed,
+                table_form_title=localizer.translate(Translatable("source_templates-label-ytsaurus_table")),
+                table_form_field_doc_key="YTsaurus/CHYT_TABLE/table_name",
             ),
             DataSourceTemplate(
                 title="List of YTsaurus tables via CHYT",
@@ -133,6 +127,7 @@ class BaseConnectionCHYT(
                         "required": True,
                         "title": localizer.translate(Translatable("source_templates-label-ytasurus_table_list")),
                         "field_doc_key": "YTsaurus/CHYT_TABLE_LIST/table_names",
+                        "template_enabled": self.is_datasource_template_allowed,
                     },
                 ],
                 **common,
@@ -149,6 +144,7 @@ class BaseConnectionCHYT(
                         "required": True,
                         "title": localizer.translate(Translatable("source_templates-label-ytsaurus_dir")),
                         "field_doc_key": "YTsaurus/CHYT_TABLE_RANGE/directory_path",
+                        "template_enabled": self.is_datasource_template_allowed,
                     },
                     {
                         "name": "range_from",
@@ -156,6 +152,7 @@ class BaseConnectionCHYT(
                         "default": "",
                         "required": False,
                         "title": localizer.translate(Translatable("source_templates-label-range_from")),
+                        "template_enabled": self.is_datasource_template_allowed,
                     },
                     {
                         "name": "range_to",
@@ -163,6 +160,7 @@ class BaseConnectionCHYT(
                         "default": "",
                         "required": False,
                         "title": localizer.translate(Translatable("source_templates-label-range_to")),
+                        "template_enabled": self.is_datasource_template_allowed,
                     },
                 ],
                 **common,
@@ -174,8 +172,13 @@ class BaseConnectionCHYT(
                 disabled=not self.is_subselect_allowed,
                 title="SQL query via CHYT",
                 field_doc_key="YTsaurus/CHYT_SUBSELECT/subsql",
+                template_enabled=self.is_datasource_template_allowed,
             ),
         ]
+
+    @property
+    def is_datasource_template_allowed(self) -> bool:
+        return self._connector_settings.ENABLE_DATASOURCE_TEMPLATE and self._is_raw_sql_level_template_allowed
 
 
 class ConnectionCHYTToken(BaseConnectionCHYT):

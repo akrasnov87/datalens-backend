@@ -10,6 +10,7 @@ from dl_core.us_connection_base import (
     DataSourceTemplate,
     QueryTypeInfo,
     make_subselect_datasource_template,
+    make_table_datasource_template,
 )
 from dl_i18n.localizer_base import Localizer
 
@@ -41,11 +42,24 @@ class ConnectionClickhouse(
 
     allow_dashsql: ClassVar[bool] = True
     allow_cache: ClassVar[bool] = True
-    allow_export: ClassVar[bool] = True
     is_always_user_source: ClassVar[bool] = False  # TODO: should be `True`, but need some cleanup for that.
 
     def get_data_source_template_templates(self, localizer: Localizer) -> list[DataSourceTemplate]:
-        return [
+        result: list[DataSourceTemplate] = []
+
+        if self._connector_settings.ENABLE_TABLE_DATASOURCE_FORM:
+            result.append(
+                make_table_datasource_template(
+                    connection_id=self.uuid,  # type: ignore
+                    source_type=SOURCE_TYPE_CH_TABLE,
+                    localizer=localizer,
+                    disabled=not self.is_subselect_allowed,
+                    template_enabled=self.is_datasource_template_allowed,
+                    db_name_form_enabled=True,
+                )
+            )
+
+        result.append(
             make_subselect_datasource_template(
                 connection_id=self.uuid,  # type: ignore
                 source_type=SOURCE_TYPE_CH_SUBSELECT,
@@ -53,7 +67,9 @@ class ConnectionClickhouse(
                 disabled=not self.is_subselect_allowed,
                 template_enabled=self.is_datasource_template_allowed,
             )
-        ]
+        )
+
+        return result
 
     def get_conn_dto(self) -> DLClickHouseConnDTO:
         base_dto = super().get_conn_dto()

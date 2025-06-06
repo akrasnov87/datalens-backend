@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import functools
 import logging
 from typing import (
     TYPE_CHECKING,
@@ -32,6 +33,7 @@ from dl_constants.enums import (
     DataSourceType,
     MigrationStatus,
     NotificationLevel,
+    OperationsMode,
     RawSQLLevel,
     UserDataType,
     is_raw_sql_level_dashsql_allowed,
@@ -103,6 +105,75 @@ class DataSourceTemplate(NamedTuple):
             connection_id=self.connection_id,
             **self.parameters,
         )
+
+
+def make_table_datasource_template(
+    connection_id: str,
+    source_type: DataSourceType,
+    localizer: Localizer,
+    disabled: bool = False,
+    template_enabled: bool = False,
+    title: str = "Table",
+    tab_title: str | None = None,
+    db_name_form_enabled: bool = False,
+    schema_name_form_enabled: bool = False,
+    table_form_title: str | None = None,
+    table_form_field_doc_key: str = "ANY_TABLE/table_name",
+) -> DataSourceTemplate:
+    if tab_title is None:
+        tab_title = localizer.translate(Translatable("source_templates-tab_title-table"))
+
+    form: list[dict[str, Any]] = []
+
+    if db_name_form_enabled:
+        form.append(
+            {
+                "name": "db_name",
+                "input_type": "text",
+                "default": "",
+                "required": True,
+                "title": localizer.translate(Translatable("source_templates-label-db_name")),
+                "template_enabled": False,
+            }
+        )
+
+    if schema_name_form_enabled:
+        form.append(
+            {
+                "name": "schema_name",
+                "input_type": "text",
+                "default": "",
+                "required": True,
+                "title": localizer.translate(Translatable("source_templates-label-schema_name")),
+                "template_enabled": False,
+            }
+        )
+
+    if table_form_title is None:
+        table_form_title = localizer.translate(Translatable("source_templates-label-table"))
+
+    form.append(
+        {
+            "name": "table_name",
+            "input_type": "text",
+            "default": "",
+            "required": True,
+            "title": table_form_title,
+            "field_doc_key": table_form_field_doc_key,
+            "template_enabled": template_enabled,
+        }
+    )
+
+    return DataSourceTemplate(
+        title=title,
+        tab_title=tab_title,
+        source_type=source_type,
+        form=form,
+        disabled=disabled,
+        group=[],
+        connection_id=connection_id,
+        parameters={},
+    )
 
 
 def make_subselect_datasource_template(
@@ -200,6 +271,7 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
         hidden: bool = False,
         data_strict: bool = True,
         migration_status: MigrationStatus = MigrationStatus.non_migrated,
+        entry_op_mode: Optional[OperationsMode] = None,
         *,
         us_manager: USManagerBase,
     ):
@@ -218,6 +290,7 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
             hidden=hidden,
             data_strict=data_strict,
             migration_status=migration_status,
+            entry_op_mode=entry_op_mode,
             us_manager=us_manager,
         )
 
@@ -414,24 +487,35 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
 
     def get_import_warnings_list(self, localizer: Localizer) -> list[dict]:
         CODE_PREFIX = "NOTIF.WB_IMPORT.CONN."
-
-        return [
-            dict(
-                message=localizer.translate(Translatable("notif_check-creds")),
-                level=NotificationLevel.info,
-                code=CODE_PREFIX + "CHECK_CREDENTIALS",
+        warnings = []
+        with_fake_creds = False
+        for data_key in self.data.get_secret_keys():
+            secret_value = functools.reduce(getattr, data_key.parts, self.data)
+            if secret_value == "******":
+                with_fake_creds = True
+                break
+        if with_fake_creds:
+            warnings.append(
+                dict(
+                    message=localizer.translate(Translatable("notif_check-creds")),
+                    level=NotificationLevel.info,
+                    code=CODE_PREFIX + "CHECK_CREDENTIALS",
+                )
             )
-        ]
+        return warnings
 
     def get_export_warnings_list(self, localizer: Localizer) -> list[dict]:
         CODE_PREFIX = "NOTIF.WB_EXPORT.CONN."
-        return [
-            dict(
-                message=localizer.translate(Translatable("notif_check-creds")),
-                level=NotificationLevel.info,
-                code=CODE_PREFIX + "CHECK_CREDENTIALS",
+        warnings = []
+        if self.data.get_secret_keys():
+            warnings.append(
+                dict(
+                    message=localizer.translate(Translatable("notif_check-creds")),
+                    level=NotificationLevel.info,
+                    code=CODE_PREFIX + "CHECK_CREDENTIALS",
+                )
             )
-        ]
+        return warnings
 
     def get_cache_key_part(self) -> LocalKeyRepresentation:
         local_key_rep = LocalKeyRepresentation()

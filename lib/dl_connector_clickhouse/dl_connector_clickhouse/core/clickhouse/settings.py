@@ -2,7 +2,10 @@ import attr
 
 from dl_configs.connectors_settings import ConnectorSettingsBase
 from dl_configs.settings_loaders.fallback_cfg_resolver import ObjectLikeConfig
-from dl_configs.settings_loaders.meta_definition import s_attrib
+from dl_core.connectors.settings.mixins import (
+    DatasourceTemplateSettingsMixin,
+    TableDatasourceSettingsMixin,
+)
 from dl_core.connectors.settings.primitives import (
     ConnectorSettingsDefinition,
     get_connectors_settings_config,
@@ -10,8 +13,12 @@ from dl_core.connectors.settings.primitives import (
 
 
 @attr.s(frozen=True)
-class ClickHouseConnectorSettings(ConnectorSettingsBase):
-    ENABLE_DATASOURCE_TEMPLATE: bool = s_attrib("ENABLE_DATASOURCE_TEMPLATE", missing=False)  # type: ignore
+class ClickHouseConnectorSettings(
+    ConnectorSettingsBase,
+    DatasourceTemplateSettingsMixin,
+    TableDatasourceSettingsMixin,
+):
+    pass
 
 
 def clickhouse_settings_fallback(full_cfg: ObjectLikeConfig) -> dict[str, ConnectorSettingsBase]:
@@ -19,8 +26,9 @@ def clickhouse_settings_fallback(full_cfg: ObjectLikeConfig) -> dict[str, Connec
     if cfg is None:
         settings = ClickHouseConnectorSettings()
     else:
-        settings = ClickHouseConnectorSettings(
-            ENABLE_DATASOURCE_TEMPLATE=cfg.ENABLE_DATASOURCE_TEMPLATE,  # type: ignore
+        settings = ClickHouseConnectorSettings(  # type: ignore
+            ENABLE_DATASOURCE_TEMPLATE=cfg.get("ENABLE_DATASOURCE_TEMPLATE", False),
+            ENABLE_TABLE_DATASOURCE_FORM=cfg.get("ENABLE_TABLE_DATASOURCE_FORM", False),
         )
 
     return dict(CLICKHOUSE=settings)

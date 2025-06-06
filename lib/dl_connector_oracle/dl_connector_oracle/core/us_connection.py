@@ -12,8 +12,10 @@ from dl_core.connection_executors.sync_base import SyncConnExecutorBase
 from dl_core.us_connection_base import (
     ClassicConnectionSQL,
     ConnectionBase,
+    ConnectionSettingsMixin,
     DataSourceTemplate,
     make_subselect_datasource_template,
+    make_table_datasource_template,
 )
 from dl_i18n.localizer_base import Localizer
 
@@ -23,9 +25,13 @@ from dl_connector_oracle.core.constants import (
     OracleDbNameType,
 )
 from dl_connector_oracle.core.dto import OracleConnDTO
+from dl_connector_oracle.core.settings import OracleConnectorSettings
 
 
-class ConnectionSQLOracle(ClassicConnectionSQL):
+class ConnectionSQLOracle(
+    ConnectionSettingsMixin[OracleConnectorSettings],
+    ClassicConnectionSQL,
+):
     has_schema: ClassVar[bool] = True
     # Default schema is usually defined on a per-user basis,
     # so it's better to omit the schema if it isn't explicitly specified.
@@ -34,8 +40,8 @@ class ConnectionSQLOracle(ClassicConnectionSQL):
     allowed_source_types = frozenset((SOURCE_TYPE_ORACLE_TABLE, SOURCE_TYPE_ORACLE_SUBSELECT))
     allow_dashsql: ClassVar[bool] = True
     allow_cache: ClassVar[bool] = True
-    allow_export: ClassVar[bool] = True
     is_always_user_source: ClassVar[bool] = True
+    settings_type = OracleConnectorSettings
 
     @attr.s(kw_only=True)
     class DataModel(ClassicConnectionSQL.DataModel):
@@ -58,14 +64,31 @@ class ConnectionSQLOracle(ClassicConnectionSQL):
         )
 
     def get_data_source_template_templates(self, localizer: Localizer) -> list[DataSourceTemplate]:
-        return [
+        result: list[DataSourceTemplate] = []
+
+        if self._connector_settings.ENABLE_TABLE_DATASOURCE_FORM:
+            result.append(
+                make_table_datasource_template(
+                    connection_id=self.uuid,  # type: ignore
+                    source_type=SOURCE_TYPE_ORACLE_TABLE,
+                    localizer=localizer,
+                    disabled=not self.is_subselect_allowed,
+                    template_enabled=self.is_datasource_template_allowed,
+                    schema_name_form_enabled=True,
+                ),
+            )
+
+        result.append(
             make_subselect_datasource_template(
                 connection_id=self.uuid,  # type: ignore
                 source_type=SOURCE_TYPE_ORACLE_SUBSELECT,
                 localizer=localizer,
                 disabled=not self.is_subselect_allowed,
-            )
-        ]
+                template_enabled=self.is_datasource_template_allowed,
+            ),
+        )
+
+        return result
 
     def get_parameter_combinations(
         self, conn_executor_factory: Callable[[ConnectionBase], SyncConnExecutorBase]
@@ -82,3 +105,7 @@ class ConnectionSQLOracle(ClassicConnectionSQL):
     @property
     def allow_public_usage(self) -> bool:
         return True
+
+    @property
+    def is_datasource_template_allowed(self) -> bool:
+        return self._connector_settings.ENABLE_DATASOURCE_TEMPLATE and super().is_datasource_template_allowed

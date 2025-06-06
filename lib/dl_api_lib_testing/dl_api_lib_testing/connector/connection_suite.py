@@ -6,8 +6,10 @@ import pytest
 
 from dl_api_client.dsmaker.api.http_sync_base import SyncHttpClientBase
 from dl_api_lib.app_settings import ControlApiAppSettings
+from dl_api_lib.schemas.connection import GenericConnectionSchema
 from dl_api_lib_testing.connection_base import ConnectionTestBase
 from dl_constants.api_constants import DLHeadersCommon
+from dl_core.connectors.base.export_import import is_export_import_allowed
 from dl_core.us_connection_base import ConnectionBase
 from dl_core.us_manager.us_manager_sync import SyncUSManager
 from dl_testing.regulated_test import RegulatedTestCase
@@ -51,12 +53,16 @@ class DefaultConnectorConnectionTestSuite(ConnectionTestBase, RegulatedTestCase)
             headers=bi_headers,
         )
 
-        if not conn.allow_export:
-            assert resp.status_code == 400
+        if not is_export_import_allowed(self.conn_type):
+            assert resp.status_code == 200, resp.json
+            assert "notifications" in resp.json, resp.json
+            assert resp.json["notifications"][0]["code"] == "ERR.DS_API.UNSUPPORTED", resp.json
             return
 
         assert resp.status_code == 200, resp.json
-        if hasattr(conn.data, "password"):
+        conn_edit_schema_cls = GenericConnectionSchema().get_edit_schema_cls(conn)
+        if hasattr(conn_edit_schema_cls(), "password"):
+            # TODO check all secret fields according to conn.data.get_secret_keys(), not just "password"
             password = resp.json["connection"]["password"]
             assert password == "******"
 
@@ -70,7 +76,7 @@ class DefaultConnectorConnectionTestSuite(ConnectionTestBase, RegulatedTestCase)
     ) -> None:
         conn = sync_us_manager.get_by_id(saved_connection_id, expected_type=ConnectionBase)
         assert isinstance(conn, ConnectionBase)
-        if not conn.allow_export:
+        if not is_export_import_allowed(self.conn_type):
             return
 
         us_master_token = control_api_app_settings.US_MASTER_TOKEN
@@ -120,7 +126,13 @@ class DefaultConnectorConnectionTestSuite(ConnectionTestBase, RegulatedTestCase)
         assert import_response.status_code == 200, import_response.json
         assert import_response.json["id"]
         assert import_response.json["id"] != saved_connection_id
-        assert import_response.json["notifications"]
+        conn_edit_schema_cls = GenericConnectionSchema().get_edit_schema_cls(conn)
+        if hasattr(conn_edit_schema_cls(), "password"):
+            # TODO check all secret fields according to conn.data.get_secret_keys(), not just "password"
+            assert import_response.json["notifications"]
+            assert any(
+                "CHECK_CREDENTIALS" in notification["code"] for notification in import_response.json["notifications"]
+            )
 
         export_resp = control_api_sync_client.delete(
             url=f"/api/v1/connections/{import_response.json['id']}",

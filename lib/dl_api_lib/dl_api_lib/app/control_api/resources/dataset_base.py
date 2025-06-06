@@ -22,7 +22,7 @@ from dl_api_lib.enums import (
     BI_TYPE_AGGREGATIONS,
     CASTS_BY_TYPE,
 )
-from dl_api_lib.exc import DLValidationError
+from dl_api_lib.exc import DatasetExportError
 from dl_api_lib.query.registry import (
     get_compeng_dialect,
     is_compeng_executable,
@@ -145,11 +145,17 @@ class DatasetResource(BIResource):
 
             origin_dsrc = dsrc_coll.get_strict(role=DataSourceRole.origin)
             connection_id = dsrc_coll.get_connection_id(DataSourceRole.origin)
-            if conn_id_mapping:
-                try:
+            if conn_id_mapping is not None:
+                if connection_id not in conn_id_mapping:
+                    LOGGER.info(
+                        'Can not find "%s" in conn id mapping for source with id %s',
+                        connection_id,
+                        source_id,
+                    )
+                    raise DatasetExportError("Can not export dataset without a connection")  # TODO BI-6296
+                else:
                     connection_id = conn_id_mapping[connection_id]
-                except KeyError:
-                    raise DLValidationError(f"Error to find {connection_id} in connection_id_mapping")
+
             sources.append(
                 {
                     "id": source_id,

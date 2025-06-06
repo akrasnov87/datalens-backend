@@ -11,8 +11,10 @@ from dl_core.connection_executors.sync_base import SyncConnExecutorBase
 from dl_core.us_connection_base import (
     ClassicConnectionSQL,
     ConnectionBase,
+    ConnectionSettingsMixin,
     DataSourceTemplate,
     make_subselect_datasource_template,
+    make_table_datasource_template,
 )
 from dl_i18n.localizer_base import Localizer
 
@@ -21,17 +23,21 @@ from dl_connector_mssql.core.constants import (
     SOURCE_TYPE_MSSQL_TABLE,
 )
 from dl_connector_mssql.core.dto import MSSQLConnDTO
+from dl_connector_mssql.core.settings import MSSQLConnectorSettings
 
 
-class ConnectionMSSQL(ClassicConnectionSQL):
+class ConnectionMSSQL(
+    ConnectionSettingsMixin[MSSQLConnectorSettings],
+    ClassicConnectionSQL,
+):
     has_schema: ClassVar[bool] = True
     default_schema_name = "dbo"
     source_type = SOURCE_TYPE_MSSQL_TABLE
     allowed_source_types = frozenset((SOURCE_TYPE_MSSQL_TABLE, SOURCE_TYPE_MSSQL_SUBSELECT))
     allow_dashsql: ClassVar[bool] = True
     allow_cache: ClassVar[bool] = True
-    allow_export: ClassVar[bool] = True
     is_always_user_source: ClassVar[bool] = True
+    settings_type = MSSQLConnectorSettings
 
     @attr.s(kw_only=True)
     class DataModel(ClassicConnectionSQL.DataModel):
@@ -49,15 +55,32 @@ class ConnectionMSSQL(ClassicConnectionSQL):
         )
 
     def get_data_source_template_templates(self, localizer: Localizer) -> list[DataSourceTemplate]:
-        return [
+        result: list[DataSourceTemplate] = []
+
+        if self._connector_settings.ENABLE_TABLE_DATASOURCE_FORM:
+            result.append(
+                make_table_datasource_template(
+                    connection_id=self.uuid,  # type: ignore
+                    source_type=SOURCE_TYPE_MSSQL_TABLE,
+                    localizer=localizer,
+                    disabled=not self.is_subselect_allowed,
+                    template_enabled=self.is_datasource_template_allowed,
+                    schema_name_form_enabled=True,
+                ),
+            )
+
+        result.append(
             make_subselect_datasource_template(
                 connection_id=self.uuid,  # type: ignore
                 source_type=SOURCE_TYPE_MSSQL_SUBSELECT,
                 localizer=localizer,
                 disabled=not self.is_subselect_allowed,
                 field_doc_key="MSSQL_SUBSELECT/subsql",
+                template_enabled=self.is_datasource_template_allowed,
             )
-        ]
+        )
+
+        return result
 
     def get_parameter_combinations(
         self,
@@ -75,3 +98,7 @@ class ConnectionMSSQL(ClassicConnectionSQL):
     @property
     def allow_public_usage(self) -> bool:
         return True
+
+    @property
+    def is_datasource_template_allowed(self) -> bool:
+        return self._connector_settings.ENABLE_DATASOURCE_TEMPLATE and super().is_datasource_template_allowed

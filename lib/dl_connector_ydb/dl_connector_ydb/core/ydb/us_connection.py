@@ -13,8 +13,10 @@ from dl_core.connection_executors.sync_base import SyncConnExecutorBase
 from dl_core.us_connection_base import (
     ClassicConnectionSQL,
     ConnectionBase,
+    ConnectionSettingsMixin,
     DataSourceTemplate,
     make_subselect_datasource_template,
+    make_table_datasource_template,
 )
 from dl_core.utils import secrepr
 from dl_i18n.localizer_base import Localizer
@@ -27,17 +29,21 @@ from dl_connector_ydb.core.ydb.constants import (
     YDBAuthTypeMode,
 )
 from dl_connector_ydb.core.ydb.dto import YDBConnDTO
+from dl_connector_ydb.core.ydb.settings import YDBConnectorSettings
 
 
 if TYPE_CHECKING:
     from dl_core.connection_models.common_models import TableIdent
 
 
-class YDBConnection(ClassicConnectionSQL):
+class YDBConnection(
+    ConnectionSettingsMixin[YDBConnectorSettings],
+    ClassicConnectionSQL,
+):
     allow_cache: ClassVar[bool] = True
     is_always_user_source: ClassVar[bool] = True
     allow_dashsql: ClassVar[bool] = True
-    allow_export: ClassVar[bool] = True
+    settings_type = YDBConnectorSettings
 
     source_type = SOURCE_TYPE_YDB_TABLE
 
@@ -75,23 +81,14 @@ class YDBConnection(ClassicConnectionSQL):
 
     def get_data_source_template_templates(self, localizer: Localizer) -> list[DataSourceTemplate]:
         return [
-            DataSourceTemplate(
-                title="YDB table",
-                tab_title=localizer.translate(Translatable("source_templates-tab_title-table")),
+            make_table_datasource_template(
+                connection_id=self.uuid,  # type: ignore
                 source_type=SOURCE_TYPE_YDB_TABLE,
-                parameters=dict(),
-                form=[
-                    {
-                        "name": "table_name",
-                        "input_type": "text",
-                        "default": "",
-                        "required": True,
-                        "title": localizer.translate(Translatable("source_templates-label-ydb_table")),
-                        "field_doc_key": "YDB_TABLE/table_name",
-                    },
-                ],
-                group=[],
-                connection_id=self.uuid,  # type: ignore  # TODO: fix
+                localizer=localizer,
+                title="YDB table",
+                template_enabled=self.is_datasource_template_allowed,
+                table_form_title=localizer.translate(Translatable("source_templates-label-ydb_table")),
+                table_form_field_doc_key="YDB_TABLE/table_name",
             ),
             make_subselect_datasource_template(
                 connection_id=self.uuid,  # type: ignore
@@ -99,6 +96,7 @@ class YDBConnection(ClassicConnectionSQL):
                 localizer=localizer,
                 disabled=not self.is_subselect_allowed,
                 title="Subselect over YDB",
+                template_enabled=self.is_datasource_template_allowed,
             ),
         ]
 
@@ -120,3 +118,7 @@ class YDBConnection(ClassicConnectionSQL):
     @property
     def allow_public_usage(self) -> bool:
         return True
+
+    @property
+    def is_datasource_template_allowed(self) -> bool:
+        return self._connector_settings.ENABLE_DATASOURCE_TEMPLATE and super().is_datasource_template_allowed

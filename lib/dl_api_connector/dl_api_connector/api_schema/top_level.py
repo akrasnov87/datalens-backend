@@ -28,13 +28,15 @@ from marshmallow import Schema
 from marshmallow import fields as ma_fields
 
 from dl_api_connector.api_schema.extras import (
+    FieldExtra,
+    SchemaKWArgs,
+)
+from dl_constants.enums import (
     CreateMode,
     EditMode,
     ExportMode,
-    FieldExtra,
     ImportMode,
     OperationsMode,
-    SchemaKWArgs,
 )
 from dl_core import exc as bi_core_exc
 from dl_core.base_models import (
@@ -101,13 +103,6 @@ class BaseTopLevelSchema(Schema, Generic[_TARGET_OBJECT_TV]):
             extra = cls.get_field_extra(field)
             if extra is not None:
                 yield field_name, field, extra
-
-    @classmethod
-    def fieldnames_with_extra_export_fake_info(cls) -> Iterable[str]:
-        for field_name, field in cls.all_fields_dict().items():
-            extra = cls.get_field_extra(field)
-            if extra is not None and extra.export_fake is True:
-                yield field_name
 
     def _refine_init_kwargs(self, kw_args: SchemaKWArgs, operations_mode: Optional[OperationsMode]) -> SchemaKWArgs:
         if operations_mode is None:
@@ -262,15 +257,6 @@ class BaseTopLevelSchema(Schema, Generic[_TARGET_OBJECT_TV]):
 
         return self.handle_unknown_fields(data)
 
-    @post_dump(pass_many=False)
-    def post_dump(self, data: dict[str, Any], **_: Any) -> dict[str, Any]:
-        if isinstance(self.operations_mode, ExportMode):
-            data = deepcopy(data)
-            for secret_field in self.fieldnames_with_extra_export_fake_info():
-                data[secret_field] = "******"
-            return self.delete_unknown_fields(data)
-        return data
-
 
 _US_ENTRY_TV = TypeVar("_US_ENTRY_TV", bound=USEntry)
 
@@ -301,6 +287,27 @@ class USEntryBaseSchema(BaseTopLevelSchema[_US_ENTRY_TV]):
         bi_extra=FieldExtra(exclude_in=[CreateMode.test]),
         attribute="entry_key.entry_name",
     )
+
+    @classmethod
+    def fieldnames_with_extra_export_fake_info(cls) -> Iterable[str]:
+        for field_name, field in cls.all_fields_dict().items():
+            extra = cls.get_field_extra(field)
+            if extra is not None and extra.export_fake is True:
+                yield field_name
+
+    @post_dump(pass_many=False, pass_original=True)
+    def post_dump(self, data: dict[str, Any], obj: _US_ENTRY_TV, **_: Any) -> dict[str, Any]:
+        if not isinstance(self.operations_mode, ExportMode):
+            return data
+
+        data = deepcopy(data)
+        for secret_field in self.fieldnames_with_extra_export_fake_info():
+            if getattr(obj.data, secret_field, None) is None:
+                export_value = None
+            else:
+                export_value = "******"
+            data[secret_field] = export_value
+        return self.delete_unknown_fields(data)
 
     @property
     def us_manager(self) -> USManagerBase:
@@ -355,6 +362,7 @@ class USEntryBaseSchema(BaseTopLevelSchema[_US_ENTRY_TV]):
 
         obj = self.TARGET_CLS.create_from_dict(  # type: ignore  # TODO: fix
             data_dict=self.create_data_model(data_attributes),
+            entry_op_mode=self.operations_mode,
             **self.default_create_from_dict_kwargs(data),
         )
         self.validate_object(obj)
@@ -362,6 +370,8 @@ class USEntryBaseSchema(BaseTopLevelSchema[_US_ENTRY_TV]):
 
     @final
     def update_object(self, obj: _US_ENTRY_TV, data: dict[str, Any]) -> _US_ENTRY_TV:
+        obj.entry_op_mode = self.operations_mode
+
         # Assumed that only data of USEntry can be modified with schema
         assert not (data.keys() - {"data"})
 
