@@ -131,7 +131,7 @@ class UStorageClientAIO(UStorageClientBase):
             context_request_id=context_request_id,
             context_forwarded_for=context_forwarded_for,
             context_workbook_id=context_workbook_id,
-            context_rpc_authorization_id=context_rpc_authorization_id,
+            context_rpc_authorization_id=context_rpc_authorization_id
         )
 
         self._retry_intervals = (0.5, 1.0, 1.1, 2.0, 2.2)
