@@ -22,7 +22,9 @@ dl-constants = {path = "../dl_constants"}
 dl-connector-bundle-chs3 = {path = "../dl_connector_bundle_chs3"}
 dl-configs = {path = "../dl_configs"}
 dl-core = {path = "../dl_core"}
+dl-settings = {path = "../dl_settings"}
 dl-type-transformer = {path = "../dl_type_transformer"}
+dl-s3 = {path = "../dl_s3"}
 
 [tool.poetry.group.tests.dependencies]
 pytest = ">=7.2.2"
@@ -58,5 +60,5 @@ check_untyped_defs = true
 strict_optional = true
 
 [[tool.mypy.overrides]]
-module = ["aiogoogle.*"]
+module = ["aiogoogle.*", "mypy_boto3_s3.*"]
 ignore_missing_imports = true

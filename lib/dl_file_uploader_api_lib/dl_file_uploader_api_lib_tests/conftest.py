@@ -50,7 +50,10 @@ from dl_core_testing.environment import (
 from dl_file_secure_reader_lib.app import create_app as create_reader_app
 from dl_file_uploader_api_lib.app import FileUploaderApiAppFactory
 from dl_file_uploader_api_lib.dl_request import FileUploaderDLRequest
-from dl_file_uploader_api_lib.settings import FileUploaderAPISettings
+from dl_file_uploader_api_lib.settings import (
+    DeprecatedFileUploaderAPISettings,
+    FileUploaderAPISettings,
+)
 from dl_file_uploader_api_lib_tests.config import (
     CONNECTOR_WHITELIST,
     TestingUSConfig,
@@ -58,11 +61,13 @@ from dl_file_uploader_api_lib_tests.config import (
 from dl_file_uploader_lib.redis_model.base import RedisModelManager
 from dl_file_uploader_task_interface.context import FileUploaderTaskContext
 from dl_file_uploader_worker_lib.settings import (
+    DeprecatedFileUploaderWorkerSettings,
     FileUploaderConnectorsSettings,
     FileUploaderWorkerSettings,
     SecureReader,
 )
 from dl_file_uploader_worker_lib.testing.task_processor_client import get_task_processor_client
+from dl_s3.s3_service import S3Service
 from dl_task_processor.processor import TaskProcessor
 from dl_task_processor.state import (
     BITaskStateImpl,
@@ -162,7 +167,7 @@ def crypto_keys_config() -> CryptoKeysConfig:
 def app_settings(monkeypatch, redis_app_settings, redis_arq_settings, s3_settings, crypto_keys_config):
     monkeypatch.setenv("EXT_QUERY_EXECUTER_SECRET_KEY", "dummy")
 
-    settings = FileUploaderAPISettings(
+    deprecated_settings = DeprecatedFileUploaderAPISettings(
         REDIS_APP=redis_app_settings,
         REDIS_ARQ=redis_arq_settings,
         CORS=CorsSettings(
@@ -187,6 +192,7 @@ def app_settings(monkeypatch, redis_app_settings, redis_arq_settings, s3_setting
         CRYPTO_KEYS_CONFIG=crypto_keys_config,
         ALLOW_XLSX=True,
     )
+    settings = FileUploaderAPISettings(fallback=deprecated_settings)
     yield settings
 
 
@@ -248,6 +254,22 @@ def redis_cli(redis_app_settings) -> redis.asyncio.Redis:
     )
 
 
+@pytest_asyncio.fixture(scope="function")
+async def s3_service(s3_settings: S3Settings, s3_tmp_bucket) -> S3Service:
+    service = S3Service(
+        access_key_id=s3_settings.ACCESS_KEY_ID,
+        secret_access_key=s3_settings.SECRET_ACCESS_KEY,
+        endpoint_url=s3_settings.ENDPOINT_URL,
+        use_virtual_host_addressing=False,
+        tmp_bucket_name=s3_tmp_bucket,
+        persistent_bucket_name=s3_persistent_bucket,
+    )
+
+    await service.initialize()
+
+    return service
+
+
 @pytest.fixture(scope="function")
 def rci() -> RequestContextInfo:
     return RequestContextInfo(user_id=TEST_USER_ID)
@@ -279,6 +301,11 @@ def master_token_header(app_settings) -> dict[DLHeadersCommon, str]:
     return {DLHeadersCommon.FILE_UPLOADER_MASTER_TOKEN: app_settings.FILE_UPLOADER_MASTER_TOKEN}
 
 
+@pytest.fixture(scope="function")
+def tenant_id_header() -> dict[DLHeadersCommon, str]:
+    return {DLHeadersCommon.TENANT_ID: "common"}
+
+
 @pytest.fixture(scope="session")
 def connectors_settings(s3_settings):
     return FileUploaderConnectorsSettings(
@@ -306,7 +333,7 @@ def file_uploader_worker_settings(
     crypto_keys_config,
     secure_reader,
 ):
-    settings = FileUploaderWorkerSettings(
+    deprecated_settings = DeprecatedFileUploaderWorkerSettings(
         REDIS_APP=redis_app_settings,
         REDIS_ARQ=redis_arq_settings,
         S3=S3Settings(
@@ -328,6 +355,7 @@ def file_uploader_worker_settings(
         CRYPTO_KEYS_CONFIG=crypto_keys_config,
         SECURE_READER=secure_reader,
     )
+    settings = FileUploaderWorkerSettings(fallback=deprecated_settings)
     yield settings
 
 

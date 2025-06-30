@@ -3,7 +3,10 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 import attr
 from clickhouse_driver import connect as connect_ch
@@ -35,8 +38,10 @@ from dl_core_testing.environment import (
     prepare_united_storage,
 )
 from dl_file_uploader_lib.redis_model.base import RedisModelManager
+from dl_file_uploader_lib.s3_model.base import S3ModelManager
 from dl_file_uploader_worker_lib.app import FileUploaderContextFab
 from dl_file_uploader_worker_lib.settings import (
+    DeprecatedFileUploaderWorkerSettings,
     FileUploaderConnectorsSettings,
     FileUploaderWorkerSettings,
     SecureReader,
@@ -47,6 +52,7 @@ from dl_file_uploader_worker_lib_tests.config import (
     CONNECTOR_WHITELIST,
     TestingUSConfig,
 )
+from dl_s3.s3_service import S3Service
 from dl_task_processor.arq_wrapper import (
     create_arq_redis_settings,
     create_redis_pool,
@@ -181,7 +187,7 @@ def file_uploader_worker_settings(
     us_config,
     secure_reader,
 ):
-    settings = FileUploaderWorkerSettings(
+    deprecated_settings = DeprecatedFileUploaderWorkerSettings(
         REDIS_APP=redis_app_settings,
         REDIS_ARQ=redis_arq_settings,
         S3=S3Settings(
@@ -203,6 +209,7 @@ def file_uploader_worker_settings(
         CRYPTO_KEYS_CONFIG=get_dummy_crypto_keys_config(),
         SECURE_READER=secure_reader,
     )
+    settings = FileUploaderWorkerSettings(fallback=deprecated_settings)
     yield settings
 
 
@@ -277,6 +284,31 @@ def task_processor_client(request, task_processor_arq_client, task_processor_loc
 async def s3_client(s3_settings) -> AsyncS3Client:
     async with create_s3_client(s3_settings) as client:
         yield client
+
+
+@pytest_asyncio.fixture(scope="function")
+async def s3_service(s3_settings: S3Settings, s3_tmp_bucket, s3_persistent_bucket) -> S3Service:
+    service = S3Service(
+        access_key_id=s3_settings.ACCESS_KEY_ID,
+        secret_access_key=s3_settings.SECRET_ACCESS_KEY,
+        endpoint_url=s3_settings.ENDPOINT_URL,
+        use_virtual_host_addressing=False,
+        tmp_bucket_name=s3_tmp_bucket,
+        persistent_bucket_name=s3_persistent_bucket,
+    )
+
+    await service.initialize()
+
+    return service
+
+
+@pytest.fixture(scope="function")
+def s3_model_manager(s3_service) -> S3ModelManager:
+    return S3ModelManager(
+        s3_service=s3_service,
+        tenant_id="common",
+        crypto_keys_config=get_dummy_crypto_keys_config(),
+    )
 
 
 @pytest.fixture(scope="function")

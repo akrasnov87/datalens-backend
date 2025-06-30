@@ -1,3 +1,5 @@
+from collections.abc import Generator
+import datetime
 import ssl
 from typing import Any
 
@@ -5,15 +7,23 @@ import attr
 import requests
 from requests.adapters import HTTPAdapter
 import sqlalchemy as sa
+from sqlalchemy import exc as sa_exc
+from sqlalchemy import types as sqltypes
+from sqlalchemy.sql import compiler
 from trino.auth import (
     BasicAuthentication,
     JWTAuthentication,
 )
 from trino.sqlalchemy import URL as trino_url
 from trino.sqlalchemy.datatype import parse_sqltype
+from trino.sqlalchemy.dialect import TrinoDialect
 
+from dl_configs.utils import get_root_certificates_path
 from dl_core.connection_executors.adapters.adapters_base_sa_classic import BaseClassicAdapter
-from dl_core.connection_executors.models.db_adapter_data import DBAdapterQuery
+from dl_core.connection_executors.models.db_adapter_data import (
+    DBAdapterQuery,
+    ExecutionStep,
+)
 from dl_core.connection_models.common_models import (
     DBIdent,
     SchemaIdent,
@@ -26,7 +36,10 @@ from dl_connector_trino.core.constants import (
     CONNECTION_TYPE_TRINO,
     TrinoAuthType,
 )
-from dl_connector_trino.core.error_transformer import trino_error_transformer
+from dl_connector_trino.core.error_transformer import (
+    ExpressionNotAggregateError,
+    trino_error_transformer,
+)
 from dl_connector_trino.core.target_dto import TrinoConnTargetDTO
 
 
@@ -67,11 +80,47 @@ class CustomHTTPAdapter(HTTPAdapter):
         super().init_poolmanager(connections, maxsize, block, ssl_context=context, **pool_kwargs)
 
 
+class CustomTrinoCompiler(compiler.SQLCompiler):
+    def render_literal_value(self, value: Any, type_: sqltypes.TypeEngine) -> str:
+        if isinstance(type_, sqltypes.Date) and isinstance(value, datetime.date):
+            return f"DATE '{value.strftime('%Y-%m-%d')}'"
+
+        if isinstance(type_, sqltypes.DateTime) and isinstance(value, datetime.datetime):
+            datetime_repr = value.strftime("%Y-%m-%d %H:%M:%S")
+
+            if value.microsecond:
+                datetime_repr += f".{value.microsecond:06}"
+
+            if value.tzinfo is None:
+                return f"TIMESTAMP '{datetime_repr}'"
+            elif value.tzinfo == datetime.timezone.utc:
+                timezone_repr = "UTC"
+            elif hasattr(value.tzinfo, "zone"):
+                # This is a pytz timezone object
+                timezone_repr = value.tzinfo.zone
+            else:
+                raise TypeError(f"Unsupported tzinfo type: {type(value.tzinfo)}")
+
+            return f"TIMESTAMP '{datetime_repr} {timezone_repr}'"
+
+        if isinstance(type_, sqltypes.ARRAY) and isinstance(value, (list, tuple)):
+            array_elements = ", ".join(self.render_literal_value(v, type_.item_type) for v in value)
+            return f"ARRAY[{array_elements}]"
+
+        return super().render_literal_value(value, type_)
+
+
+class CustomTrinoDialect(TrinoDialect):
+    statement_compiler = CustomTrinoCompiler
+
+
 @attr.s(kw_only=True)
 class TrinoDefaultAdapter(BaseClassicAdapter[TrinoConnTargetDTO]):
     conn_type = CONNECTION_TYPE_TRINO
     _error_transformer = trino_error_transformer
     _db_version: str | None = None
+
+    EXTRA_EXC_CLS = (sa_exc.DBAPIError,)
 
     def get_conn_line(self, db_name: str | None = None, params: dict[str, Any] | None = None) -> str:
         # We do not expect to transfer any additional parameters when creating the engine.
@@ -92,23 +141,45 @@ class TrinoDefaultAdapter(BaseClassicAdapter[TrinoConnTargetDTO]):
         args: dict[str, Any] = {
             **super().get_connect_args(),
             "legacy_primitive_types": True,
-            "http_scheme": "http" if self._target_dto.auth_type is TrinoAuthType.NONE else "https",
         }
-        if self._target_dto.auth_type is TrinoAuthType.NONE:
+        if self._target_dto.auth_type is TrinoAuthType.none:
             pass
-        elif self._target_dto.auth_type is TrinoAuthType.PASSWORD:
+        elif self._target_dto.auth_type is TrinoAuthType.password:
             args["auth"] = BasicAuthentication(self._target_dto.username, self._target_dto.password)
-        elif self._target_dto.auth_type is TrinoAuthType.JWT:
+        elif self._target_dto.auth_type is TrinoAuthType.jwt:
             args["auth"] = JWTAuthentication(self._target_dto.jwt)
         else:
             raise NotImplementedError(f"{self._target_dto.auth_type.name} authentication is not supported yet")
 
+        if not self._target_dto.ssl_enable:
+            args["http_scheme"] = "http"
+            return args
+
+        args["http_scheme"] = "https"
         if self._target_dto.ssl_ca:
             session = requests.Session()
             session.mount("https://", CustomHTTPAdapter(self._target_dto.ssl_ca))
             args["http_session"] = session
+        else:
+            args["verify"] = get_root_certificates_path()
 
         return args
+
+    def execute_by_steps(self, db_adapter_query: DBAdapterQuery) -> Generator[ExecutionStep, None, None]:
+        try:
+            for result in super().execute_by_steps(db_adapter_query):
+                yield result
+        except ExpressionNotAggregateError:
+            query = db_adapter_query.query
+            compiled_query = (
+                query
+                if isinstance(query, str)
+                else str(query.compile(dialect=CustomTrinoDialect(), compile_kwargs={"literal_binds": True}))
+            )
+            db_adapter_compiled_query = db_adapter_query.clone(query=compiled_query)
+
+            for result in super().execute_by_steps(db_adapter_compiled_query):
+                yield result
 
     def get_default_db_name(self) -> str:
         return ""  # Trino doesn't require db_name to connect.
