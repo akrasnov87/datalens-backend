@@ -5,8 +5,6 @@ from typing import (
     Any,
     ClassVar,
     Optional,
-    Tuple,
-    Type,
 )
 
 import oracledb
@@ -14,7 +12,7 @@ import sqlalchemy as sa
 import sqlalchemy.dialects.oracle.base as sa_ora  # not all data types are imported in init in older SA versions
 from sqlalchemy.sql.type_api import TypeEngine
 
-from dl_configs.utils import get_root_certificates_path
+import dl_configs
 from dl_core.connection_executors.adapters.adapters_base_sa_classic import (
     BaseClassicAdapter,
     ClassicSQLConnLineConstructor,
@@ -34,7 +32,7 @@ from dl_connector_oracle.core.target_dto import OracleConnTargetDTO
 class OracleConnLineConstructor(ClassicSQLConnLineConstructor[OracleConnTargetDTO]):
     def _get_dsn_params(
         self,
-        safe_db_symbols: Tuple[str, ...] = (),
+        safe_db_symbols: tuple[str, ...] = (),
         db_name: Optional[str] = None,
         standard_auth: Optional[bool] = True,
     ) -> dict:
@@ -51,7 +49,7 @@ class OracleConnLineConstructor(ClassicSQLConnLineConstructor[OracleConnTargetDT
 
 class OracleDefaultAdapter(BaseClassicAdapter[OracleConnTargetDTO]):
     conn_type = CONNECTION_TYPE_ORACLE
-    conn_line_constructor_type: ClassVar[Type[OracleConnLineConstructor]] = OracleConnLineConstructor
+    conn_line_constructor_type: ClassVar[type[OracleConnLineConstructor]] = OracleConnLineConstructor
 
     dsn_template = (
         "{dialect}://{user}:{passwd}@(DESCRIPTION="
@@ -221,7 +219,7 @@ class OracleDefaultAdapter(BaseClassicAdapter[OracleConnTargetDTO]):
         if self._target_dto.ssl_ca:
             return ssl.create_default_context(cadata=self._target_dto.ssl_ca)
 
-        return ssl.create_default_context(cafile=get_root_certificates_path())
+        return dl_configs.get_default_ssl_context()
 
     def get_connect_args(self) -> dict:
         return dict(

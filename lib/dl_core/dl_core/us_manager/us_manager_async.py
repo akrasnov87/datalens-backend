@@ -9,7 +9,6 @@ from typing import (
     AsyncIterable,
     Iterable,
     Optional,
-    Type,
     TypeVar,
     Union,
     overload,
@@ -34,6 +33,7 @@ from dl_core.us_manager.broken_link import (
 )
 from dl_core.us_manager.schema_migration.factory_base import EntrySchemaMigrationFactoryBase
 from dl_core.us_manager.us_manager import USManagerBase
+import dl_retrier
 from dl_utils.aio import shield_wait_for_complete
 
 
@@ -58,6 +58,7 @@ class AsyncUSManager(USManagerBase):
         ca_data: bytes,
         bi_context: RequestContextInfo,
         services_registry: ServicesRegistry,
+        retry_policy_factory: dl_retrier.BaseRetryPolicyFactory,
         crypto_keys_config: Optional[CryptoKeysConfig] = None,
         us_api_prefix: Optional[str] = None,
         lifecycle_manager_factory: Optional[EntryLifecycleManagerFactoryBase] = None,
@@ -72,6 +73,7 @@ class AsyncUSManager(USManagerBase):
             context_workbook_id=bi_context.workbook_id,
             context_rpc_authorization_id=bi_context.rpc_authorization if bi_context is not None else None,
             ca_data=ca_data,
+            retry_policy_factory=retry_policy_factory,
         )
         self._ca_data = ca_data
 
@@ -84,6 +86,7 @@ class AsyncUSManager(USManagerBase):
             services_registry=services_registry,
             lifecycle_manager_factory=lifecycle_manager_factory,
             schema_migration_factory=schema_migration_factory,
+            retry_policy_factory=retry_policy_factory,
         )
 
     @property
@@ -101,6 +104,7 @@ class AsyncUSManager(USManagerBase):
             lifecycle_manager_factory=self._lifecycle_manager_factory,
             schema_migration_factory=self._schema_migration_factory,
             ca_data=self._ca_data,
+            retry_policy_factory=self._retry_policy_factory,
         )
 
     async def close(self) -> None:
@@ -128,7 +132,7 @@ class AsyncUSManager(USManagerBase):
     async def get_by_id(
         self,
         entry_id: str,
-        expected_type: Optional[Type[_ENTRY_TV]] = None,
+        expected_type: Optional[type[_ENTRY_TV]] = None,
         params: Optional[dict[str, str]] = None,
     ) -> _ENTRY_TV:
         pass
@@ -137,7 +141,7 @@ class AsyncUSManager(USManagerBase):
     async def get_by_id(
         self,
         entry_id: str,
-        expected_type: Optional[Type[USEntry]] = None,
+        expected_type: Optional[type[USEntry]] = None,
         params: Optional[dict[str, str]] = None,
     ) -> USEntry:
         with self._enrich_us_exception(
@@ -155,7 +159,7 @@ class AsyncUSManager(USManagerBase):
     async def get_by_id_raw(
         self,
         entry_id: str,
-        expected_type: Optional[Type[USEntry]] = None,
+        expected_type: Optional[type[USEntry]] = None,
         params: Optional[dict[str, str]] = None,
     ) -> dict[str, Any]:
         """Get raw `us_resp` from response without deserialization"""
@@ -172,7 +176,7 @@ class AsyncUSManager(USManagerBase):
     async def deserialize_us_resp(
         self,
         us_resp: dict[str, Any],
-        expected_type: Optional[Type[USEntry]] = None,
+        expected_type: Optional[type[USEntry]] = None,
     ) -> USEntry:
         """Used on result of `get_by_id_raw()` call for proper deserialization flow"""
 
@@ -253,7 +257,7 @@ class AsyncUSManager(USManagerBase):
     async def locked_entry_cm(
         self,
         entry_id: str,
-        expected_type: Type[_ENTRY_TV],
+        expected_type: type[_ENTRY_TV],
         wait_timeout_sec: int = 30,
         duration_sec: int = 300,
         force: bool = False,
@@ -363,7 +367,7 @@ class AsyncUSManager(USManagerBase):
 
     async def get_collection(
         self,
-        entry_cls: Optional[Type[_ENTRY_TV]],
+        entry_cls: Optional[type[_ENTRY_TV]],
         entry_type: Optional[str] = None,
         entry_scope: Optional[str] = None,
         meta: Optional[dict[str, Union[str, int, None]]] = None,

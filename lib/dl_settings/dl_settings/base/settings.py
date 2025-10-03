@@ -1,11 +1,11 @@
 import os
-import typing
 
-import pydantic
 import pydantic_settings
 
+import dl_pydantic
 
-class BaseSettings(pydantic.BaseModel):
+
+class BaseSettings(dl_pydantic.BaseModel):
     """
     Base settings class that should be used for sub-models and mixins.
     """
@@ -44,7 +44,7 @@ class BaseRootSettings(pydantic_settings.BaseSettings):
     @classmethod
     def settings_customise_sources(
         cls,
-        settings_cls: typing.Type[pydantic_settings.BaseSettings],
+        settings_cls: type[pydantic_settings.BaseSettings],
         init_settings: pydantic_settings.PydanticBaseSettingsSource,
         env_settings: pydantic_settings.PydanticBaseSettingsSource,
         dotenv_settings: pydantic_settings.PydanticBaseSettingsSource,

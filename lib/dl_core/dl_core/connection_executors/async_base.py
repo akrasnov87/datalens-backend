@@ -9,7 +9,6 @@ from typing import (
     AsyncIterable,
     Awaitable,
     Callable,
-    List,
     Optional,
     Sequence,
     TypeVar,
@@ -21,6 +20,7 @@ from typing_extensions import final
 from dl_core.connection_executors.common_base import (
     ConnExecutorBase,
     ConnExecutorQuery,
+    ExecutionSettings,
 )
 from dl_core.connection_executors.models.db_adapter_data import DBAdapterQuery
 from dl_core.db import SchemaInfo
@@ -56,7 +56,7 @@ class AsyncExecutionResult:
     cursor_info: dict = attr.ib()
     result: AsyncIterable[TBIDataTable] = attr.ib()  # iterable of tables (chunks)
     # for `autodetect_user_types` result
-    user_types: Optional[List[UserDataType]] = attr.ib(default=None)
+    user_types: Optional[list[UserDataType]] = attr.ib(default=None)
     # DB-specific result. Should be mutable, and get filled after `result` is consumed.
     result_footer: dict = attr.ib(factory=dict)
 
@@ -64,7 +64,7 @@ class AsyncExecutionResult:
         """
         :return: All fetched data
         """
-        result: List[Sequence] = []
+        result: list[Sequence] = []
         async for chunk in self.result:
             result.extend(chunk)
 
@@ -89,7 +89,7 @@ def init_required(wrapped: Callable[..., Awaitable[_RET_TV]]) -> Callable[..., A
 class AsyncConnExecutorBase(ConnExecutorBase, metaclass=abc.ABCMeta):
     @classmethod
     @abc.abstractmethod
-    def is_pure_async(cls) -> bool:
+    def force_execution_mode(cls) -> ExecutionSettings:
         pass
 
     async def initialize(self) -> None:
@@ -142,12 +142,12 @@ class AsyncConnExecutorBase(ConnExecutorBase, metaclass=abc.ABCMeta):
 
     @final
     @init_required
-    async def get_schema_names(self, db_ident: DBIdent) -> List[str]:
+    async def get_schema_names(self, db_ident: DBIdent) -> list[str]:
         return await self._get_schema_names(db_ident)
 
     @final
     @init_required
-    async def get_tables(self, schema_ident: SchemaIdent) -> List[TableIdent]:
+    async def get_tables(self, schema_ident: SchemaIdent) -> list[TableIdent]:
         return await self._get_tables(schema_ident)
 
     @final
@@ -187,11 +187,11 @@ class AsyncConnExecutorBase(ConnExecutorBase, metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    async def _get_schema_names(self, db_ident: DBIdent) -> List[str]:
+    async def _get_schema_names(self, db_ident: DBIdent) -> list[str]:
         pass
 
     @abc.abstractmethod
-    async def _get_tables(self, schema_ident: SchemaIdent) -> List[TableIdent]:
+    async def _get_tables(self, schema_ident: SchemaIdent) -> list[TableIdent]:
         pass
 
     @abc.abstractmethod

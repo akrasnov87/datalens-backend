@@ -3,14 +3,13 @@ from __future__ import annotations
 import ssl
 from typing import (
     Any,
-    Dict,
     Optional,
 )
 
 import attr
 import sqlalchemy.dialects.mysql as sa_mysql
 
-from dl_configs.utils import get_root_certificates_path
+import dl_configs
 from dl_type_transformer.native_type import SATypeSpec
 
 from dl_connector_mysql.core.constants import CONNECTION_TYPE_MYSQL
@@ -37,7 +36,7 @@ class BaseMySQLAdapter:
     # not in those sources but in SA: `binary`, `boolean`, `fixed`, `integer`,
     # `nchar`, `nvarchar`, `numeric`, `varbinary`.
 
-    _type_code_to_sa: Optional[Dict[Any, SATypeSpec]] = {
+    _type_code_to_sa: Optional[dict[Any, SATypeSpec]] = {
         1: sa_mysql.TINYINT,  # MYSQL_TYPE_TINY -> 'tinyint', 8-bit int  # untested
         2: sa_mysql.SMALLINT,  # MYSQL_TYPE_SHORT -> 'smallint', 16-bit int  # untested
         9: sa_mysql.MEDIUMINT,  # MYSQL_TYPE_INT24 -> 'mediumint', ?24-bit int?  # untested
@@ -86,4 +85,4 @@ class BaseMySQLAdapter:
         if self._target_dto.ssl_ca:
             return ssl.create_default_context(cadata=self._target_dto.ssl_ca)
 
-        return ssl.create_default_context(cafile=get_root_certificates_path())
+        return dl_configs.get_default_ssl_context()

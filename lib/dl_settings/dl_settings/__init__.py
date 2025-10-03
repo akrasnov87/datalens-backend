@@ -9,6 +9,13 @@ from .base import (
     WithFallbackEnvSource,
     WithFallbackGetAttr,
 )
+from .validators import (
+    decode_multiline,
+    decode_multiline_validator,
+    json_dict_validator,
+    parse_json_dict,
+    split_validator,
+)
 
 
 __all__ = [
@@ -21,5 +28,9 @@ __all__ = [
     "WithFallbackGetAttr",
     "WithFallbackEnvSource",
     "BaseRootSettingsWithFallback",
-    "decode_multilines_validator",
+    "decode_multiline",
+    "decode_multiline_validator",
+    "split_validator",
+    "json_dict_validator",
+    "parse_json_dict",
 ]

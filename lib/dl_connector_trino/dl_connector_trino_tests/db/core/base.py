@@ -1,5 +1,5 @@
 import asyncio
-from typing import Generator
+from collections.abc import Generator
 
 from frozendict import frozendict
 import pytest
@@ -17,7 +17,6 @@ from dl_constants.enums import SourceBackendType
 from dl_core_testing.database import (
     C,
     CoreDbConfig,
-    Db,
 )
 from dl_core_testing.testcases.connection import BaseConnectionTestClass
 from dl_db_testing.database.engine_wrapper import DbEngineConfig
@@ -27,16 +26,11 @@ from dl_utils.wait import wait_for
 from dl_connector_trino.core.adapters import CustomHTTPAdapter
 from dl_connector_trino.core.constants import (
     CONNECTION_TYPE_TRINO,
+    ListingSources,
     TrinoAuthType,
 )
 from dl_connector_trino.core.us_connection import ConnectionTrino
 import dl_connector_trino_tests.db.config as test_config
-
-
-TEST_CATALOG_SCHEMA_MAP = {
-    "test_memory_catalog": "default",
-    "test_mysql_catalog": "test_data",
-}
 
 
 def avoid_get_sa_type(self: C, tt: TypeTransformer, backend_type: SourceBackendType) -> TypeEngine:
@@ -60,6 +54,7 @@ class BaseTrinoTestClass(BaseConnectionTestClass[ConnectionTrino]):
     @pytest.fixture(scope="class", autouse=True)
     def wait_for_trino(self, connection_creation_params: dict) -> None:
         host, port = connection_creation_params["host"], connection_creation_params["port"]
+        http_session = None
         if connection_creation_params["auth_type"] is TrinoAuthType.none:
             scheme = "http"
             auth = None
@@ -69,6 +64,9 @@ class BaseTrinoTestClass(BaseConnectionTestClass[ConnectionTrino]):
                 test_config.CorePasswordConnectionSettings.USERNAME,
                 test_config.CorePasswordConnectionSettings.PASSWORD,
             )
+            if connection_creation_params["ssl_ca"]:
+                http_session = requests.Session()
+                http_session.mount("https://", CustomHTTPAdapter(ssl_ca=connection_creation_params["ssl_ca"]))
 
         conn = connect(
             host=host,
@@ -76,7 +74,7 @@ class BaseTrinoTestClass(BaseConnectionTestClass[ConnectionTrino]):
             user=auth._username if auth else "healthcheck",
             auth=auth,
             http_scheme=scheme,
-            verify=False,
+            http_session=http_session,
         )
         cur = conn.cursor()
 
@@ -93,6 +91,9 @@ class BaseTrinoTestClass(BaseConnectionTestClass[ConnectionTrino]):
             timeout=90,
             require=True,
         )
+
+        # Sample table for check_data_source_templates
+        cur.execute(test_config.SAMPLE_TABLE_CREATE_QUERY)
 
     # Here only for wait_for_trino dependency
     @pytest.fixture(scope="class")
@@ -118,7 +119,7 @@ class BaseTrinoTestClass(BaseConnectionTestClass[ConnectionTrino]):
 
     @pytest.fixture(scope="class")
     def db_url(self) -> str:
-        return test_config.DB_CORE_URL_MYSQL_CATALOG
+        return test_config.DB_CORE_URL
 
     @pytest.fixture(scope="session")
     def connection_creation_params(self) -> dict:
@@ -129,14 +130,29 @@ class BaseTrinoTestClass(BaseConnectionTestClass[ConnectionTrino]):
             auth_type=TrinoAuthType.none,
             ssl_enable=test_config.CoreConnectionSettings.SSL_ENABLE,
             ssl_ca=None,
+            listing_sources=test_config.CoreConnectionSettings.LISTING_SOURCES,
             **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
         )
 
     @pytest.fixture(scope="class")
-    def sample_table_schema(self, db: Db) -> str:
+    def sample_table_schema(self) -> str:
         monkeypatch = pytest.MonkeyPatch()
         monkeypatch.setattr(C, "get_sa_type", avoid_get_sa_type)
-        return TEST_CATALOG_SCHEMA_MAP[db.name]
+        return test_config.BaseConnectionSettings.SCHEMA
+
+
+class BaseTrinoConnectionWithListingSourcesDisabled(BaseTrinoTestClass):
+    @pytest.fixture(scope="session")
+    def connection_creation_params(self) -> dict:
+        return dict(
+            host=test_config.CoreConnectionSettings.HOST,
+            port=test_config.CoreConnectionSettings.PORT,
+            username=test_config.CoreConnectionSettings.USERNAME,
+            auth_type=TrinoAuthType.none,
+            ssl_enable=test_config.CoreConnectionSettings.SSL_ENABLE,
+            ssl_ca=None,
+            listing_sources=ListingSources.off,
+        )
 
 
 class BaseTrinoSslTestClass(BaseTrinoTestClass):
@@ -166,6 +182,7 @@ class BaseTrinoSslTestClass(BaseTrinoTestClass):
             username=test_config.CoreSslConnectionSettings.USERNAME,
             ssl_enable=test_config.CoreSslConnectionSettings.SSL_ENABLE,
             ssl_ca=ssl_ca,
+            listing_sources=test_config.CoreSslConnectionSettings.LISTING_SOURCES,
         )
 
 

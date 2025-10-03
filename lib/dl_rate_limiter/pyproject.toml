@@ -1,33 +1,44 @@
-
 [tool.poetry]
-name = "dl-rate-limiter"
-version = "0.0.1"
-description = ""
 authors = ["DataLens Team <datalens-opensource@yandex-team.ru>"]
-packages = [{include = "dl_rate_limiter"}]
+description = ""
 license = "Apache 2.0"
+name = "dl-rate-limiter"
+packages = [{include = "dl_rate_limiter"}]
 readme = "README.md"
-
+version = "0.0.1"
 
 [tool.poetry.dependencies]
-attrs = ">=22.2.0"
+aiohttp = {optional = true, version = "*"}
+attrs = "*"
+flask = {optional = true, version = "*"}
 python = ">=3.10, <3.13"
-redis = ">=5.0.1"
-aiohttp = { version = ">=3.9.1", optional = true }
-flask = { version = ">=2.2.5", optional = true }
-dl-api-commons = {path = "../dl_api_commons"}
+redis = "*"
 
 [tool.poetry.extras]
 aiohttp = ["aiohttp"]
 flask = ["flask"]
 
 [tool.poetry.group.tests.dependencies]
-pytest = "==7.2.2"
-pytest-asyncio = "==0.21.0"
-pytest-mock = "==3.12.0"
-flaky = "==3.8.1"
 dl-testing = {path = "../dl_testing"}
-pytest-aiohttp = "==1.0.5"
+flaky = "*"
+pytest = "*"
+pytest-aiohttp = "*"
+pytest-asyncio = "*"
+pytest-mock = "*"
+
+[tool.mypy]
+check_untyped_defs = true
+disallow_untyped_defs = true
+exclude = ["dl_rate_limiter_tests"]
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_configs = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+minversion = "6.0"
+testpaths = []
 
 [build-system]
 build-backend = "poetry.core.masonry.api"
@@ -35,24 +46,11 @@ requires = [
   "poetry-core",
 ]
 
-[tool.pytest.ini_options]
-minversion = "6.0"
-addopts = "-ra"
-testpaths = []
-
-[tool.mypy]
-warn_unused_ignores = true
-warn_redundant_casts = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-check_untyped_defs = true
-strict_optional = true
+[datalens.pytest.db]
+labels = ["fat"]
+root_dir = "dl_rate_limiter_tests/db"
 
 [datalens.pytest.unit]
+labels = ["no_compose"]
 root_dir = "dl_rate_limiter_tests/unit"
 skip_compose = "true"
-labels = ["no_compose"]
-
-[datalens.pytest.db]
-root_dir = "dl_rate_limiter_tests/db"
-labels = ["fat"]

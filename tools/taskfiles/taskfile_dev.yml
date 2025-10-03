@@ -2,6 +2,7 @@ version: '3'
 
 vars:
   VM_HOST: dl-vm
+  VENV_PATH: '{{ if .VENV_PATH }}{{ .VENV_PATH }}{{ else }}{{ .DEFAULT_VENV_PATH }}{{ end }}'
 
 tasks:
   help:
@@ -70,14 +71,14 @@ tasks:
   poetry-lock:
     desc: Lock dependencies in metapkg
     cmds:
-      - poetry lock --no-update --directory={{.PYPROJECT_TOML_PATH}}
+      - poetry lock --no-update --directory={{.METAPKG_DIR}}
     requires:
       vars:
-        - PYPROJECT_TOML_PATH
+        - METAPKG_DIR
 
   venv-bin:
     desc: Run venv bin
-    dir: "{{.USER_WORKING_DIR}}"
+    dir: '{{ if .DIR }}{{ .DIR }}{{ else }}{{ .USER_WORKING_DIR }}{{ end }}'
     cmds:
       - 'PATH="{{.VENV_PATH}}/bin:$PATH" {{if ne .ENVS ""}} {{.ENVS}}{{end}} {{.VENV_PATH}}/bin/{{.CLI_ARGS}}'
     requires:
@@ -90,6 +91,7 @@ tasks:
     cmds:
       - task: venv-bin
         vars:
+          DIR: "{{.DIR}}"
           CLI_ARGS: "python -m {{.CLI_ARGS}}"
 
   clean:
@@ -100,6 +102,24 @@ tasks:
     requires:
       vars:
         - VENV_PATH
+
+  toml-sort:
+    desc: Sort toml files
+    dir: "{{.USER_WORKING_DIR}}"
+    cmds:
+      - echo "Running toml-sort checks..."
+      - task: venv-bin
+        vars:
+          DIR: "{{.PROJECT_ROOT_PATH}}"
+          CLI_ARGS: 'toml-sort {{if eq .FIX "true"}}--in-place{{else}}--check{{end}} {{.TOML_FILES}}'
+    vars:
+      FIX: '{{.FIX | default "true"}}'
+      TOML_FILES:
+        sh: |
+          find {{.CLI_ARGS | default "."}} -name 'pyproject.toml' \
+          | sort \
+          | xargs -n1 realpath \
+          | tr '\n' ' '
 
   lint:
     desc: Lint code
@@ -120,13 +140,28 @@ tasks:
         vars:
           CLI_ARGS: "ruff check {{.LINT_PATH}}"
 
-      - task: mypy
+      - task: toml-sort
         vars:
-          CLI_ARGS: '{{.LINT_PATH}}'
+          FIX: 'false'
+
+      - for: { var: LIB_PATHS, as: LIB_PATH }
+        task: _deptry
+        vars:
+          LIB_PATH: '{{.LIB_PATH}}'
+
+      - for: { var: LIB_PATHS, as: LIB_PATH }
+        task: _mypy
+        vars:
+          LIB_PATH: '{{.LIB_PATH}}'
     vars:
       LINT_PATH: '{{.CLI_ARGS | default "."}}'
-      TOML_FILES:
-        sh: find {{.CLI_ARGS | default "."}} -name '*.toml' | tr '\n' ' '
+      LIB_PATHS:
+        sh: |
+          find {{.CLI_ARGS | default "."}} -name 'pyproject.toml' \
+            | sort \
+            | xargs -n1 realpath \
+            | xargs -n1 dirname \
+            {{ range $i, $path := .EXCLUDE_LIB_PATHS | splitLines }} | grep -v "^{{$path}}$" {{end}}
 
   lint-fix:
     desc: Lint fix code
@@ -147,24 +182,55 @@ tasks:
         vars:
           CLI_ARGS: "ruff check --fix {{.LINT_PATH}}"
 
-      - task: mypy
+      - task: toml-sort
         vars:
-          CLI_ARGS: '{{.LINT_PATH}}'
+          FIX: 'true'
+
+      - for: { var: LIB_PATHS, as: LIB_PATH }
+        task: _deptry
+        vars:
+          LIB_PATH: '{{.LIB_PATH}}'
+
+      - for: { var: LIB_PATHS, as: LIB_PATH }
+        task: _mypy
+        vars:
+          LIB_PATH: '{{.LIB_PATH}}'
     vars:
       LINT_PATH: '{{.CLI_ARGS | default "."}}'
-      TOML_FILES:
-        sh: find {{.CLI_ARGS | default "."}} -name '*.toml' | tr '\n' ' '
+      LIB_PATHS:
+        sh: |
+          find {{.CLI_ARGS | default "."}} -name 'pyproject.toml' \
+            | sort \
+            | xargs -n1 realpath \
+            | xargs -n1 dirname \
+            {{ range $i, $path := .EXCLUDE_LIB_PATHS | splitLines }} | grep -v "^{{$path}}$" {{end}}
 
-  mypy:
-    desc: Run mypy on package
-    dir: "{{.USER_WORKING_DIR}}"
-    vars:
-      PACKAGE_DIR:
-        sh: echo $(cd {{.USER_WORKING_DIR}}; until [ -f pyproject.toml ] ; do cd ..; done; pwd)
+  _deptry:
+    desc: Run deptry on package
+    requires:
+      vars:
+        - LIB_PATH
     cmds:
+      - echo "Running deptry checks for {{.LIB_PATH}}"
       - task: venv-python
         vars:
-          CLI_ARGS: 'mypy {{.CLI_ARGS | default "."}} --config-file {{.PACKAGE_DIR}}/pyproject.toml'
+          DIR: "{{.LIB_PATH}}"
+          CLI_ARGS: |
+            deptry . \
+              --exclude ".*tests"
+
+  _mypy:
+    desc: Run mypy on package
+    requires:
+      vars:
+        - LIB_PATH
+    cmds:
+      - echo "Running mypy checks for {{.LIB_PATH}}"
+      - task: venv-python
+        vars:
+          DIR: "{{.LIB_PATH}}"
+          CLI_ARGS: |
+            mypy .
 
   test:
     desc: Run tests
@@ -303,7 +369,7 @@ tasks:
     cmds:
       - task: _compose
         vars:
-          CLI_ARGS: logs --follow
+          CLI_ARGS: logs --follow {{.CONTAINER}}
           DOCKER_HOST: '{{.DOCKER_HOST | default ""}}'
 
   compose-remote-logs:
@@ -313,6 +379,7 @@ tasks:
       - task: compose-logs
         vars:
           DOCKER_HOST: "ssh://{{.VM_HOST}}"
+          CONTAINER: '{{.CONTAINER | default ""}}'
 
   ssh-forward-start:
     desc: Forward docker ports to localhost

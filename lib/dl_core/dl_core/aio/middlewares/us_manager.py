@@ -24,6 +24,7 @@ from dl_core.enums import USApiType
 from dl_core.services_registry.top_level import DummyServiceRegistry
 from dl_core.us_manager.factory import USMFactory
 from dl_core.us_manager.us_manager_async import AsyncUSManager
+import dl_retrier
 from dl_utils.aio import shield_wait_for_complete
 
 
@@ -40,6 +41,7 @@ def usm_tenant_resolver_middleware(
     tenant_resolver: TenantResolver,
     ca_data: bytes,
     us_api_type: USApiType,
+    retry_policy_factory: dl_retrier.BaseRetryPolicyFactory,
 ) -> Middleware:
     """
     Middleware fetches dataset or connection from US and picks tenant ID from response
@@ -59,6 +61,7 @@ def usm_tenant_resolver_middleware(
         crypto_keys_config=crypto_keys_config,
         us_master_token=us_master_token,
         us_public_token=us_public_token,
+        retry_policy_factory=retry_policy_factory,
         ca_data=ca_data,
     )
 
@@ -125,12 +128,14 @@ def us_manager_middleware(
     us_base_url: str,
     crypto_keys_config: CryptoKeysConfig,
     ca_data: bytes,
+    retry_policy_factory: dl_retrier.BaseRetryPolicyFactory,
     embed: bool = False,
 ) -> Middleware:
     usm_factory = USMFactory(
         us_base_url=us_base_url,
         crypto_keys_config=crypto_keys_config,
         ca_data=ca_data,
+        retry_policy_factory=retry_policy_factory,
     )
 
     @web.middleware
@@ -162,6 +167,7 @@ def public_us_manager_middleware(
     us_public_token: str,
     crypto_keys_config: CryptoKeysConfig,
     ca_data: bytes,
+    retry_policy_factory: dl_retrier.BaseRetryPolicyFactory,
 ) -> Middleware:
     """
     Middleware to create public US manager. Works with committed RCI.
@@ -173,6 +179,7 @@ def public_us_manager_middleware(
         crypto_keys_config=crypto_keys_config,
         us_public_token=us_public_token,
         ca_data=ca_data,
+        retry_policy_factory=retry_policy_factory,
     )
 
     @web.middleware
@@ -199,6 +206,7 @@ def service_us_manager_middleware(
     us_master_token: str,
     crypto_keys_config: CryptoKeysConfig,
     ca_data: bytes,
+    retry_policy_factory: dl_retrier.BaseRetryPolicyFactory,
     as_user_usm: bool = False,
 ) -> Middleware:
     usm_factory = USMFactory(
@@ -206,6 +214,7 @@ def service_us_manager_middleware(
         crypto_keys_config=crypto_keys_config,
         us_master_token=us_master_token,
         ca_data=ca_data,
+        retry_policy_factory=retry_policy_factory,
     )
 
     @web.middleware

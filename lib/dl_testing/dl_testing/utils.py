@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import http.client
 import logging
 import os
+import pathlib
 import socket
 import ssl
 import time
@@ -11,10 +12,8 @@ from typing import (
     Any,
     Callable,
     Generator,
-    List,
     Literal,
     Optional,
-    Tuple,
     overload,
 )
 
@@ -36,6 +35,18 @@ from dl_utils.wait import wait_for
 LOGGER = logging.getLogger(__name__)
 
 
+def register_all_assert_rewrites(pkg: str, pkg_path: pathlib.Path) -> None:
+    for pyfile in pkg_path.glob("*.py"):
+        if pyfile.name == "__init__.py" or pyfile.name == "py.typed":
+            continue
+        modname = f"{pkg}.{pyfile.stem}"
+        pytest.register_assert_rewrite(modname)
+
+    for subdir in [d for d in pkg_path.iterdir() if d.is_dir() and (d / "__init__.py").exists()]:
+        modname = f"{pkg}.{subdir.name}"
+        pytest.register_assert_rewrite(modname)
+
+
 def skip_outside_devhost(func):  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation  [no-untyped-def]
     """
     Not all tests can run in just any environment (particularly in autotests).
@@ -52,7 +63,7 @@ def wait_for_initdb(
     initdb_host = initdb_host or get_test_container_hostport("init-db").host
     # TODO: initdb_port?
 
-    def check_initdb_liveness() -> Tuple[bool, Any]:
+    def check_initdb_liveness() -> tuple[bool, Any]:
         try:
             conn = http.client.HTTPConnection(initdb_host, initdb_port)
             conn.request("GET", "/")
@@ -99,7 +110,7 @@ def get_log_record(  # type: ignore  # 2024-01-24 # TODO: Overloaded function si
 @overload
 def get_log_record(
     caplog: Any, predicate: Callable[[logging.LogRecord], bool], single: Literal[False] = False
-) -> List[logging.LogRecord]:
+) -> list[logging.LogRecord]:
     pass
 
 
@@ -113,7 +124,7 @@ def get_log_record(caplog, predicate, single=False):  # type: ignore  # 2024-01-
     return log_records
 
 
-def guids_from_titles(result_schema: List[dict], titles: List[str]) -> List[str]:
+def guids_from_titles(result_schema: list[dict], titles: list[str]) -> list[str]:
     fields = [f["field"] if "field" in f else f for f in result_schema]
     guid_by_title = {f["title"]: f["guid"] for f in fields if f.get("title") in titles and f.get("guid")}
     return [guid_by_title[title] for title in titles]
@@ -155,6 +166,12 @@ def get_root_certificates_path() -> str:
     return CA_BUNDLE_FILE
 
 
+def get_default_ssl_context() -> ssl.SSLContext:
+    return ssl.create_default_context(
+        cafile=get_root_certificates_path(),
+    )
+
+
 def get_root_certificates() -> bytes:
     with open(get_root_certificates_path(), "rb") as f:
         return f.read()
@@ -163,8 +180,6 @@ def get_root_certificates() -> bytes:
 def get_default_aiohttp_session() -> aiohttp.ClientSession:
     return aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(
-            ssl_context=ssl.create_default_context(
-                cafile=get_root_certificates_path(),
-            ),
+            ssl_context=get_default_ssl_context(),
         ),
     )

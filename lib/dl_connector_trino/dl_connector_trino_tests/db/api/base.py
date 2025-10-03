@@ -13,7 +13,6 @@ from dl_connector_trino.core.constants import (
 )
 from dl_connector_trino_tests.db.config import (
     API_TEST_CONFIG,
-    DB_CORE_URL_MEMORY_CATALOG,
     CoreConnectionSettings,
 )
 from dl_connector_trino_tests.db.core.base import BaseTrinoTestClass
@@ -22,10 +21,6 @@ from dl_connector_trino_tests.db.core.base import BaseTrinoTestClass
 class TrinoConnectionTestBase(BaseTrinoTestClass, ConnectionTestBase):
     conn_type = CONNECTION_TYPE_TRINO
     compeng_enabled = False
-
-    @pytest.fixture(scope="class")
-    def db_url(self) -> str:
-        return DB_CORE_URL_MEMORY_CATALOG
 
     @pytest.fixture(scope="class")
     def bi_test_config(self) -> ApiTestEnvironmentConfiguration:
@@ -38,6 +33,7 @@ class TrinoConnectionTestBase(BaseTrinoTestClass, ConnectionTestBase):
             port=CoreConnectionSettings.PORT,
             username=CoreConnectionSettings.USERNAME,
             auth_type=CoreConnectionSettings.AUTH_TYPE.name,
+            listing_sources=CoreConnectionSettings.LISTING_SOURCES.name,
             **(dict(raw_sql_level=self.raw_sql_level.value) if self.raw_sql_level is not None else {}),
         )
 

@@ -8,7 +8,6 @@ from typing import (
     Any,
     ClassVar,
     Optional,
-    Type,
 )
 
 import attr
@@ -83,7 +82,6 @@ EXCEPTION_CODES = {
     dl_type_transformer.exc.TypeCastFailed: status.BAD_REQUEST,
     dl_query_processing.exc.BlockSpecError: status.BAD_REQUEST,
     dl_query_processing.exc.TreeError: status.BAD_REQUEST,
-    dl_query_processing.exc.ParameterError: status.BAD_REQUEST,
     dashsql_exc.DashSQLError: status.BAD_REQUEST,
     dl_query_processing.exc.GenericInvalidRequestError: status.BAD_REQUEST,
     dl_query_processing.exc.InvalidGroupByConfiguration: status.BAD_REQUEST,
@@ -96,6 +94,7 @@ EXCEPTION_CODES = {
     common_exc.InvalidRequestError: status.BAD_REQUEST,
     exc.WorkbookImportError: status.BAD_REQUEST,
     exc.WorkbookExportError: status.BAD_REQUEST,
+    common_exc.DataSourceNotFound: status.BAD_REQUEST,
 }
 
 
@@ -118,7 +117,7 @@ class BIError:
 
     @staticmethod
     def get_default_error_code(
-        err: Exception, exc_code_mapping: Optional[dict[Type[Exception], int]] = None
+        err: Exception, exc_code_mapping: Optional[dict[type[Exception], int]] = None
     ) -> Optional[int]:
         """
         :param err: Exception to map to HTTP status code
@@ -140,7 +139,7 @@ class BIError:
         cls,
         ex: Exception,
         default_message: Optional[str] = None,
-        exc_code_mapping: Optional[dict[Type[Exception], int]] = None,
+        exc_code_mapping: Optional[dict[type[Exception], int]] = None,
     ) -> "BIError":
         """
         Creates BIError from exception

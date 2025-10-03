@@ -29,6 +29,7 @@ class RowConstructor:
         default_value: Optional[str] = None,
         display_conditions: Optional[TDisplayConditions] = None,
         label_help_text: Optional[str] = None,
+        disabled: Optional[bool] = None,
     ) -> C.CustomizableRow:
         text = self._localizer.translate(Translatable("field_host"))
         return C.CustomizableRow(
@@ -37,6 +38,7 @@ class RowConstructor:
                 C.InputRowItem(
                     name=CommonFieldName.host,
                     width="l",
+                    control_props=C.InputRowItem.Props(disabled=disabled),
                     default_value=default_value,
                     display_conditions=display_conditions,
                 ),
@@ -74,6 +76,7 @@ class RowConstructor:
         default_value: Optional[str] = None,
         display_conditions: Optional[TDisplayConditions] = None,
         label_help_text: Optional[str] = None,
+        disabled: Optional[bool] = None,
     ) -> C.CustomizableRow:
         text = self._localizer.translate(Translatable("field_path"))
         return C.CustomizableRow(
@@ -82,6 +85,7 @@ class RowConstructor:
                 C.InputRowItem(
                     name=CommonFieldName.path,
                     width="l",
+                    control_props=C.InputRowItem.Props(disabled=disabled),
                     default_value=default_value,
                     display_conditions=display_conditions,
                 ),
@@ -350,13 +354,16 @@ class RowConstructor:
         enabled_name: CommonFieldName,
         enabled_help_text: str,
         enabled_default_value: bool,
+        display_conditions: Optional[TDisplayConditions] = None,
     ) -> typing.Sequence[C.CustomizableRow]:
+        if display_conditions is None:
+            display_conditions = {}
         return [
             C.CustomizableRow(
                 items=[
                     C.LabelRowItem(
                         text=self._localizer.translate(Translatable("label_ssl-enabled")),
-                        display_conditions={CommonFieldName.advanced_settings: "opened"},
+                        display_conditions={CommonFieldName.advanced_settings: "opened"} | display_conditions,
                         help_text=enabled_help_text,
                     ),
                     C.RadioButtonRowItem(
@@ -372,7 +379,7 @@ class RowConstructor:
                             ),
                         ],
                         default_value=BooleanField.on.value if enabled_default_value else BooleanField.off.value,
-                        display_conditions={CommonFieldName.advanced_settings: "opened"},
+                        display_conditions={CommonFieldName.advanced_settings: "opened"} | display_conditions,
                     ),
                 ]
             ),
@@ -380,17 +387,30 @@ class RowConstructor:
                 items=[
                     C.LabelRowItem(
                         text=self._localizer.translate(Translatable("label_ssl-ca")),
-                        display_conditions={CommonFieldName.advanced_settings: "opened"},
+                        display_conditions={CommonFieldName.advanced_settings: "opened"} | display_conditions,
                     ),
                     C.FileInputRowItem(
                         name=CommonFieldName.ssl_ca,
-                        display_conditions={CommonFieldName.advanced_settings: "opened"},
+                        display_conditions={CommonFieldName.advanced_settings: "opened"} | display_conditions,
                     ),
                 ]
             ),
         ]
 
-    def data_export_forbidden_row(self) -> C.CustomizableRow:
+    def _make_data_export_forbidden_hint_text(
+        self, conn_id: str | None, exports_history_url_path: str | None, mode: Optional[ConnectionFormMode]
+    ) -> str | None:
+        if mode == ConnectionFormMode.create or not (exports_history_url_path and conn_id):
+            return None
+        export_history_text = self._localizer.translate(Translatable("label_exports-history"))
+        return f"[{export_history_text}]({exports_history_url_path}{conn_id})"
+
+    def data_export_forbidden_row(
+        self,
+        conn_id: Optional[str] = None,
+        exports_history_url_path: Optional[str] = None,
+        mode: ConnectionFormMode = ConnectionFormMode.create,
+    ) -> C.CustomizableRow:
         return C.CustomizableRow(
             items=[
                 C.LabelRowItem(
@@ -412,6 +432,11 @@ class RowConstructor:
                     ],
                     default_value=BooleanField.off.value,
                     display_conditions={CommonFieldName.advanced_settings: "opened"},
+                    hint_text=self._make_data_export_forbidden_hint_text(
+                        conn_id=conn_id,
+                        exports_history_url_path=exports_history_url_path,
+                        mode=mode,
+                    ),
                 ),
             ]
         )

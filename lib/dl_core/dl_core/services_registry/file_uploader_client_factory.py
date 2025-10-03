@@ -8,7 +8,6 @@ from typing import (
     Any,
     ClassVar,
     Optional,
-    Type,
     Union,
 )
 
@@ -181,7 +180,7 @@ class UpdateConnectionDataRequestSchemaYaDocs(UpdateConnectionDataRequestSchemaB
 
 
 class UpdateConnectionDataRequestSchema(FileTypeOneOfSchema):
-    type_schemas: dict[str, Type[UpdateConnectionDataRequestSchemaBase]] = {
+    type_schemas: dict[str, type[UpdateConnectionDataRequestSchemaBase]] = {
         # type: ignore  # 2024-01-24 # TODO: Incompatible types in assignment (expression has type "dict[str, type[UpdateConnectionDataRequestSchemaBase]]", base class "OneOfSchema" defined the type as "dict[str, type[Schema]]")  [assignment]
         FileType.gsheets.name: UpdateConnectionDataRequestSchemaGSheets,
         FileType.yadocs.name: UpdateConnectionDataRequestSchemaYaDocs,
@@ -242,7 +241,7 @@ class FileUploaderClient(BIAioHTTPClient):
         conn_id: str,
         sources: list[GSheetsFileSourceDesc | YaDocsFileSourceDesc],
         authorized: bool,
-        tenant_id: Optional[str],
+        tenant_id: str,
         file_type: FileType,
     ) -> None:
         path = "/api/v2/update_connection_data_internal"
@@ -270,7 +269,7 @@ class FileUploaderClient(BIAioHTTPClient):
         return self
 
     async def __aexit__(
-        self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]
+        self, exc_type: Optional[type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]
     ) -> None:
         await self.close()
 
@@ -278,7 +277,7 @@ class FileUploaderClient(BIAioHTTPClient):
         return self
 
     def __exit__(
-        self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]
+        self, exc_type: Optional[type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]
     ) -> None:
         self.close_sync()
 
@@ -293,16 +292,23 @@ class FileUploaderSettings:
 class FileUploaderClientFactory:
     _file_uploader_settings: FileUploaderSettings = attr.ib()
     _ca_data: bytes = attr.ib()
+    # TODO: Make tenant_id non-optional
+    _tenant_id: Optional[str] = attr.ib()
 
-    _file_uploader_client_cls: ClassVar[Type[FileUploaderClient]] = FileUploaderClient  # tests mockup point
+    _file_uploader_client_cls: ClassVar[type[FileUploaderClient]] = FileUploaderClient  # tests mockup point
 
     def get_client(self, headers: Optional[THeaders] = None, cookies: Optional[TCookies] = None) -> FileUploaderClient:
+        # Expect tenant to be set here
+        assert self._tenant_id is not None
+
         full_headers = headers.copy() if headers is not None else {}
         full_headers.update(
             {
                 DLHeadersCommon.FILE_UPLOADER_MASTER_TOKEN.value: self._file_uploader_settings.master_token,
+                DLHeadersCommon.TENANT_ID.value: self._tenant_id,
             }
         )
+
         client_cls = self._file_uploader_client_cls
         return client_cls(
             base_url=self._file_uploader_settings.base_url,

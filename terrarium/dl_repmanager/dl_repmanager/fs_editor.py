@@ -11,13 +11,12 @@ from typing import (
     Collection,
     Generator,
     TextIO,
-    Type,
     cast,
     final,
 )
 
 import attr
-from git import Repo as GitRepo
+from git import Repo as GitRepo  # type: ignore
 
 
 @attr.s(frozen=True)
@@ -389,7 +388,7 @@ class VirtualFilesystemEditor(FilesystemEditor):
         ) and path not in self._removed_paths
 
 
-_FS_EDITOR_CLASSES: dict[str, Type[FilesystemEditor]] = {
+_FS_EDITOR_CLASSES: dict[str, type[FilesystemEditor]] = {
     "default": DefaultFilesystemEditor,
     "git": GitFilesystemEditor,
     "virtual": VirtualFilesystemEditor,

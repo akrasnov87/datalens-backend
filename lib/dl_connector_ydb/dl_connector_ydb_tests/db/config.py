@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from frozendict import frozendict
 import requests
 import sqlalchemy as sa
@@ -18,6 +20,8 @@ CORE_TEST_CONFIG = CoreTestEnvironmentConfiguration(
     port_us_pg_5432=get_test_container_hostport("pg-us", fallback_port=51910).port,
     us_master_token="AC1ofiek8coB",
     core_connector_ep_names=["ydb"],
+    redis_host=get_test_container_hostport("redis-caches").host,
+    redis_port=get_test_container_hostport("redis-caches", fallback_port=51812).port,
 )
 
 CERT_PROVIDER_URL = f"http://{get_test_container_hostport('db-ydb', fallback_port=51904).host}:{51904}"
@@ -43,21 +47,22 @@ def make_ssl_engine_params(ssl_ca: str) -> dict:
     return engine_params
 
 
-CONNECTION_PARAMS = dict(
-    host=get_test_container_hostport("db-ydb", fallback_port=51900).host,
-    port=51900,
-    db_name="/local",
-)
-SSL_CONNECTION_PARAMS = dict(
-    host=get_test_container_hostport("db-ydb", fallback_port=51902).host,
-    port=51902,
-    db_name="/local",
-    ssl_enable=True,
-    ssl_ca=fetch_ca_certificate(),
-)
+class CoreConnectionSettings:
+    HOST: ClassVar[str] = get_test_container_hostport("db-ydb", fallback_port=51900).host
+    PORT: ClassVar[int] = 51900
+    DB_NAME: ClassVar[str] = "/local"
 
-_DB_URL = f'yql:///?endpoint={CONNECTION_PARAMS["host"]}%3A{CONNECTION_PARAMS["port"]}&database=%2Flocal'
-_DB_URL_SSL = f'yql:///?endpoint={SSL_CONNECTION_PARAMS["host"]}%3A{SSL_CONNECTION_PARAMS["port"]}&database=%2Flocal'
+
+class CoreSslConnectionSettings:
+    HOST: ClassVar[str] = get_test_container_hostport("db-ydb", fallback_port=51902).host
+    PORT: ClassVar[int] = 51902
+    DB_NAME: ClassVar[str] = "/local"
+    SSL_ENABLE: ClassVar[bool] = True
+    SSL_CA: ClassVar[str] = fetch_ca_certificate()
+
+
+_DB_URL = f"yql:///?endpoint={CoreConnectionSettings.HOST}%3A{CoreConnectionSettings.PORT}&database=%2Flocal"
+_DB_URL_SSL = f"yql:///?endpoint={CoreSslConnectionSettings.HOST}%3A{CoreSslConnectionSettings.PORT}&database=%2Flocal"
 DB_CORE_URL = _DB_URL
 DB_CORE_URL_SSL = _DB_URL_SSL
 DB_CONFIGURATIONS = {
@@ -66,6 +71,7 @@ DB_CONFIGURATIONS = {
 
 TABLE_SCHEMA = (
     ("id", UserDataType.integer, sa.Integer),
+    ("distinct_string", UserDataType.string, sa.String),
     ("some_int32", UserDataType.integer, sa.Integer),
     ("some_int64", UserDataType.integer, sa.BigInteger),
     ("some_uint8", UserDataType.integer, sa.SmallInteger),
@@ -75,17 +81,18 @@ TABLE_SCHEMA = (
     ("some_utf8", UserDataType.string, sa.Unicode),
     ("some_date", UserDataType.date, sa.Date),
     ("some_datetime", UserDataType.genericdatetime, sa.DateTime),
-    ("some_timestamp", UserDataType.unsupported, sa.TIMESTAMP),
+    ("some_timestamp", UserDataType.genericdatetime, sa.TIMESTAMP),
 )
 TABLE_DATA = [
     {
         "id": 1,
+        "distinct_string": "test_01",
         "some_int32": 1073741824,
         "some_int64": 4611686018427387904,
         "some_uint8": 254,
         "some_bool": True,
         "some_double": None,
-        "some_string": None,
+        "some_string": "group_a",
         "some_utf8": None,
         "some_date": None,
         "some_datetime": None,
@@ -93,12 +100,13 @@ TABLE_DATA = [
     },
     {
         "id": 2,
+        "distinct_string": "test_02",
         "some_int32": -1,
         "some_int64": -2,
         "some_uint8": 3,
         "some_bool": False,
         "some_double": None,
-        "some_string": None,
+        "some_string": "group_b",
         "some_utf8": None,
         "some_date": None,
         "some_datetime": None,
@@ -106,12 +114,13 @@ TABLE_DATA = [
     },
     {
         "id": 3,
-        "some_int32": None,
+        "distinct_string": "test_03",
+        "some_int32": 100,
         "some_int64": None,
         "some_uint8": None,
         "some_bool": None,
         "some_double": 79079710.35104989,
-        "some_string": None,
+        "some_string": "group_c",
         "some_utf8": None,
         "some_date": None,
         "some_datetime": None,
@@ -119,12 +128,13 @@ TABLE_DATA = [
     },
     {
         "id": 4,
-        "some_int32": None,
+        "distinct_string": "test_04",
+        "some_int32": 200,
         "some_int64": None,
         "some_uint8": None,
         "some_bool": None,
         "some_double": 7.8,
-        "some_string": None,
+        "some_string": "group_d",
         "some_utf8": None,
         "some_date": None,
         "some_datetime": None,
@@ -132,7 +142,8 @@ TABLE_DATA = [
     },
     {
         "id": 5,
-        "some_int32": None,
+        "distinct_string": "test_05",
+        "some_int32": 50,
         "some_int64": None,
         "some_uint8": None,
         "some_bool": None,
@@ -145,12 +156,13 @@ TABLE_DATA = [
     },
     {
         "id": 6,
-        "some_int32": None,
+        "distinct_string": "test_06",
+        "some_int32": 75,
         "some_int64": None,
         "some_uint8": None,
         "some_bool": None,
         "some_double": None,
-        "some_string": None,
+        "some_string": "group_a",
         "some_utf8": None,
         "some_date": "2021-06-07",
         "some_datetime": "2021-06-07T18:19:20Z",
@@ -158,16 +170,73 @@ TABLE_DATA = [
     },
     {
         "id": 7,
-        "some_int32": None,
+        "distinct_string": "test_07",
+        "some_int32": 25,
         "some_int64": None,
         "some_uint8": None,
         "some_bool": None,
         "some_double": None,
-        "some_string": None,
+        "some_string": "group_b",
         "some_utf8": None,
         "some_date": "1970-12-31",
         "some_datetime": "1970-12-31T23:58:57Z",
         "some_timestamp": "1970-12-31T23:58:57Z",
+    },
+    {
+        "id": 8,
+        "distinct_string": "test_08",
+        "some_int32": 97,
+        "some_int64": None,
+        "some_uint8": None,
+        "some_bool": None,
+        "some_double": None,
+        "some_string": "group_e",
+        "some_utf8": None,
+        "some_date": "1972-03-28",
+        "some_datetime": "1972-03-28T17:11:02Z",
+        "some_timestamp": "1972-03-28T17:11:02Z",
+    },
+    {
+        "id": 9,
+        "distinct_string": "test_09",
+        "some_int32": 654321,
+        "some_int64": 642982317294,
+        "some_uint8": 7,
+        "some_bool": False,
+        "some_double": None,
+        "some_string": "group_cats",
+        "some_utf8": "мяу",
+        "some_date": None,
+        "some_datetime": None,
+        "some_timestamp": None,
+    },
+    {
+        "id": 10,
+        "distinct_string": "test_10",
+        "some_int32": 1,
+        "some_int64": 2,
+        "some_uint8": 3,
+        "some_bool": True,
+        "some_double": 4.5,
+        "some_string": "group_cats",
+        "some_utf8": "мяу (2)",
+        "some_date": "2026-07-08",
+        "some_datetime": None,
+        "some_timestamp": None,
+    },
+    {
+        "id": 11,
+        "distinct_string": "test_11",
+        "some_int32": 22222,
+        "some_int64": 145,
+        "some_uint8": 254,
+        "some_bool": True,
+        "some_double": 482.13,
+        "some_string": "group_not",
+        "some_utf8": None,
+        "some_date": "2029-11-04",
+        "some_datetime": None,
+        "some_timestamp": None,
     },
 ]
 TABLE_NAME = "test_table_h"

@@ -13,6 +13,7 @@ from dl_configs.utils import get_root_certificates
 from dl_core.united_storage_client import USAuthContextMaster
 from dl_core.us_manager.us_manager_async import AsyncUSManager
 from dl_core.us_manager.us_manager_sync import SyncUSManager
+import dl_retrier
 
 
 if TYPE_CHECKING:
@@ -39,6 +40,9 @@ class MaintenanceEnvironmentManagerBase:
     def get_sr_factory(self, ca_data: bytes, is_async_env: bool) -> Optional[SRFactory]:
         return None
 
+    def get_retry_policy_factory(self) -> dl_retrier.BaseRetryPolicyFactory:
+        return dl_retrier.RetryPolicyFactory(self.get_app_settings().US_CLIENT.RETRY_POLICY)
+
     def get_ca_data(self) -> bytes:
         settings = self.get_app_settings()
         ca_data = get_root_certificates(path=settings.CA_FILE_PATH)
@@ -56,6 +60,7 @@ class MaintenanceEnvironmentManagerBase:
             us_auth_context=USAuthContextMaster(us_master_token=us_config.master_token),
             bi_context=rci,
             services_registry=service_registry,
+            retry_policy_factory=self.get_retry_policy_factory(),
         )
 
     def get_async_usm_from_env(self, use_sr_factory: bool = True) -> AsyncUSManager:
@@ -71,4 +76,5 @@ class MaintenanceEnvironmentManagerBase:
             bi_context=rci,
             services_registry=service_registry,
             ca_data=ca_data,
+            retry_policy_factory=self.get_retry_policy_factory(),
         )

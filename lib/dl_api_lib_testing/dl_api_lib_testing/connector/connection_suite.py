@@ -1,5 +1,4 @@
 import json
-from typing import Optional
 import uuid
 
 import pytest
@@ -7,7 +6,10 @@ import pytest
 from dl_api_client.dsmaker.api.http_sync_base import SyncHttpClientBase
 from dl_api_lib.app_settings import ControlApiAppSettings
 from dl_api_lib.schemas.connection import GenericConnectionSchema
-from dl_api_lib_testing.connection_base import ConnectionTestBase
+from dl_api_lib_testing.connection_base import (
+    ConnectionTestBase,
+    EditConnectionParamsCase,
+)
 from dl_constants.api_constants import DLHeadersCommon
 from dl_core.connectors.base.export_import import is_export_import_allowed
 from dl_core.us_connection_base import ConnectionBase
@@ -20,7 +22,7 @@ class DefaultConnectorConnectionTestSuite(ConnectionTestBase, RegulatedTestCase)
         self,
         control_api_sync_client: SyncHttpClientBase,
         saved_connection_id: str,
-        bi_headers: Optional[dict[str, str]],
+        bi_headers: dict[str, str] | None,
     ) -> None:
         assert saved_connection_id
         resp = control_api_sync_client.get(
@@ -29,11 +31,66 @@ class DefaultConnectorConnectionTestSuite(ConnectionTestBase, RegulatedTestCase)
         )
         assert resp.status_code == 200, resp.json
 
+    def test_edit_connection(
+        self,
+        control_api_sync_client: SyncHttpClientBase,
+        saved_connection_id: str,
+        bi_headers: dict[str, str] | None,
+        edit_connection_params_case: EditConnectionParamsCase | None,
+    ) -> None:
+        if edit_connection_params_case is None:
+            pytest.skip("No edit_connection_params_case fixture provided")
+
+        resp = control_api_sync_client.put(
+            url=f"/api/v1/connections/{saved_connection_id}",
+            content_type="application/json",
+            data=json.dumps(edit_connection_params_case.params),
+            headers=bi_headers,
+        )
+        assert resp.status_code == 200, resp.json
+
+        resp = control_api_sync_client.get(
+            url=f"/api/v1/connections/{saved_connection_id}",
+            headers=bi_headers,
+        )
+        assert resp.status_code == 200, resp.json
+        for param_name, val in (
+            edit_connection_params_case.params | edit_connection_params_case.additional_fields_to_check
+        ).items():
+            if param_name in edit_connection_params_case.load_only_field_names:
+                continue
+            assert resp.json[param_name] == val, resp.json
+
+        for field_name in edit_connection_params_case.check_absence_of_fields:
+            if field_name in resp.json:
+                assert resp.json[field_name] is None, resp.json
+
+    def test_test_on_edit_connection(
+        self,
+        control_api_sync_client: SyncHttpClientBase,
+        saved_connection_id: str,
+        bi_headers: dict[str, str] | None,
+        edit_connection_params_case: EditConnectionParamsCase | None,
+    ) -> None:
+        if edit_connection_params_case is None:
+            pytest.skip("No edit_connection_params_case fixture provided")
+
+        if not edit_connection_params_case.supports_connection_test:
+            pytest.skip("Connection test is not supported for this connection type")
+
+        resp = control_api_sync_client.post(
+            f"/api/v1/connections/test_connection/{saved_connection_id}",
+            content_type="application/json",
+            data=json.dumps(edit_connection_params_case.params),
+            headers=bi_headers,
+        )
+        assert resp.status_code == 200, resp.json
+
     def test_export_connection(
         self,
         control_api_sync_client: SyncHttpClientBase,
         saved_connection_id: str,
-        bi_headers: Optional[dict[str, str]],
+        bi_headers: dict[str, str] | None,
         sync_us_manager: SyncUSManager,
         control_api_app_settings: ControlApiAppSettings,
     ) -> None:
@@ -66,11 +123,16 @@ class DefaultConnectorConnectionTestSuite(ConnectionTestBase, RegulatedTestCase)
             password = resp.json["connection"]["password"]
             assert password == "******"
 
+        # check description presence in export response
+        assert "description" in resp.json["connection"]
+        assert conn.annotation is not None
+        assert resp.json["connection"]["description"] == conn.annotation.get("description")
+
     def test_import_connection(
         self,
         control_api_sync_client: SyncHttpClientBase,
         saved_connection_id: str,
-        bi_headers: Optional[dict[str, str]],
+        bi_headers: dict[str, str] | None,
         sync_us_manager: SyncUSManager,
         control_api_app_settings: ControlApiAppSettings,
     ) -> None:
@@ -134,7 +196,17 @@ class DefaultConnectorConnectionTestSuite(ConnectionTestBase, RegulatedTestCase)
                 "CHECK_CREDENTIALS" in notification["code"] for notification in import_response.json["notifications"]
             )
 
-        export_resp = control_api_sync_client.delete(
+        # check description presence in import response
+        resp = control_api_sync_client.get(
+            url=f"/api/v1/connections/{import_response.json['id']}",
+            headers=bi_headers,
+        )
+        assert resp.status_code == 200, resp.json
+        assert conn.annotation is not None
+        assert resp.json["description"] == conn.annotation.get("description")
+
+        # cleanup
+        control_api_sync_client.delete(
             url=f"/api/v1/connections/{import_response.json['id']}",
             headers=bi_headers,
         )
@@ -143,7 +215,7 @@ class DefaultConnectorConnectionTestSuite(ConnectionTestBase, RegulatedTestCase)
         self,
         control_api_sync_client: SyncHttpClientBase,
         saved_connection_id: str,
-        bi_headers: Optional[dict[str, str]],
+        bi_headers: dict[str, str] | None,
     ) -> None:
         resp = control_api_sync_client.post(
             f"/api/v1/connections/test_connection/{saved_connection_id}",
@@ -157,7 +229,7 @@ class DefaultConnectorConnectionTestSuite(ConnectionTestBase, RegulatedTestCase)
         self,
         control_api_sync_client: SyncHttpClientBase,
         saved_connection_id: str,
-        bi_headers: Optional[dict[str, str]],
+        bi_headers: dict[str, str] | None,
     ) -> None:
         resp = control_api_sync_client.get(
             url=f"/api/v1/connections/{saved_connection_id}",
@@ -186,7 +258,7 @@ class DefaultConnectorConnectionTestSuite(ConnectionTestBase, RegulatedTestCase)
         self,
         control_api_sync_client: SyncHttpClientBase,
         saved_connection_id: str,
-        bi_headers: Optional[dict[str, str]],
+        bi_headers: dict[str, str] | None,
     ) -> None:
         resp = control_api_sync_client.get(
             url=f"/api/v1/connections/{saved_connection_id}",
@@ -203,7 +275,7 @@ class DefaultConnectorConnectionTestSuite(ConnectionTestBase, RegulatedTestCase)
         self,
         control_api_sync_client: SyncHttpClientBase,
         saved_connection_id: str,
-        bi_headers: Optional[dict[str, str]],
+        bi_headers: dict[str, str] | None,
     ) -> None:
         resp = control_api_sync_client.get(
             url=f"/api/v1/connections/{saved_connection_id}/info/sources",
@@ -214,11 +286,32 @@ class DefaultConnectorConnectionTestSuite(ConnectionTestBase, RegulatedTestCase)
         assert "sources" in resp_data, resp_data
         assert isinstance(resp_data["sources"], list), resp_data
 
+    def test_connection_description(
+        self,
+        control_api_sync_client: SyncHttpClientBase,
+        saved_connection_id: str,
+        bi_headers: dict[str, str] | None,
+        sync_us_manager: SyncUSManager,
+        test_description: str,
+    ) -> None:
+        # test Connection object
+        conn = sync_us_manager.get_by_id(saved_connection_id, expected_type=ConnectionBase)
+        assert isinstance(conn, ConnectionBase)
+        assert conn.annotation == {"description": test_description}
+
+        # test API
+        resp = control_api_sync_client.get(
+            url=f"/api/v1/connections/{saved_connection_id}",
+            headers=bi_headers,
+        )
+        assert resp.status_code == 200, resp.json
+        assert resp.json["description"] == test_description
+
     def test_create_connections__query_params_in_db_name__error(
         self,
         control_api_sync_client: SyncHttpClientBase,
         saved_connection_id: str,
-        bi_headers: Optional[dict[str, str]],
+        bi_headers: dict[str, str] | None,
         connection_params: dict,
     ) -> None:
         if "db_name" not in connection_params:

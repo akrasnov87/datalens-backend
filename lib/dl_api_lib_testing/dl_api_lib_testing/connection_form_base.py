@@ -4,14 +4,15 @@ import typing
 from typing import (
     ClassVar,
     Optional,
-    Type,
     final,
 )
 
 import attrs
 import pytest
+import pytest_mock
 
 from dl_api_commons.base_models import (
+    FormConfigParams,
     TenantCommon,
     TenantDef,
 )
@@ -20,6 +21,7 @@ from dl_api_connector.form_config.models.base import (
     ConnectionFormFactory,
     ConnectionFormMode,
 )
+from dl_api_lib.service_registry.service_registry import ApiServiceRegistry
 from dl_configs.connectors_settings import ConnectorSettingsBase
 from dl_i18n.localizer_base import (
     LocalizerLoader,
@@ -28,7 +30,7 @@ from dl_i18n.localizer_base import (
 
 
 class ConnectionFormTestBase:
-    CONN_FORM_FACTORY_CLS: ClassVar[Type[ConnectionFormFactory]]
+    CONN_FORM_FACTORY_CLS: ClassVar[type[ConnectionFormFactory]]
     TRANSLATION_CONFIGS: ClassVar[list[TranslationConfig]]
     OVERWRITE_EXPECTED_FORMS: ClassVar[bool] = False
     EXPECTED_FORMS_DIR: ClassVar[str] = "expected_forms"
@@ -52,19 +54,26 @@ class ConnectionFormTestBase:
     def mode(self, request: pytest.FixtureRequest) -> ConnectionFormMode:
         return ConnectionFormMode(request.param)
 
+    @pytest.fixture(name="service_registry")
+    def fixture_service_registry(self, mocker: pytest_mock.MockerFixture) -> ApiServiceRegistry:
+        return mocker.Mock(spec=ApiServiceRegistry)
+
     @pytest.fixture
     def form_config(
         self,
         connectors_settings: Optional[ConnectorSettingsBase],
         tenant: TenantDef,
         mode: ConnectionFormMode,
+        service_registry: ApiServiceRegistry,
     ) -> ConnectionForm:
         loader = LocalizerLoader(
             configs=self.TRANSLATION_CONFIGS,
         )
         factory = loader.load()
         localizer = factory.get_for_locale("en")
-        form_factory = self.CONN_FORM_FACTORY_CLS(mode=mode, localizer=localizer)
+        form_params = FormConfigParams(user_id="test_user_id")
+        form_factory = self.CONN_FORM_FACTORY_CLS(mode=mode, localizer=localizer, form_params=form_params)
+        form_factory.preprocess_form_params(service_registry=service_registry)
         form_config = form_factory.get_form_config(connectors_settings, tenant)
         return form_config
 

@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import (
-    Any,
-    Dict,
-)
+from typing import Any
 
 from marshmallow import EXCLUDE
 from marshmallow import fields as ma_fields
@@ -15,7 +12,10 @@ from dl_api_connector.api_schema.source_base import (
     AvatarRelationSchema,
     SourceAvatarSchema,
 )
-from dl_api_lib.enums import DatasetAction
+from dl_api_lib.enums import (
+    DatasetAction,
+    DatasetSettingName,
+)
 from dl_api_lib.request_model.data import (
     AddField,
     AddUpdateObligatoryFilterAction,
@@ -31,6 +31,7 @@ from dl_api_lib.request_model.data import (
     ReplaceConnectionAction,
     SourceActionBase,
     UpdateField,
+    UpdateSettingAction,
 )
 from dl_api_lib.schemas.filter import ObligatoryFilterSchema
 from dl_api_lib.schemas.parameters import ParameterValueConstraintSchema
@@ -83,6 +84,7 @@ class UpdateFieldActionSchema(FieldActionBaseSchema, DefaultValidateSchema[Field
         default_value = ma_fields.Nested(ValueSchema, allow_none=True)
         value_constraint = ma_fields.Nested(ParameterValueConstraintSchema, allow_none=True)
         template_enabled = ma_fields.Bool(allow_none=True)
+        ui_settings = ma_fields.String()
 
     class UpdateFieldSchema(UpdateFieldBaseSchema, DefaultValidateSchema[UpdateField]):
         TARGET_CLS = UpdateField
@@ -227,6 +229,18 @@ class DeleteObligatoryFilterActionSchema(
     obligatory_filter = ma_fields.Nested(DeleteObligatoryFilterSchema, required=True)
 
 
+class UpdateSettingActionSchema(ActionBaseSchema, DefaultValidateSchema[UpdateSettingAction]):
+    TARGET_CLS = UpdateSettingAction
+
+    class SettingSchema(DefaultValidateSchema[UpdateSettingAction.Setting]):
+        TARGET_CLS = UpdateSettingAction.Setting
+
+        name = ma_fields.Enum(DatasetSettingName, allow_none=False, required=True)
+        value = ma_fields.Boolean(allow_none=False, required=True)
+
+    setting = ma_fields.Nested(SettingSchema, required=True)
+
+
 class ActionSchema(OneOfSchema):
     class Meta:
         unknown = EXCLUDE
@@ -262,7 +276,9 @@ class ActionSchema(OneOfSchema):
         DatasetAction.add_obligatory_filter.name: AddUpdateObligatoryFilterActionSchema,
         DatasetAction.update_obligatory_filter.name: AddUpdateObligatoryFilterActionSchema,
         DatasetAction.delete_obligatory_filter.name: DeleteObligatoryFilterActionSchema,
+        # settings
+        DatasetAction.update_setting.name: UpdateSettingActionSchema,
     }
 
-    def get_obj_type(self, obj: Dict[str, Any]) -> str:
+    def get_obj_type(self, obj: dict[str, Any]) -> str:
         return obj[self.type_field].name

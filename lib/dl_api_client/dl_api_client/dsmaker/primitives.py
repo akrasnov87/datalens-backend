@@ -10,12 +10,9 @@ from typing import (
     Any,
     ClassVar,
     Collection,
-    Dict,
     Generator,
     Generic,
-    List,
     Optional,
-    Tuple,
     TypeVar,
     Union,
 )
@@ -116,9 +113,9 @@ class Container(Generic[_ITEM_TV]):
     """
 
     def __init__(self, data: Union[list, tuple, dict, "Container"] = None):  # type: ignore  # 2024-01-24 # TODO: Incompatible default for argument "data" (default has type "None", argument has type "list[Any] | tuple[Any, ...] | dict[Any, Any] | Container[Any]")  [assignment]
-        self._item_ids: List[str] = []  # order list of object IDs
-        self._items: Dict[str, _ITEM_TV] = {}  # objects by ID
-        self._id_by_alias: Dict[str, str] = {}  # alias -> ID
+        self._item_ids: list[str] = []  # order list of object IDs
+        self._items: dict[str, _ITEM_TV] = {}  # objects by ID
+        self._id_by_alias: dict[str, str] = {}  # alias -> ID
 
         if data:
             self.__iadd__(data)
@@ -162,7 +159,7 @@ class Container(Generic[_ITEM_TV]):
 
         raise TypeError(f"Invalid key type for container: {type(key)}")
 
-    def items(self) -> Generator[Tuple[str, _ITEM_TV], None, None]:
+    def items(self) -> Generator[tuple[str, _ITEM_TV], None, None]:
         """Just like ``dict.items()`` - iterate over key-value tuples."""
         alias_by_id = {id: alias for alias, id in self._id_by_alias.items()}
         for id in self._item_ids:
@@ -261,7 +258,7 @@ class SourceAvatar(ApiProxyObject):
     def join(
         self,
         other: "SourceAvatar",
-        conditions: List["JoinCondition"] = None,  # type: ignore  # 2024-01-24 # TODO: Incompatible default for argument "conditions" (default has type "None", argument has type "list[JoinCondition]")  [assignment]
+        conditions: list["JoinCondition"] = None,  # type: ignore  # 2024-01-24 # TODO: Incompatible default for argument "conditions" (default has type "None", argument has type "list[JoinCondition]")  [assignment]
         join_type: JoinType = JoinType.inner,
     ) -> "AvatarRelation":
         return AvatarRelation(
@@ -420,12 +417,12 @@ class BooleanParameterValue(ParameterValue[bool]):
 
 
 @attr.s
-class GeoPointParameterValue(ParameterValue[List[Union[int, float]]]):
+class GeoPointParameterValue(ParameterValue[list[Union[int, float]]]):
     type: UserDataType = UserDataType.geopoint
 
 
 @attr.s
-class GeoPolygonParameterValue(ParameterValue[List[List[List[Union[int, float]]]]]):
+class GeoPolygonParameterValue(ParameterValue[list[list[list[Union[int, float]]]]]):
     type: UserDataType = UserDataType.geopolygon
 
 
@@ -440,22 +437,22 @@ class MarkupParameterValue(ParameterValue[str]):
 
 
 @attr.s
-class ArrayStrParameterValue(ParameterValue[List[str]]):
+class ArrayStrParameterValue(ParameterValue[list[str]]):
     type: UserDataType = UserDataType.array_str
 
 
 @attr.s
-class ArrayIntParameterValue(ParameterValue[List[int]]):
+class ArrayIntParameterValue(ParameterValue[list[int]]):
     type: UserDataType = UserDataType.array_int
 
 
 @attr.s
-class ArrayFloatParameterValue(ParameterValue[List[float]]):
+class ArrayFloatParameterValue(ParameterValue[list[float]]):
     type: UserDataType = UserDataType.array_float
 
 
 @attr.s
-class TreeStrParameterValue(ParameterValue[List[str]]):
+class TreeStrParameterValue(ParameterValue[list[str]]):
     type: UserDataType = UserDataType.tree_str
 
 
@@ -479,7 +476,7 @@ class RangeParameterValueConstraint(BaseParameterValueConstraint):
 @attr.s
 class SetParameterValueConstraint(BaseParameterValueConstraint):
     type: ParameterValueConstraintType = ParameterValueConstraintType.set
-    values: List[ParameterValue] = attr.ib(factory=list)
+    values: list[ParameterValue] = attr.ib(factory=list)
 
 
 @attr.s
@@ -507,7 +504,7 @@ class DefaultParameterValueConstraint(BaseParameterValueConstraint):
 
 class CollectionParameterValueConstraint(BaseParameterValueConstraint):
     type: ParameterValueConstraintType = ParameterValueConstraintType.collection
-    constraints: List[BaseParameterValueConstraint]
+    constraints: list[BaseParameterValueConstraint]
 
 
 def _make_pivot_role_spec(
@@ -567,6 +564,7 @@ class _ResultField(ApiProxyObject):
     default_value: Optional[ParameterValue] = attr.ib(default=None)
     value_constraint: Optional[BaseParameterValueConstraint] = attr.ib(default=None)
     template_enabled: Optional[bool] = attr.ib(default=None)
+    ui_settings: str = attr.ib(default="")
 
     def set_name(self, name: str) -> None:
         if self.title is None:
@@ -619,7 +617,7 @@ class _ResultField(ApiProxyObject):
         self,
         role: FieldRole = FieldRole.row,
         range_type: Optional[RangeType] = None,
-        dimension_values: Optional[Dict[int, Any]] = None,
+        dimension_values: Optional[dict[int, Any]] = None,
         tree_prefix: Optional[list] = None,
         tree_level: Optional[int] = None,
         legend_item_id: Optional[int] = None,
@@ -682,7 +680,7 @@ class WhereClause:
 @attr.s
 class ObligatoryFilter(ApiProxyObject):
     field_guid: str = attr.ib(default="")
-    default_filters: List[WhereClause] = attr.ib(factory=list)
+    default_filters: list[WhereClause] = attr.ib(factory=list)
     managed_by: ManagedBy = attr.ib(default=ManagedBy.user)
     valid: bool = attr.ib(default=True)
 
@@ -716,7 +714,7 @@ class TemplateRoleSpec(DimensionRoleSpec):  # noqa
 class TreeRoleSpec(DimensionRoleSpec):
     level: int = attr.ib(kw_only=True)
     prefix: str = attr.ib(kw_only=True)
-    dimension_values: List[DimensionValueSpec] = attr.ib(kw_only=True, factory=list)
+    dimension_values: list[DimensionValueSpec] = attr.ib(kw_only=True, factory=list)
 
 
 @attr.s
@@ -795,7 +793,7 @@ class DimensionValueSpec:
 class AfterBlockPlacement(BlockPlacement):
     type = QueryBlockPlacementType.after
 
-    dimension_values: Optional[List[DimensionValueSpec]] = attr.ib(default=None)
+    dimension_values: Optional[list[DimensionValueSpec]] = attr.ib(default=None)
 
 
 @attr.s
@@ -922,12 +920,12 @@ class ComponentError:
 class ComponentErrorPack:
     id: str = attr.ib()
     type: ComponentType = attr.ib()
-    errors: List[ComponentError] = attr.ib(factory=list)
+    errors: list[ComponentError] = attr.ib(factory=list)
 
 
 @attr.s
 class ComponentErrorRegistry:
-    items: List[ComponentErrorPack] = attr.ib(factory=list)
+    items: list[ComponentErrorPack] = attr.ib(factory=list)
 
     def get_pack(self, id: str) -> Optional[ComponentErrorPack]:  # type: ignore  # TODO: fix
         for item in self.items:
@@ -953,9 +951,10 @@ class Dataset(ApiProxyObject):
     result_schema: Container[ResultField] = attr.ib(factory=Container, converter=Container)
     result_schema_aux: ResultSchemaAux = attr.ib(factory=ResultSchemaAux)
     rls: dict = attr.ib(factory=dict)
-    rls2: dict[str, List[RLSEntry]] = attr.ib(factory=dict)
+    rls2: dict[str, list[RLSEntry]] = attr.ib(factory=dict)
     component_errors: ComponentErrorRegistry = attr.ib(factory=ComponentErrorRegistry)
-    obligatory_filters: List[ObligatoryFilter] = attr.ib(default=attr.Factory(list))
+    obligatory_filters: list[ObligatoryFilter] = attr.ib(default=attr.Factory(list))
+    annotation: Optional[dict] = attr.ib(default=None)
 
     def prepare(self) -> None:
         super().prepare()

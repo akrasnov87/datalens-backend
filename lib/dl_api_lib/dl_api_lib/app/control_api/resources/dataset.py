@@ -5,7 +5,6 @@ import logging
 from typing import (
     Any,
     ClassVar,
-    Dict,
 )
 import uuid
 
@@ -204,7 +203,7 @@ class DatasetVersionItem(DatasetResource):
             # raw entry to avoid double deserialization
             ds_raw = us_manager.get_migrated_entry(dataset_id)
             # latest data revision_id for concurrent edit checks
-            revision_id = ds_raw["data"]["revision_id"]
+            revision_id = ds_raw["data"].get("revision_id")
         else:
             ds, _ = self.get_dataset(dataset_id=dataset_id, body={})
             utils.need_permission_on_entry(ds, USPermissionKind.read)
@@ -234,7 +233,7 @@ class DatasetVersionItem(DatasetResource):
             400: ("Failed", dl_api_lib.schemas.main.BadRequestResponseSchema()),
         },
     )
-    def put(self, dataset_id: str, version: str, body: Dict[str, Any]) -> dict:
+    def put(self, dataset_id: str, version: str, body: dict[str, Any]) -> dict:
         """Update dataset version"""
         us_manager = self.get_us_manager()
         with us_manager.get_locked_entry_cm(Dataset, dataset_id, wait_timeout=DEFAULT_DATASET_LOCK_WAIT_TIMEOUT) as ds:

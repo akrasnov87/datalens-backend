@@ -6,7 +6,10 @@ from dl_api_lib_testing.configuration import ApiTestEnvironmentConfiguration
 from dl_core_testing.configuration import CoreTestEnvironmentConfiguration
 from dl_testing.containers import get_test_container_hostport
 
-from dl_connector_trino.core.constants import TrinoAuthType
+from dl_connector_trino.core.constants import (
+    ListingSources,
+    TrinoAuthType,
+)
 from dl_connector_trino.formula.constants import TrinoDialect as D
 
 
@@ -23,21 +26,23 @@ CORE_TEST_CONFIG = CoreTestEnvironmentConfiguration(
 
 
 class BaseConnectionSettings:
-    CATALOG_MEMORY: ClassVar[str] = "test_memory_catalog"
-    CATALOG_MYSQL: ClassVar[str] = "test_mysql_catalog"
+    CATALOG: ClassVar[str] = "test_memory_catalog"
     SCHEMA: ClassVar[str] = "default"
+    LISTING_SOURCES: ClassVar[ListingSources] = ListingSources.on
 
 
 class CoreConnectionSettings(BaseConnectionSettings):
-    HOST: ClassVar[str] = get_test_container_hostport("trino-no-auth", fallback_port=21123).host
-    PORT: ClassVar[int] = get_test_container_hostport("trino-no-auth", fallback_port=21123).port
+    HOST: ClassVar[str] = get_test_container_hostport("trino", fallback_port=21123).host
+    PORT: ClassVar[int] = get_test_container_hostport("trino", fallback_port=21123).port
     USERNAME: ClassVar[str] = "datalens"
     AUTH_TYPE: ClassVar[TrinoAuthType] = TrinoAuthType.none
     SSL_ENABLE: ClassVar[bool] = False
 
 
 class CoreSslConnectionSettings(BaseConnectionSettings):
-    HOST: ClassVar[str] = get_test_container_hostport("trino-tls-nginx", fallback_port=21124).host
+    HOST: ClassVar[str] = get_test_container_hostport(
+        "trino-tls-nginx", fallback_port=21124, use_localhost_instead_of_loopback_ip=True
+    ).host
     PORT: ClassVar[int] = get_test_container_hostport("trino-tls-nginx", fallback_port=21124).port
     USERNAME: ClassVar[str] = "trino_user"
     SSL_ENABLE: ClassVar[bool] = True
@@ -62,6 +67,32 @@ class CoreJwtConnectionSettings(CoreSslConnectionSettings):
     )
     AUTH_TYPE: ClassVar[str] = TrinoAuthType.jwt
 
+
+SAMPLE_TABLE_CREATE_QUERY = f"""
+CREATE TABLE IF NOT EXISTS {BaseConnectionSettings.CATALOG}.{BaseConnectionSettings.SCHEMA}.sample (
+    Category VARCHAR,
+    City VARCHAR,
+    Country VARCHAR,
+    Customer_ID VARCHAR,
+    Customer_Name VARCHAR,
+    Discount DOUBLE,
+    Order_Date DATE,
+    Order_ID VARCHAR,
+    Postal_Code INTEGER,
+    Product_ID VARCHAR,
+    Product_Name VARCHAR,
+    Profit DOUBLE,
+    Quantity INTEGER,
+    Region VARCHAR,
+    Row_ID INTEGER,
+    Sales DOUBLE,
+    Segment VARCHAR,
+    Ship_Date DATE,
+    Ship_Mode VARCHAR,
+    State VARCHAR,
+    Sub_Category VARCHAR
+)
+"""
 
 SUBSELECT_QUERY = r"""
 select
@@ -134,27 +165,20 @@ newlines' as v2_ext_string,
 """
 
 DB_URLS = {
-    (D.TRINO, "memory_catalog"): URL(
+    D.TRINO: URL(
         host=CoreConnectionSettings.HOST,
         port=CoreConnectionSettings.PORT,
         user="tests_init_worker",
-        catalog=CoreConnectionSettings.CATALOG_MEMORY,
-    ),
-    (D.TRINO, "mysql_catalog"): URL(
-        host=CoreConnectionSettings.HOST,
-        port=CoreConnectionSettings.PORT,
-        user="tests_init_worker",
-        catalog=CoreConnectionSettings.CATALOG_MYSQL,
+        catalog=CoreConnectionSettings.CATALOG,
     ),
     (D.TRINO, "ssl"): URL(
         host=CoreSslConnectionSettings.HOST,
         port=CoreSslConnectionSettings.PORT,
         user=CoreSslConnectionSettings.USERNAME,
-        catalog=CoreSslConnectionSettings.CATALOG_MYSQL,
+        catalog=CoreSslConnectionSettings.CATALOG,
     ),
 }
-DB_CORE_URL_MEMORY_CATALOG = DB_URLS[(D.TRINO, "memory_catalog")]
-DB_CORE_URL_MYSQL_CATALOG = DB_URLS[(D.TRINO, "mysql_catalog")]
+DB_CORE_URL = DB_URLS[D.TRINO]
 DB_CORE_SSL_URL = DB_URLS[(D.TRINO, "ssl")]
 
 API_TEST_CONFIG = ApiTestEnvironmentConfiguration(

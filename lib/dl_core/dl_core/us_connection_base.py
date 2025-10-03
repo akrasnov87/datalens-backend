@@ -11,7 +11,6 @@ from typing import (
     Generic,
     NamedTuple,
     Optional,
-    Type,
     TypeVar,
     Union,
 )
@@ -116,6 +115,7 @@ def make_table_datasource_template(
     title: str = "Table",
     tab_title: str | None = None,
     db_name_form_enabled: bool = False,
+    db_name_form_title: str | None = None,
     schema_name_form_enabled: bool = False,
     table_form_title: str | None = None,
     table_form_field_doc_key: str = "ANY_TABLE/table_name",
@@ -126,13 +126,16 @@ def make_table_datasource_template(
     form: list[dict[str, Any]] = []
 
     if db_name_form_enabled:
+        if db_name_form_title is None:
+            db_name_form_title = localizer.translate(Translatable("source_templates-label-db_name"))
+
         form.append(
             {
                 "name": "db_name",
                 "input_type": "text",
                 "default": "",
                 "required": True,
-                "title": localizer.translate(Translatable("source_templates-label-db_name")),
+                "title": db_name_form_title,
                 "template_enabled": False,
             }
         )
@@ -252,6 +255,7 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
     allow_export: ClassVar[bool] = False
     is_always_internal_source: ClassVar[bool] = False
     is_always_user_source: ClassVar[bool] = False
+    allow_background_data_export_for_conn_type: ClassVar[bool] = True
 
     _preview_conn = None
 
@@ -262,6 +266,7 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
         entry_key: Optional[EntryLocation] = None,
         type_: Optional[str] = None,
         meta: Optional[dict] = None,
+        annotation: Optional[dict[str, Any]] = None,
         is_locked: Optional[bool] = None,
         is_favorite: Optional[bool] = None,
         permissions_mode: Optional[str] = None,
@@ -281,6 +286,7 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
             entry_key=entry_key,
             type_=type_,
             meta=meta,
+            annotation=annotation,
             is_locked=is_locked,
             is_favorite=is_favorite,
             permissions_mode=permissions_mode,
@@ -393,7 +399,7 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
 
     @classmethod
     def create_from_dict(
-        cls: Type[_CB_TV],
+        cls: type[_CB_TV],
         data_dict: Union[dict, BaseAttrsDataModel],
         ds_key: Union[EntryLocation, str, None] = None,
         type_: Optional[str] = None,
@@ -428,9 +434,6 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
         remove_raw_schema: bool = False,
         **parameters: dict[str, Any],
     ) -> None:
-        raise NotImplementedError(self._dsrc_error)
-
-    def get_single_data_source_id(self) -> str:
         raise NotImplementedError(self._dsrc_error)
 
     def get_data_source_template_templates(self, localizer: Localizer) -> list[DataSourceTemplate]:
@@ -714,7 +717,7 @@ CONNECTOR_SETTINGS_TV = TypeVar("CONNECTOR_SETTINGS_TV", bound=ConnectorSettings
 def _get_connector_settings(
     usm: USManagerBase,
     conn_type: ConnectionType,
-    settings_type: Type[CONNECTOR_SETTINGS_TV],
+    settings_type: type[CONNECTOR_SETTINGS_TV],
 ) -> CONNECTOR_SETTINGS_TV:
     sr = usm.get_services_registry()
     connector_settings = sr.get_connectors_settings(conn_type)
@@ -732,7 +735,7 @@ def _get_connector_settings(
 class ConnectionSettingsMixin(ConnectionBase, Generic[CONNECTOR_SETTINGS_TV], metaclass=abc.ABCMeta):
     """Connector type specific data is loaded from dl_configs.connectors_settings"""
 
-    settings_type: Type[CONNECTOR_SETTINGS_TV]
+    settings_type: type[CONNECTOR_SETTINGS_TV]
 
     @property
     def _connector_settings(self) -> CONNECTOR_SETTINGS_TV:

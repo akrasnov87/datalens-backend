@@ -7,7 +7,6 @@ from enum import (
 from typing import (
     Optional,
     Sequence,
-    Type,
 )
 
 import attr
@@ -108,13 +107,14 @@ class YDBRowConstructor(RowConstructor):
 
 
 class YDBConnectionFormFactory(ConnectionFormFactory):
-    def _get_base_common_api_schema_items(self, names_source: Type[Enum]) -> list[FormFieldApiSchema]:
+    def _get_base_common_api_schema_items(self, names_source: type[Enum]) -> list[FormFieldApiSchema]:
         return [
             FormFieldApiSchema(name=names_source.host, required=True),  # type: ignore  # 2024-01-24 # TODO: "type[Enum]" has no attribute "host"  [attr-defined]
             FormFieldApiSchema(name=names_source.port, required=True),  # type: ignore  # 2024-01-24 # TODO: "type[Enum]" has no attribute "port"  [attr-defined]
             FormFieldApiSchema(name=names_source.db_name, required=True),  # type: ignore  # 2024-01-24 # TODO: "type[Enum]" has no attribute "db_name"  [attr-defined]
             FormFieldApiSchema(name=CommonFieldName.ssl_enable),
             FormFieldApiSchema(name=CommonFieldName.ssl_ca),
+            FormFieldApiSchema(name=CommonFieldName.data_export_forbidden),
         ]
 
     def _get_default_db_section(self, rc: RowConstructor, connector_settings: YDBConnectorSettings) -> list[FormRow]:
@@ -191,6 +191,8 @@ class YDBConnectionFormFactory(ConnectionFormFactory):
         if connector_settings.ENABLE_DATASOURCE_TEMPLATE:
             raw_sql_levels.append(RawSQLLevel.template)
 
+        form_params = self._get_form_params()
+
         if connector_settings.ENABLE_AUTH_TYPE_PICKER:
             rows = [
                 ydb_rc.auth_type_row(mode=self.mode),
@@ -209,6 +211,11 @@ class YDBConnectionFormFactory(ConnectionFormFactory):
                     enabled_help_text=self._localizer.translate(Translatable("label_ydb-ssl-enabled-tooltip")),
                     enabled_default_value=connector_settings.DEFAULT_SSL_ENABLE_VALUE,
                 ),
+                rc.data_export_forbidden_row(
+                    conn_id=form_params.conn_id,
+                    exports_history_url_path=form_params.exports_history_url_path,
+                    mode=self.mode,
+                ),
             ]
         else:
             rows = [
@@ -220,6 +227,11 @@ class YDBConnectionFormFactory(ConnectionFormFactory):
                     enabled_name=CommonFieldName.ssl_enable,
                     enabled_help_text=self._localizer.translate(Translatable("label_ydb-ssl-enabled-tooltip")),
                     enabled_default_value=connector_settings.DEFAULT_SSL_ENABLE_VALUE,
+                ),
+                rc.data_export_forbidden_row(
+                    conn_id=form_params.conn_id,
+                    exports_history_url_path=form_params.exports_history_url_path,
+                    mode=self.mode,
                 ),
             ]
         return ConnectionForm(

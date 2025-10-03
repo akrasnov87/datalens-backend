@@ -4,13 +4,10 @@ import logging
 from typing import (
     TYPE_CHECKING,
     Collection,
-    Optional,
 )
 
 import attr
-from sqlalchemy.exc import DatabaseError
 
-from dl_cache_engine.exc import CachePreparationFailed
 from dl_cache_engine.primitives import (
     BIQueryCacheOptions,
     CacheTTLConfig,
@@ -18,16 +15,11 @@ from dl_cache_engine.primitives import (
     DataKeyPart,
     LocalKeyRepresentation,
 )
-from dl_core.query.bi_query import QueryAndResultInfo
 from dl_core.us_connection_base import ConnectionBase
 from dl_model_tools.serialization import hashable_dumps
 
 
 if TYPE_CHECKING:
-    from sqlalchemy.engine.default import DefaultDialect
-    from sqlalchemy.sql import Select
-
-    from dl_constants.enums import UserDataType
     from dl_constants.types import TJSONExt
     from dl_core.data_processing.prepared_components.primitives import PreparedFromInfo
     from dl_core.data_source.base import DataSource
@@ -55,28 +47,6 @@ class CacheOptionsBuilderBase:
         return ctc
 
     @staticmethod
-    def get_query_str_for_cache(query: Select, dialect: DefaultDialect) -> str:
-        try:
-            compiled_query = query.compile(dialect=dialect)
-        except DatabaseError as err:
-            raise CachePreparationFailed from err
-
-        if isinstance(compiled_query.params, dict):
-            ordered_params = sorted(
-                compiled_query.params.items(),
-                key=lambda item: item[0],
-            )
-        else:
-            ordered_params = compiled_query.params
-
-        return ";".join(
-            (
-                str(compiled_query),
-                str(ordered_params),
-            )
-        )
-
-    @staticmethod
     def config_to_ttl_info(ttl_config: CacheTTLConfig) -> CacheTTLInfo:
         return CacheTTLInfo(
             ttl_sec=ttl_config.ttl_sec_direct,
@@ -92,15 +62,6 @@ class CacheOptionsBuilderBase:
             connection=actual_connection,
         )
         return self.config_to_ttl_info(ttl_config=ttl_config)
-
-    def get_data_key(
-        self,
-        *,
-        query_res_info: QueryAndResultInfo,
-        from_info: Optional[PreparedFromInfo] = None,
-        base_key: LocalKeyRepresentation = LocalKeyRepresentation(),  # noqa: B008
-    ) -> Optional[LocalKeyRepresentation]:
-        return base_key
 
 
 @attr.s
@@ -132,20 +93,6 @@ class CompengOptionsBuilder(DatasetOptionsBuilder):  # TODO: Move to compeng pac
             refresh_ttl_on_read=ttl_info.refresh_ttl_on_read,
         )
 
-    def get_data_key(
-        self,
-        *,
-        query_res_info: QueryAndResultInfo,
-        from_info: Optional[PreparedFromInfo] = None,
-        base_key: LocalKeyRepresentation = LocalKeyRepresentation(),  # noqa: B008
-    ) -> Optional[LocalKeyRepresentation]:
-        # TODO: Remove after switching to new cache keys
-        compiled_query = self.get_query_str_for_cache(
-            query=query_res_info.query,
-            dialect=from_info.query_compiler.dialect,  # type: ignore  # 2024-01-24 # TODO: Item "None" of "PreparedFromInfo | None" has no attribute "query_compiler"  [union-attr]
-        )
-        return base_key.extend(part_type="query", part_content=compiled_query)
-
 
 @attr.s
 class SelectorCacheOptionsBuilder(DatasetOptionsBuilder):
@@ -164,7 +111,8 @@ class SelectorCacheOptionsBuilder(DatasetOptionsBuilder):
     ) -> BIQueryCacheOptions:
         """Returns cache key, TTL for new entries, refresh TTL flag"""
 
-        ttl_info = self.get_cache_ttl_info(data_source_list=joint_dsrc_info.data_source_list)  # type: ignore  # 2024-01-24 # TODO: Argument "data_source_list" to "get_cache_ttl_info" of "CacheOptionsBuilderBase" has incompatible type "tuple[DataSource, ...] | None"; expected "Collection[DataSource]"  [arg-type]
+        assert joint_dsrc_info.data_source_list is not None, "Data source list is required for cache options"
+        ttl_info = self.get_cache_ttl_info(data_source_list=joint_dsrc_info.data_source_list)
         cache_enabled = self.get_cache_enabled(joint_dsrc_info=joint_dsrc_info)
         return BIQueryCacheOptions(
             cache_enabled=cache_enabled,
@@ -172,53 +120,6 @@ class SelectorCacheOptionsBuilder(DatasetOptionsBuilder):
             ttl_sec=ttl_info.ttl_sec,
             refresh_ttl_on_read=ttl_info.refresh_ttl_on_read,
         )
-
-    def make_data_select_cache_key(
-        self,
-        from_info: PreparedFromInfo,
-        compiled_query: str,
-        user_types: list[UserDataType],
-        is_bleeding_edge_user: bool,
-        base_key: LocalKeyRepresentation = LocalKeyRepresentation(),  # noqa: B008
-    ) -> LocalKeyRepresentation:
-        # TODO: Remove after switching to new cache keys,
-        #  but put the db_name + target_connection.get_cache_key_part() parts somewhere
-        assert from_info.target_connection_ref is not None
-        target_connection = self._us_entry_buffer.get_entry(from_info.target_connection_ref)
-        assert isinstance(target_connection, ConnectionBase)
-        connection_id = target_connection.uuid
-        assert connection_id is not None
-
-        local_key_rep = base_key
-        local_key_rep = local_key_rep.extend(part_type="query", part_content=str(compiled_query))
-        local_key_rep = local_key_rep.extend(part_type="user_types", part_content=tuple(user_types or ()))
-        local_key_rep = local_key_rep.extend(
-            part_type="is_bleeding_edge_user",
-            part_content=is_bleeding_edge_user,
-        )
-
-        return local_key_rep
-
-    def get_data_key(
-        self,
-        *,
-        query_res_info: QueryAndResultInfo,
-        from_info: Optional[PreparedFromInfo] = None,
-        base_key: LocalKeyRepresentation = LocalKeyRepresentation(),  # noqa: B008
-    ) -> Optional[LocalKeyRepresentation]:
-        # TODO: Remove after switching to new cache keys
-        compiled_query = self.get_query_str_for_cache(
-            query=query_res_info.query,
-            dialect=from_info.query_compiler.dialect,  # type: ignore  # 2024-01-24 # TODO: Item "None" of "PreparedFromInfo | None" has no attribute "query_compiler"  [union-attr]
-        )
-        data_key: Optional[LocalKeyRepresentation] = self.make_data_select_cache_key(
-            base_key=base_key,
-            from_info=from_info,  # type: ignore  # 2024-01-24 # TODO: Argument "from_info" to "make_data_select_cache_key" of "SelectorCacheOptionsBuilder" has incompatible type "PreparedFromInfo | None"; expected "PreparedFromInfo"  [arg-type]
-            compiled_query=compiled_query,
-            user_types=query_res_info.user_types,
-            is_bleeding_edge_user=self._is_bleeding_edge_user,
-        )
-        return data_key
 
 
 @attr.s
@@ -235,8 +136,11 @@ class DashSQLCacheOptionsBuilder(CacheOptionsBuilderBase):
         params: TJSONExt,
         db_params: dict[str, str],
         connector_specific_params: TJSONExt,
-        data_key: LocalKeyRepresentation = LocalKeyRepresentation(),  # noqa: B008
+        data_key: LocalKeyRepresentation | None = None,
     ) -> BIQueryCacheOptions:
+        if data_key is None:
+            data_key = LocalKeyRepresentation()
+
         cache_enabled = self.get_cache_enabled(conn=conn)
         ttl_config = self.get_actual_ttl_config(connection=conn)
         ttl_info = self.config_to_ttl_info(ttl_config)

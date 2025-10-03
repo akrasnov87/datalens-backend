@@ -555,6 +555,37 @@ FUNCTION_LEN_ARRAY = FunctionDocRegistryItem(
     ],
 )
 
+FUNCTION_ARR_DISTINCT = FunctionDocRegistryItem(
+    name="arr_distinct",
+    category=CATEGORY_ARRAY,
+    description=_(
+        "Removes duplicate elements from an array {arg:0}, returning a new array with only unique elements. "
+        "The order of elements in the returned array is not guaranteed to be the same as the input array."
+    ),
+    examples=[
+        SimpleExample("ARR_DISTINCT(ARRAY(1, 2, 2, 3, 3, 3, 4) = [1, 2, 3, 4]"),
+        SimpleExample("ARR_DISTINCT(ARRAY(1.1, 2.2, 2.2, 3.3, 3.3, 3.3, 4.4) = [1.1, 2.2, 3.3, 4.4]"),
+        SimpleExample(
+            "ARR_DISTINCT(ARRAY('apple', 'banana', 'apple', 'orange', 'banana') = ['apple', 'banana', 'orange']"
+        ),
+    ],
+)
+
+FUNCTION_ARR_INDEX_OF = FunctionDocRegistryItem(
+    name="arr_index_of",
+    category=CATEGORY_ARRAY,
+    description=_(
+        "Returns the position (index) of the first occurrence of the value {arg:1} in the array {arg:0}. "
+        "The indexing starts from 1. If the value {arg:1} is not found in the array, the function returns 0."
+    ),
+    examples=[
+        SimpleExample("ARR_INDEX_OF(ARRAY('a', 'b', 'c', 'b'), 'b') = 2"),
+        SimpleExample("ARR_INDEX_OF(ARRAY(1.1, 2.2, 3.3, 3.3), 3) = 3"),
+        SimpleExample("ARR_INDEX_OF(ARRAY(1, 2, 3, 2), 2) = 2"),
+        SimpleExample("ARR_INDEX_OF(ARRAY('a', 'b', 'c', 'b'), 'd') = 0"),
+    ],
+)
+
 FUNCTIONS_ARRAY = [
     FUNCTION_ARRAY,
     FUNCTION_UNNEST,
@@ -579,4 +610,6 @@ FUNCTIONS_ARRAY = [
     FUNCTION_ARR_REMOVE,
     FUNCTION_ARR_INTERSECT,
     FUNCTION_LEN_ARRAY,
+    FUNCTION_ARR_DISTINCT,
+    FUNCTION_ARR_INDEX_OF,
 ]

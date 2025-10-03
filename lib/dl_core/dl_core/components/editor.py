@@ -1,8 +1,8 @@
 from collections import defaultdict
+from copy import deepcopy
 import logging
 from typing import (
     Any,
-    FrozenSet,
     Iterable,
 )
 
@@ -119,7 +119,7 @@ class DatasetComponentEditor:
         connection_id: str | None = None,
         title: str | None = None,
         raw_schema: list[SchemaColumn] | None = None,
-        index_info_set: FrozenSet[IndexInfo] | None = None,
+        index_info_set: frozenset[IndexInfo] | None = None,
         managed_by: ManagedBy | None = None,
         parameters: dict[str, Any] | None = None,
     ) -> None:
@@ -146,7 +146,7 @@ class DatasetComponentEditor:
             raw_schema = None
 
         connection_ref = connection_ref_from_id(connection_id=connection_id)
-        parameters = parameters or {}
+        parameters = deepcopy(parameters or {})
         parameters["connection_ref"] = connection_ref
         parameters["raw_schema"] = raw_schema
         parameters["index_info_set"] = index_info_set
@@ -162,7 +162,7 @@ class DatasetComponentEditor:
         connection_id: str | None = None,
         created_from: DataSourceType | None = None,
         raw_schema: list | None = None,
-        index_info_set: FrozenSet[IndexInfo] | None = None,
+        index_info_set: frozenset[IndexInfo] | None = None,
         **parameters: Any,
     ) -> None:
         """Update data source config data"""
@@ -434,6 +434,9 @@ class DatasetComponentEditor:
 
     def set_created_via(self, created_via: DataSourceCreatedVia) -> None:
         self._dataset.meta["created_via"] = created_via.name
+
+    def set_annotation(self, annotation: dict[str, Any]) -> None:
+        self._dataset.annotation = annotation
 
     def replace_connection(self, old_connection: ConnectionBase, new_connection: ConnectionBase) -> None:
         old_migrator = get_data_source_migrator(old_connection.conn_type)

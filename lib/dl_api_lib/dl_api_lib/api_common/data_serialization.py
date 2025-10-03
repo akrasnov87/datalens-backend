@@ -4,8 +4,6 @@ import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
-    List,
     Optional,
     Sequence,
 )
@@ -13,6 +11,11 @@ from typing import (
 from dl_api_commons.reporting.models import NotificationReportingRecord
 from dl_api_commons.reporting.registry import ReportingRegistry
 from dl_api_lib.api_common.data_types import bi_to_yql
+from dl_api_lib.common_models.data_export import (
+    DataExportForbiddenReason,
+    DataExportInfo,
+    DataExportResult,
+)
 from dl_api_lib.schemas.data import (
     DataApiV2ResponseSchema,
     DatasetFieldsResponseSchema,
@@ -22,6 +25,10 @@ from dl_api_lib.schemas.legend import LegendSchema
 from dl_api_lib.schemas.pivot import (
     PivotHeaderInfoSchema,
     PivotItemSchema,
+)
+from dl_api_lib.utils.base import (
+    enrich_resp_dict_with_data_export_info,
+    get_data_export_base_result,
 )
 from dl_constants.enums import ManagedBy
 from dl_core.us_dataset import Dataset
@@ -44,7 +51,7 @@ class DataRequestResponseSerializerV2Mixin:
     # TODO: Split this into subclasses
 
     @classmethod
-    def make_data_response_v2_block_meta(cls, merged_stream: MergedQueryDataStream) -> List[Dict[str, Any]]:
+    def make_data_response_v2_block_meta(cls, merged_stream: MergedQueryDataStream) -> list[dict[str, Any]]:
         return [
             {
                 "block_id": block.block_id,
@@ -65,7 +72,7 @@ class DataRequestResponseSerializer(DataRequestResponseSerializerV2Mixin):
     )
 
     @staticmethod
-    def get_yql_schema(legend_items: List[LegendItem]) -> list:
+    def get_yql_schema(legend_items: list[LegendItem]) -> list:
         """
         Create YQL schema for given list of fields (`self._query_spec.select_specs`).
         Is needed in the API response to be used by frontend to render results
@@ -87,19 +94,19 @@ class DataRequestResponseSerializer(DataRequestResponseSerializerV2Mixin):
     @classmethod
     def make_data_response_v1(
         cls,
+        data_export_info: DataExportInfo,
         merged_stream: MergedQueryDataStream,
         totals: Optional[Sequence] = None,
         totals_query: Optional[str] = None,
-        data_export_forbidden: Optional[bool] = None,
-        fields_data: Optional[List[Dict[str, Any]]] = None,
-    ) -> Dict[str, Any]:
+        fields_data: Optional[list[dict[str, Any]]] = None,
+    ) -> dict[str, Any]:
         legend_item_ids = merged_stream.legend_item_ids
         assert legend_item_ids is not None  # in v1 there is only one stream
         query_type = merged_stream.meta.blocks[0].query_type
         if query_type == QueryType.value_range:
             legend_item_ids = [legend_item_ids[0]]
         legend_items = [merged_stream.legend.get_item(liid) for liid in legend_item_ids]
-        data: Dict[str, Any] = {
+        data: dict[str, Any] = {
             "result": {
                 "data": {
                     "Data": [row.data for row in merged_stream.rows],
@@ -114,8 +121,14 @@ class DataRequestResponseSerializer(DataRequestResponseSerializerV2Mixin):
             # Note: `totals is None` also happens when everything was filtered out.
             data["result"]["totals"] = totals
             data["result"]["totals_query"] = totals_query
-        if data_export_forbidden is not None:
-            data["result"]["data_export_forbidden"] = data_export_forbidden
+
+        data["result"][
+            "data_export_forbidden"
+        ] = not data_export_info.enabled_in_conn  # TODO: BI-6539 remove after switch to new schema
+
+        data_export_result = get_data_export_base_result(data_export_info)
+        enrich_resp_dict_with_data_export_info(data, data_export_result)
+
         if fields_data is not None:
             data["result"]["fields"] = fields_data
 
@@ -124,18 +137,22 @@ class DataRequestResponseSerializer(DataRequestResponseSerializerV2Mixin):
     @classmethod
     def make_data_response_v2(
         cls,
+        data_export_info: DataExportInfo,
         merged_stream: MergedQueryDataStream,
         reporting_registry: Optional[ReportingRegistry] = None,
-        data_export_forbidden: Optional[bool] = None,
-    ) -> Dict[str, Any]:
-        data: Dict[str, Any] = {}
+    ) -> dict[str, Any]:
+        data: dict[str, Any] = {}
 
-        if data_export_forbidden is not None:
-            data["data_export_forbidden"] = data_export_forbidden
+        data[
+            "data_export_forbidden"
+        ] = not data_export_info.enabled_in_conn  # TODO: BI-6539 remove after switch to new schema
+
+        data_export_result = get_data_export_base_result(data_export_info)
+        enrich_resp_dict_with_data_export_info(data, data_export_result)
 
         data["fields"] = merged_stream.legend.items
 
-        data_rows: List[dict] = [{"data": row.data, "legend": row.legend_item_ids} for row in merged_stream.rows]
+        data_rows: list[dict] = [{"data": row.data, "legend": row.legend_item_ids} for row in merged_stream.rows]
         data["result_data"] = [{"rows": data_rows}]
 
         data["blocks"] = cls.make_data_response_v2_block_meta(merged_stream=merged_stream)
@@ -146,7 +163,7 @@ class DataRequestResponseSerializer(DataRequestResponseSerializerV2Mixin):
         return data
 
 
-def get_fields_data_raw(dataset: Dataset, for_result: bool = False) -> List[Dict[str, Any]]:
+def get_fields_data_raw(dataset: Dataset, for_result: bool = False) -> list[dict[str, Any]]:
     return [
         {
             "title": fld.title,
@@ -167,7 +184,7 @@ def get_fields_data_raw(dataset: Dataset, for_result: bool = False) -> List[Dict
     ]
 
 
-def get_fields_data_serializable(dataset: Dataset, for_result: bool = False) -> List[Dict[str, TJSONLike]]:
+def get_fields_data_serializable(dataset: Dataset, for_result: bool = False) -> list[dict[str, TJSONLike]]:
     fields = get_fields_data_raw(dataset, for_result=for_result)
     return DatasetFieldsResponseSchema().dump(dict(fields=fields))["fields"]
 
@@ -176,6 +193,7 @@ class PivotDataRequestResponseSerializer(DataRequestResponseSerializerV2Mixin):
     @classmethod
     def make_pivot_response(
         cls,
+        data_export_info: DataExportInfo,
         merged_stream: MergedQueryDataStream,
         pivot_table: PivotTable,
         reporting_registry: Optional[ReportingRegistry] = None,
@@ -231,6 +249,11 @@ class PivotDataRequestResponseSerializer(DataRequestResponseSerializerV2Mixin):
             "pivot_data": table_data,
             "blocks": block_meta_list,
         }
+
+        data_export_result: DataExportResult = get_data_export_base_result(data_export_info)
+        data_export_result.background.allowed = False
+        data_export_result.background.reason.append(DataExportForbiddenReason.prohibited_in_pivot.value)
+        enrich_resp_dict_with_data_export_info(response_data, data_export_result)
 
         if reporting_registry is not None:
             response_data["notifications"] = [

@@ -6,7 +6,7 @@ from typing import (
     Any,
     Iterable,
     Optional,
-    Union,
+    Sequence,
 )
 
 import attr
@@ -77,6 +77,7 @@ class DatasetApiV1SerializationAdapter(BaseApiV1SerializationAdapter):
             obligatory_filters=[
                 ObligatoryFilterSchema().load(filter_info) for filter_info in body["obligatory_filters"]
             ],
+            annotation=dict(description=body["description"]),
         )
 
         for dsrc_data in body["sources"]:
@@ -120,14 +121,26 @@ class SyncHttpDatasetApiV1(SyncHttpApiV1Base):
             dataset=None,
         )
 
+    def get_dataset(self, dataset_id: str) -> HttpDatasetApiResponse:
+        response = self._request(f"/api/v1/datasets/{dataset_id}/versions/draft", method="get")
+        dataset = self.serial_adapter.load_dataset_from_response_body(
+            dataset=Dataset(),
+            body=response.json,
+        )
+        return HttpDatasetApiResponse(
+            json=response.json,
+            status_code=response.status_code,
+            dataset=dataset,
+        )
+
     def save_dataset(
         self,
         dataset: Dataset,
         preview: bool = True,
         fail_ok: bool = False,
-        dir_path: str = None,  # type: ignore  # 2024-01-24 # TODO: Incompatible default for argument "dir_path" (default has type "None", argument has type "str")  [assignment]
-        workbook_id: str = None,  # type: ignore  # 2024-01-24 # TODO: Incompatible default for argument "workbook_id" (default has type "None", argument has type "str")  [assignment]
-        created_via: str = None,  # type: ignore  # 2024-01-24 # TODO: Incompatible default for argument "created_via" (default has type "None", argument has type "str")  [assignment]
+        dir_path: str | None = None,
+        workbook_id: str | None = None,
+        created_via: str | None = None,
         lock_timeout: int = 3,
     ) -> HttpDatasetApiResponse:
         dataset.prepare()
@@ -192,7 +205,7 @@ class SyncHttpDatasetApiV1(SyncHttpApiV1Base):
             # `fail_ok` should not mean `allow 5xx`
             assert response.status_code < 500, response.json
 
-    def cleanup_created_resources(self):  # type: ignore  # TODO: fix
+    def cleanup_created_resources(self) -> None:
         for dataset_id in self._created_dataset_id_list:
             try:
                 self.delete_dataset(dataset_id, fail_ok=True)
@@ -244,7 +257,7 @@ class SyncHttpDatasetApiV1(SyncHttpApiV1Base):
     def apply_updates(
         self,
         dataset: Dataset,
-        updates: list[Union[UpdateAction, dict]] = None,  # type: ignore  # 2024-01-24 # TODO: Incompatible default for argument "updates" (default has type "None", argument has type "list[UpdateAction | dict[Any, Any]]")  [assignment]
+        updates: Sequence[UpdateAction | dict] | None = None,
         fail_ok: bool = False,
     ) -> HttpDatasetApiResponse:
         if dataset.created_:
@@ -253,7 +266,8 @@ class SyncHttpDatasetApiV1(SyncHttpApiV1Base):
             url = "/api/v1/datasets/validators/dataset"
 
         data = self.dump_dataset_to_request_body(dataset)
-        updates = list(updates or ()) + self.serial_adapter.generate_implicit_updates(dataset)  # type: ignore  # 2024-01-24 # TODO: Unsupported operand types for + ("list[UpdateAction | dict[Any, Any]]" and "list[UpdateAction]")  [operator]
+        updates = list(updates or ())
+        updates.extend(self.serial_adapter.generate_implicit_updates(dataset))
         data["updates"] = self.serial_adapter.dump_updates(updates)
         response = self._request(url, method="post", data=data)
 
@@ -364,3 +378,19 @@ class SyncHttpDatasetApiV1(SyncHttpApiV1Base):
             ],
         )
         return response
+
+    def update_setting(
+        self,
+        dataset: Dataset,
+        name: str,
+        value: bool,
+    ) -> HttpDatasetApiResponse:
+        return self.apply_updates(
+            dataset=dataset,
+            updates=[
+                {
+                    "action": "update_setting",
+                    "setting": {"name": name, "value": value},
+                },
+            ],
+        )

@@ -96,12 +96,20 @@ class MetricaLikeBaseFormFactory(ConnectionFormFactory, metaclass=abc.ABCMeta):
             else components.oauth_token_row(localizer=self._localizer, mode=self.mode)
         )
 
+        form_params = self._get_form_params()
+
         rows: list[FormRow] = [
             oauth_token_row,
             self._counter_row(
                 manual_input=self._allow_manual_counter_input(connector_settings), connector_settings=connector_settings
             ),
             AccuracyRow(name=MetricaFieldName.accuracy),
+            rc.collapse_advanced_settings_row(),
+            rc.data_export_forbidden_row(
+                conn_id=form_params.conn_id,
+                exports_history_url_path=form_params.exports_history_url_path,
+                mode=self.mode,
+            ),
         ]
 
         edit_api_schema = (
@@ -110,6 +118,7 @@ class MetricaLikeBaseFormFactory(ConnectionFormFactory, metaclass=abc.ABCMeta):
                     FormFieldApiSchema(name=MetricaFieldName.counter_id, required=True),
                     FormFieldApiSchema(name=CommonFieldName.token),
                     FormFieldApiSchema(name=MetricaFieldName.accuracy, nullable=True),
+                    FormFieldApiSchema(name=CommonFieldName.data_export_forbidden),
                 ]
             )
             if self.mode == ConnectionFormMode.edit
@@ -123,6 +132,7 @@ class MetricaLikeBaseFormFactory(ConnectionFormFactory, metaclass=abc.ABCMeta):
                     FormFieldApiSchema(name=CommonFieldName.token, required=True),
                     FormFieldApiSchema(name=MetricaFieldName.accuracy, nullable=True),
                     *self._get_top_level_create_api_schema_items(),
+                    FormFieldApiSchema(name=CommonFieldName.data_export_forbidden),
                 ]
             )
             if self.mode == ConnectionFormMode.create

@@ -77,10 +77,13 @@ class ProcessorDbExecAdapterBase(abc.ABC):
         query: str | Select,
         user_type: UserDataType,
         ctx: OpExecutionContext,
-        data_key: LocalKeyRepresentation = LocalKeyRepresentation(),  # noqa: B008
+        data_key: LocalKeyRepresentation | None = None,
         preparation_callback: Optional[Callable[[], Awaitable[None]]] = None,
     ) -> TBIDataValue:
         """Execute a statement returning a scalar value."""
+        if data_key is None:
+            data_key = LocalKeyRepresentation()
+
         data_stream = await self._execute_and_fetch(
             query_id=make_id(),
             query=query,
@@ -104,10 +107,12 @@ class ProcessorDbExecAdapterBase(abc.ABC):
         joint_dsrc_info: Optional[PreparedFromInfo] = None,
         query_id: str,
         ctx: OpExecutionContext,
-        data_key: LocalKeyRepresentation = LocalKeyRepresentation(),  # noqa: B008
+        data_key: LocalKeyRepresentation | None = None,
         preparation_callback: Optional[Callable[[], Awaitable[None]]] = None,
     ) -> TValuesChunkStream:
         """Fetch data from a table"""
+        if data_key is None:
+            data_key = LocalKeyRepresentation()
 
         chunk_size = chunk_size or self._default_chunk_size
         self._log.info(f"Fetching data from query {query_id}")
@@ -138,30 +143,13 @@ class ProcessorDbExecAdapterBase(abc.ABC):
         )
         return query_res_info
 
-    def get_data_key(
-        self,
-        *,
-        query: str | Select,
-        user_types: Sequence[UserDataType],
-        from_info: Optional[PreparedFromInfo] = None,
-        base_key: LocalKeyRepresentation = LocalKeyRepresentation(),  # noqa: B008
-    ) -> Optional[LocalKeyRepresentation]:
-        # TODO: Remove this method
-        query_res_info = self._make_query_res_info(query=query, user_types=user_types)
-        data_key = self._cache_options_builder.get_data_key(
-            from_info=from_info,
-            query_res_info=query_res_info,
-            base_key=base_key,
-        )
-        return data_key
-
     async def create_table(
         self,
         *,
         table_name: str,
         names: Sequence[str],
         user_types: Sequence[UserDataType],
-    ) -> sa.sql.selectable.TableClause:
+    ) -> None:
         """Create table"""
         raise NotImplementedError  # By default DDL is not supported
 
@@ -200,5 +188,5 @@ class ProcessorDbExecAdapterBase(abc.ABC):
     def post_query_execute(self, query_id: str, exec_exception: Optional[Exception]) -> None:
         return
 
-    def post_cache_usage(self, query_id: str, cache_full_hit: bool) -> None:
+    def post_cache_usage(self, query_id: str, cache_full_hit: bool | None) -> None:
         return

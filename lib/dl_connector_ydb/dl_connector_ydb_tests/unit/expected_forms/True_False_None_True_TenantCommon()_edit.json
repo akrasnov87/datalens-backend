@@ -16,7 +16,10 @@
                 {
                     "id": "input",
                     "name": "host",
-                    "width": "l"
+                    "width": "l",
+                    "controlProps": {
+                        "type": "text"
+                    }
                 }
             ]
         },
@@ -150,6 +153,36 @@
                     }
                 }
             ]
+        },
+        {
+            "items": [
+                {
+                    "id": "label",
+                    "displayConditions": {
+                        "advanced_settings": "opened"
+                    },
+                    "text": "Disable data export",
+                    "helpText": "Disabling data export will hide the data export button in the charts, though you will still be able to extract data from charts and take screenshots."
+                },
+                {
+                    "id": "radio_button",
+                    "name": "data_export_forbidden",
+                    "displayConditions": {
+                        "advanced_settings": "opened"
+                    },
+                    "defaultValue": "off",
+                    "options": [
+                        {
+                            "text": "Off",
+                            "value": "off"
+                        },
+                        {
+                            "text": "On",
+                            "value": "on"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "apiSchema": {
@@ -192,6 +225,11 @@
                     "defaultAction": "include"
                 },
                 {
+                    "name": "data_export_forbidden",
+                    "required": false,
+                    "defaultAction": "include"
+                },
+                {
                     "name": "token",
                     "required": false,
                     "defaultAction": "include"
@@ -223,6 +261,11 @@
                 },
                 {
                     "name": "ssl_ca",
+                    "required": false,
+                    "defaultAction": "include"
+                },
+                {
+                    "name": "data_export_forbidden",
                     "required": false,
                     "defaultAction": "include"
                 },

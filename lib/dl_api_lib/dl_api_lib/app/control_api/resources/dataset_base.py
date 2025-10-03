@@ -114,6 +114,7 @@ class DatasetResource(BIResource):
             dataset=dataset,
             us_manager=us_manager,
             dataset_data=body.get("dataset"),
+            allow_settings_change=True,  # TODO: BI-6307 disable in the future
         )
         return dataset, update_info
 
@@ -220,8 +221,10 @@ class DatasetResource(BIResource):
 
         data["load_preview_by_default"] = dataset.load_preview_by_default
         data["template_enabled"] = dataset.template_enabled
-
         data["data_export_forbidden"] = dataset.data_export_forbidden
+
+        # annotation
+        data["annotation"] = dataset.annotation
 
         return {"dataset": data}
 

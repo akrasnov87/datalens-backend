@@ -7,12 +7,9 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Dict,
-    FrozenSet,
     Generic,
     Optional,
     Sequence,
-    Type,
     TypeVar,
 )
 
@@ -91,7 +88,7 @@ class DefaultSRFactory(SRFactory[SERVICE_REGISTRY_TV]):
     # Config options
     default_cache_ttl_config: Optional[CacheTTLConfig] = attr.ib(default=None)
     bleeding_edge_users: Sequence[str] = attr.ib(default=())
-    conn_cls_whitelist: Optional[FrozenSet[Type[ConnectionBase]]] = attr.ib(default=None)
+    conn_cls_whitelist: Optional[frozenset[type[ConnectionBase]]] = attr.ib(default=None)
     connect_options_factory: Optional[ConnectOptionsFactory] = attr.ib(default=None)
     entity_usage_checker: Optional[EntityUsageChecker] = attr.ib(default=None)
     connectors_settings: dict[ConnectionType, ConnectorSettingsBase] = attr.ib(factory=dict)
@@ -101,8 +98,8 @@ class DefaultSRFactory(SRFactory[SERVICE_REGISTRY_TV]):
     rqe_caches_settings: Optional[RQECachesSetting] = attr.ib(default=None)
     required_services: set[RequiredService] = attr.ib(factory=set)
     inst_specific_sr_factory: Optional[InstallationSpecificServiceRegistryFactory] = attr.ib(default=None)
-
-    service_registry_cls: ClassVar[Type[SERVICE_REGISTRY_TV]] = DefaultServicesRegistry  # type: ignore  # TODO: fix
+    exports_history_url_path: Optional[str] = attr.ib(default=None)
+    service_registry_cls: ClassVar[type[SERVICE_REGISTRY_TV]] = DefaultServicesRegistry  # type: ignore  # TODO: fix
 
     def is_bleeding_edge_user(self, request_context_info: RequestContextInfo) -> bool:
         return request_context_info.user_name in self.bleeding_edge_users
@@ -135,7 +132,7 @@ class DefaultSRFactory(SRFactory[SERVICE_REGISTRY_TV]):
         self,
         request_context_info: RequestContextInfo,
         sr_ref: FutureRef[ServicesRegistry],
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return dict()
 
     @final
@@ -151,6 +148,11 @@ class DefaultSRFactory(SRFactory[SERVICE_REGISTRY_TV]):
         data_processor_service_factory: Optional[Callable[[ProcessorType], DataProcessorService]] = None,
     ) -> SERVICE_REGISTRY_TV:
         sr_ref: FutureRef[ServicesRegistry] = FutureRef()
+
+        tenant_id = None
+        if request_context_info.tenant is not None:
+            tenant_id = request_context_info.tenant.get_tenant_id()
+
         sr = self.service_registry_cls(  # type: ignore  # TODO: fix
             default_cache_ttl_config=self.default_cache_ttl_config,
             rci=request_context_info,
@@ -168,6 +170,7 @@ class DefaultSRFactory(SRFactory[SERVICE_REGISTRY_TV]):
             file_uploader_client_factory=FileUploaderClientFactory(
                 self.file_uploader_settings,
                 ca_data=self.ca_data,
+                tenant_id=tenant_id,
             )
             if self.file_uploader_settings
             else None,
@@ -183,6 +186,7 @@ class DefaultSRFactory(SRFactory[SERVICE_REGISTRY_TV]):
                 if self.inst_specific_sr_factory is not None
                 else None
             ),
+            exports_history_url_path=self.exports_history_url_path,
             **self.additional_sr_constructor_kwargs(request_context_info, sr_ref),
         )
         sr_ref.fulfill(sr)

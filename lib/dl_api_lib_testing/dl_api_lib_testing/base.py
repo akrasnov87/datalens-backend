@@ -14,6 +14,7 @@ import pytest
 from dl_api_client.dsmaker.api.dataset_api import SyncHttpDatasetApiV1
 from dl_api_client.dsmaker.api.http_sync_base import SyncHttpClientBase
 from dl_api_commons.base_models import (
+    AuthData,
     RequestContextInfo,
     TenantCommon,
     TenantDef,
@@ -44,6 +45,7 @@ from dl_core_testing.flask_utils import (
     FlaskTestResponse,
 )
 from dl_core_testing.rqe import RQEConfigurationMaker
+import dl_retrier
 from dl_testing.utils import (
     get_root_certificates,
     get_root_certificates_path,
@@ -166,18 +168,26 @@ class ApiTestBase(abc.ABC):
         return TenantCommon()
 
     @pytest.fixture(scope="function")
+    def fake_auth_data(self) -> Optional[AuthData]:
+        return None
+
+    @pytest.fixture(scope="function")
     def control_api_app(
         self,
         environment_readiness: None,
         control_api_app_factory: ControlApiAppFactory,
         connectors_settings: dict[ConnectionType, ConnectorSettingsBase],
         fake_tenant: TenantDef,
+        fake_auth_data: Optional[AuthData],
     ) -> Generator[Flask, None, None]:
         """Session-wide test `Flask` application."""
 
         app = control_api_app_factory.create_app(
             connectors_settings=connectors_settings,
-            testing_app_settings=ControlApiAppTestingsSettings(fake_tenant=fake_tenant),
+            testing_app_settings=ControlApiAppTestingsSettings(
+                fake_tenant=fake_tenant,
+                fake_auth_data=fake_auth_data,
+            ),
             close_loop_after_request=False,
         )
 
@@ -240,5 +250,6 @@ class ApiTestBase(abc.ABC):
             us_base_url=us_config.us_host,
             us_auth_context=USAuthContextMaster(us_config.us_master_token),
             crypto_keys_config=core_test_config.get_crypto_keys_config(),
+            retry_policy_factory=dl_retrier.DefaultRetryPolicyFactory(),
         )
         return us_manager

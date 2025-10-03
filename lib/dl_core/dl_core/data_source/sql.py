@@ -9,7 +9,6 @@ from typing import (
 import attr
 import sqlalchemy as sa
 from sqlalchemy.engine.default import DefaultDialect
-from sqlalchemy.sql.elements import ClauseElement
 
 from dl_constants.enums import JoinType
 from dl_core import exc
@@ -41,6 +40,7 @@ from dl_core.db import (
     IndexInfo,
     SchemaInfo,
 )
+from dl_core.query.bi_query import SqlSourceType
 from dl_core.utils import sa_plain_text
 
 
@@ -126,7 +126,7 @@ class BaseSQLDataSource(DataSource):
     def quote(self, value) -> sa.sql.quoted_name:  # type: ignore  # TODO: fix  # subclass of str
         return self.connection.quote(value)
 
-    def get_sql_source(self, alias: str | None = None) -> ClauseElement:
+    def get_sql_source(self, alias: str | None = None) -> SqlSourceType:
         raise NotImplementedError()
 
     def get_table_definition(self) -> TableDefinition:
@@ -188,7 +188,7 @@ class SubselectDataSource(BaseSQLDataSource):
     _subquery_alias_joiner = " AS "
     _subquery_auto_alias = "source"
 
-    def get_sql_source(self, alias: str | None = None) -> ClauseElement:
+    def get_sql_source(self, alias: str | None = None) -> SqlSourceType:
         if not self.connection.is_subselect_allowed:
             raise exc.SubselectNotAllowed()
 
@@ -207,6 +207,9 @@ class SubselectDataSource(BaseSQLDataSource):
         if alias is not None:
             from_sql = "{}{}{}".format(from_sql, self._subquery_alias_joiner, self.quote(alias))
         return sa_plain_text(from_sql)
+
+    def is_templated(self) -> bool:
+        return self._is_value_templated(self.subsql)
 
     @property
     def default_title(self) -> str:
@@ -262,7 +265,7 @@ class SQLDataSource(abc.ABC, BaseSQLDataSource):
         return super().source_exists(conn_executor_factory=conn_executor_factory, force_refresh=force_refresh)
 
     @require_table_name
-    def get_sql_source(self, alias: str | None = None) -> ClauseElement:
+    def get_sql_source(self, alias: str | None = None) -> SqlSourceType:
         q = self.quote
         alias_str = "" if alias is None else f" AS {q(alias)}"
         return sa_plain_text(f"{q(self.db_name)}.{q(self.table_name)}{alias_str}")
@@ -305,9 +308,15 @@ class TableSQLDataSourceMixin(BaseSQLDataSource):
     @property
     def table_name(self) -> str | None:
         table_name = self.raw_table_name
-        if table_name is not None:
-            table_name = self._render_dataset_parameter_values(table_name)
+
+        if table_name is None:
+            return None
+
+        table_name = self._render_dataset_parameter_values(table_name)
         return table_name
+
+    def is_templated(self) -> bool:
+        return self._is_value_templated(self.raw_table_name)
 
     @property
     def raw_table_name(self) -> str | None:
@@ -362,7 +371,7 @@ class PseudoSQLDataSource(IncompatibleDataSourceMixin, StandardSQLDataSource):
     supports_schema_update: ClassVar[bool] = False
 
     @require_table_name
-    def get_sql_source(self, alias: str | None = None) -> ClauseElement:
+    def get_sql_source(self, alias: str | None = None) -> SqlSourceType:
         # ignore alias
         return sa.table(self.table_name)
 
@@ -392,7 +401,7 @@ class StandardSchemaSQLDataSource(StandardSQLDataSource, SchemaSQLDataSourceMixi
         )
 
     @require_table_name
-    def get_sql_source(self, alias: str | None = None) -> ClauseElement:
+    def get_sql_source(self, alias: str | None = None) -> SqlSourceType:
         if not self.schema_name:
             return super().get_sql_source(alias=alias)
         q = self.quote

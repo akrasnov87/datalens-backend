@@ -18,7 +18,6 @@ from typing import (
     Iterable,
     NamedTuple,
     Optional,
-    Type,
     Union,
     cast,
 )
@@ -34,6 +33,7 @@ from dl_api_commons.base_models import (
     TenantDef,
 )
 from dl_api_commons.logging import RequestObfuscator
+from dl_api_commons.retrier.requests import RequestsPolicyRetrier
 from dl_api_commons.tracing import get_current_tracing_headers
 from dl_api_commons.utils import (
     get_retriable_requests_session,
@@ -48,6 +48,7 @@ from dl_constants.api_constants import (
 from dl_core.base_models import EntryLocation
 from dl_core.enums import USApiType
 import dl_core.exc as exc
+import dl_retrier
 
 
 LOGGER = logging.getLogger(__name__)
@@ -243,7 +244,7 @@ class UStorageClientBase:
         def json(self) -> dict:
             pass
 
-    ERROR_MAP: list[tuple[int, Optional[re.Pattern], Type[exc.USReqException]]] = [
+    ERROR_MAP: list[tuple[int, Optional[re.Pattern], type[exc.USReqException]]] = [
         (400, None, exc.USBadRequestException),
         (403, None, exc.USAccessDeniedException),
         (403, re.compile("Workbook isolation interruption"), exc.USWorkbookIsolationInterruptionException),
@@ -270,8 +271,8 @@ class UStorageClientBase:
         self,
         host: str,
         auth_ctx: USAuthContextBase,
+        retry_policy_factory: dl_retrier.BaseRetryPolicyFactory,
         prefix: Optional[str] = None,
-        timeout: int = 30,
         context_request_id: Optional[str] = None,
         context_forwarded_for: Optional[str] = None,
         context_workbook_id: Optional[str] = None,
@@ -279,12 +280,12 @@ class UStorageClientBase:
     ):
         self.host = host
         self.prefix = auth_ctx.get_default_prefix() if prefix is None else prefix
-        self.timeout = timeout
 
         self._disabled = False
         self._folder_id = auth_ctx.get_folder_id()
         self._auth_ctx = auth_ctx
         self._tenant_override: Optional[TenantDef] = None
+        self._retry_policy_factory = retry_policy_factory
 
         # Default headers for HTTP sessions
         self._default_headers = self._auth_ctx_to_default_headers(auth_ctx)
@@ -419,6 +420,7 @@ class UStorageClientBase:
         key: EntryLocation,
         scope: str,
         meta: Optional[dict[str, str]] = None,
+        annotation: Optional[dict[str, Any]] = None,
         data: Optional[dict[str, Any]] = None,
         type_: Optional[str] = None,
         hidden: Optional[bool] = None,
@@ -433,23 +435,28 @@ class UStorageClientBase:
         type_ = type_ or ""
         links = links or {}
 
+        request_body: dict[str, Any] = {
+            "scope": scope,
+            **key.to_us_req_api_params(),
+            "meta": meta,
+            "data": data,
+            "unversionedData": unversioned_data,
+            "type": type_,
+            "recursion": True,
+            "hidden": hidden,
+            "links": links,
+            "mode": mode,
+            **kwargs,
+        }
+
+        if annotation is not None:
+            request_body["annotation"] = annotation
+
         return cls.RequestData(
             method="post",
             relative_url="/entries",
             params=None,
-            json={
-                "scope": scope,
-                **key.to_us_req_api_params(),
-                "meta": meta,
-                "data": data,
-                "unversionedData": unversioned_data,
-                "type": type_,
-                "recursion": True,
-                "hidden": hidden,
-                "links": links,
-                "mode": mode,
-                **kwargs,
-            },
+            json=request_body,
         )
 
     @classmethod
@@ -459,12 +466,15 @@ class UStorageClientBase:
         params: Optional[dict[str, str]] = None,
         include_permissions: bool = True,
         include_links: bool = True,
+        include_favorite: bool = True,
     ) -> RequestData:
         params = params or {}
         if include_permissions:
             params["includePermissionsInfo"] = "1"
         if include_links:
             params["includeLinks"] = "1"
+        if include_favorite:
+            params["includeFavorite"] = "1"
 
         return cls.RequestData(
             method="get",
@@ -489,6 +499,7 @@ class UStorageClientBase:
         data: Optional[dict[str, Any]] = None,
         unversioned_data: Optional[dict[str, Any]] = None,
         meta: Optional[dict[str, str]] = None,
+        annotation: Optional[dict[str, Any]] = None,
         mode: str = "publish",
         lock: Optional[str] = None,
         hidden: Optional[bool] = None,
@@ -513,6 +524,8 @@ class UStorageClientBase:
             json_data["lockToken"] = lock
         if update_revision is not None:
             json_data["updateRevision"] = update_revision
+        if annotation is not None:
+            json_data["annotation"] = annotation
         return cls.RequestData(
             method="post",
             relative_url="/entries/{}".format(entry_id),
@@ -682,8 +695,8 @@ class UStorageClient(UStorageClientBase):
         self,
         host: str,
         auth_ctx: USAuthContextBase,
+        retry_policy_factory: dl_retrier.BaseRetryPolicyFactory,
         prefix: Optional[str] = None,
-        timeout: int = 30,
         context_request_id: Optional[str] = None,
         context_forwarded_for: Optional[str] = None,
         context_workbook_id: Optional[str] = None,
@@ -693,7 +706,7 @@ class UStorageClient(UStorageClientBase):
             host=host,
             auth_ctx=auth_ctx,
             prefix=prefix,
-            timeout=timeout,
+            retry_policy_factory=retry_policy_factory,
             context_request_id=context_request_id,
             context_forwarded_for=context_forwarded_for,
             context_workbook_id=context_workbook_id,
@@ -707,7 +720,11 @@ class UStorageClient(UStorageClientBase):
     def close(self) -> None:
         self._session.close()
 
-    def _request(self, request_data: UStorageClientBase.RequestData) -> dict[str, Any]:
+    def _request(
+        self,
+        request_data: UStorageClientBase.RequestData,
+        retry_policy_name: Optional[str] = None,
+    ) -> dict[str, Any]:
         self._raise_for_disabled_interactions()
 
         url = self._get_full_url(request_data.relative_url)
@@ -717,11 +734,14 @@ class UStorageClient(UStorageClientBase):
         request_kwargs: dict[str, Any] = {"json": request_data.json} if request_data.json is not None else {}
         tracing_headers = get_current_tracing_headers()
 
-        response = self._session.request(
-            request_data.method,
-            url,
+        retry_policy = self._retry_policy_factory.get_policy(retry_policy_name)
+        retrier = RequestsPolicyRetrier(retry_policy=retry_policy)
+
+        response = retrier.retry_request(
+            self._session.request,
+            method=request_data.method,
+            url=url,
             stream=False,
-            timeout=self.timeout,
             params=request_data.params,
             headers={
                 **self._extra_headers,
@@ -738,6 +758,7 @@ class UStorageClient(UStorageClientBase):
         key: EntryLocation,
         scope: str,
         meta: Optional[dict[str, str]] = None,
+        annotation: Optional[dict[str, Any]] = None,
         data: Optional[dict[str, Any]] = None,
         unversioned_data: Optional[dict[str, Any]] = None,
         type_: Optional[str] = None,
@@ -749,6 +770,7 @@ class UStorageClient(UStorageClientBase):
             key=key,
             scope=scope,
             meta=meta,
+            annotation=annotation,
             data=data,
             unversioned_data=unversioned_data,
             type_=type_,
@@ -756,7 +778,10 @@ class UStorageClient(UStorageClientBase):
             links=links,
             **kwargs,
         )
-        return self._request(rq_data)
+        return self._request(
+            rq_data,
+            retry_policy_name="create_entry",
+        )
 
     def get_entry(
         self,
@@ -764,15 +789,24 @@ class UStorageClient(UStorageClientBase):
         params: Optional[dict[str, str]] = None,
         include_permissions: bool = True,
         include_links: bool = True,
+        include_favorite: bool = True,
     ) -> dict[str, Any]:
         return self._request(
             self._req_data_get_entry(
-                entry_id, params=params, include_permissions=include_permissions, include_links=include_links
-            )
+                entry_id,
+                params=params,
+                include_permissions=include_permissions,
+                include_links=include_links,
+                include_favorite=include_favorite,
+            ),
+            retry_policy_name="get_entry",
         )
 
     def move_entry(self, entry_id: str, destination: str) -> dict[str, Any]:
-        return self._request(self._req_data_move_entry(entry_id, destination=destination))
+        return self._request(
+            self._req_data_move_entry(entry_id, destination=destination),
+            retry_policy_name="move_entry",
+        )
 
     def update_entry(
         self,
@@ -780,6 +814,7 @@ class UStorageClient(UStorageClientBase):
         data: Optional[dict[str, Any]] = None,
         unversioned_data: Optional[dict[str, Any]] = None,
         meta: Optional[dict[str, str]] = None,
+        annotation: Optional[dict[str, Any]] = None,
         lock: Optional[str] = None,
         hidden: Optional[bool] = None,
         links: Optional[dict[str, Any]] = None,
@@ -791,11 +826,13 @@ class UStorageClient(UStorageClientBase):
                 data=data,
                 unversioned_data=unversioned_data,
                 meta=meta,
+                annotation=annotation,
                 lock=lock,
                 hidden=hidden,
                 links=links,
                 update_revision=update_revision,
-            )
+            ),
+            retry_policy_name="update_entry",
         )
 
     def entries_iterator(
@@ -844,7 +881,8 @@ class UStorageClient(UStorageClientBase):
                     page=page,
                     created_at_from=created_at_from_ts,
                     limit=limit,
-                )
+                ),
+                retry_policy_name="entries_iterator",
             )
 
             # 2. Deal with pagination
@@ -880,7 +918,10 @@ class UStorageClient(UStorageClientBase):
                 done = True
 
     def delete_entry(self, entry_id: str, lock: Optional[str] = None) -> None:
-        self._request(self._req_data_delete_entry(entry_id, lock=lock))
+        self._request(
+            self._req_data_delete_entry(entry_id, lock=lock),
+            retry_policy_name="delete_entry",
+        )
 
     def acquire_lock(
         self,
@@ -900,7 +941,10 @@ class UStorageClient(UStorageClientBase):
         start_ts = time.time()
         while True:
             try:
-                resp = self._request(req_data)
+                resp = self._request(
+                    req_data,
+                    retry_policy_name="acquire_lock",
+                )
                 lock = resp["lockToken"]
                 LOGGER.info('Acquired lock "%s" for object "%s"', lock, entry_id)
                 return lock
@@ -912,7 +956,10 @@ class UStorageClient(UStorageClientBase):
 
     def release_lock(self, entry_id: str, lock: str) -> None:
         try:
-            self._request(self._req_data_release_lock(entry_id, lock=lock))
+            self._request(
+                self._req_data_release_lock(entry_id, lock=lock),
+                retry_policy_name="release_lock",
+            )
         except exc.USReqException:
             LOGGER.exception('Unable to release lock "%s"', lock)
 
@@ -922,10 +969,14 @@ class UStorageClient(UStorageClientBase):
                 us_path=us_path,
                 page_size=100,
                 page_idx=0,
-            )
+            ),
+            retry_policy_name="get_entries_info_in_path",
         )
         return resp["entries"]
 
     def get_entry_revisions(self, entry_id: str) -> list[dict[str, Any]]:
-        resp = self._request(self._req_data_entry_revisions(entry_id))
+        resp = self._request(
+            self._req_data_entry_revisions(entry_id),
+            retry_policy_name="get_entry_revisions",
+        )
         return resp["entries"]

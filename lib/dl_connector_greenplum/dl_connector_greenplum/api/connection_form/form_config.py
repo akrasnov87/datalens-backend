@@ -92,6 +92,8 @@ class GreenplumConnectionFormFactory(ConnectionFormFactory):
         if connector_settings.ENABLE_DATASOURCE_TEMPLATE:
             raw_sql_levels.append(RawSQLLevel.template)
 
+        form_params = self._get_form_params()
+
         return ConnectionForm(
             title=GreenplumConnectionInfoProvider.get_title(self._localizer),
             rows=self._filter_nulls(
@@ -105,7 +107,11 @@ class GreenplumConnectionFormFactory(ConnectionFormFactory):
                     rc.raw_sql_level_row_v2(raw_sql_levels=raw_sql_levels),
                     rc.collapse_advanced_settings_row(),
                     postgres_rc.enforce_collate_row(),
-                    rc.data_export_forbidden_row(),
+                    rc.data_export_forbidden_row(
+                        conn_id=form_params.conn_id,
+                        exports_history_url_path=form_params.exports_history_url_path,
+                        mode=self.mode,
+                    ),
                 ]
             ),
             api_schema=FormApiSchema(

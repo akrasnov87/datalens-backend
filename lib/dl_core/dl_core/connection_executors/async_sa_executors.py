@@ -9,12 +9,9 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Dict,
     Generic,
-    List,
     Optional,
     Sequence,
-    Type,
     TypeVar,
 )
 
@@ -41,6 +38,7 @@ from dl_core.connection_executors.async_base import (
 from dl_core.connection_executors.common_base import (
     ConnExecutorQuery,
     ExecutionMode,
+    ExecutionSettings,
 )
 from dl_core.connection_executors.models.db_adapter_data import DBAdapterQuery
 from dl_core.connection_executors.models.scoped_rci import DBAdapterScopedRCI
@@ -128,20 +126,23 @@ class DefaultSqlAlchemyConnExecutor(AsyncConnExecutorBase, Generic[_DBA_TV], met
     Why do we need it: to keep initialization creation of DBA in one place for sync and async environments.
     """
 
-    TARGET_ADAPTER_CLS: ClassVar[Type[_DBA_TV]]  # type: ignore  # 2024-01-24 # TODO: ClassVar cannot contain type variables  [misc]
+    TARGET_ADAPTER_CLS: ClassVar[type[_DBA_TV]]  # type: ignore  # 2024-01-24 # TODO: ClassVar cannot contain type variables  [misc]
+    REMOTE_ADAPTER_CLS: ClassVar[Optional[type[RemoteAsyncAdapter]]] = None
 
     # Constructor attributes
     _tpe: Optional[ContextVarExecutor] = attr.ib()
 
     # Internals
-    _async_dba_pool: Optional[List[AsyncDBAdapter]] = attr.ib(init=False, default=None)
+    _async_dba_pool: Optional[list[AsyncDBAdapter]] = attr.ib(init=False, default=None)
     _sync_dba: Optional[SyncDirectDBAdapter] = attr.ib(init=False, default=None)
     _initialization_lock = attr.ib(init=False, factory=asyncio.Lock)
     _dba_attempt_index: int = attr.ib(init=False, default=0)
 
     @classmethod
-    def is_pure_async(cls) -> bool:
-        return issubclass(cls.TARGET_ADAPTER_CLS, AsyncDirectDBAdapter)
+    def force_execution_mode(cls) -> ExecutionSettings:
+        if issubclass(cls.TARGET_ADAPTER_CLS, AsyncDirectDBAdapter):
+            return ExecutionSettings.DIRECT
+        return ExecutionSettings.NONE
 
     @property
     def _target_dba(self) -> AsyncDBAdapter:
@@ -214,8 +215,10 @@ class DefaultSqlAlchemyConnExecutor(AsyncConnExecutorBase, Generic[_DBA_TV], met
         elif self._exec_mode == ExecutionMode.RQE:
             if self._remote_qe_data is None:
                 raise ValueError("Can not initialize: no remote QE data was provided")
+
+            remote_adapter_cls = self.REMOTE_ADAPTER_CLS or RemoteAsyncAdapter
             self._async_dba_pool = [
-                RemoteAsyncAdapter(
+                remote_adapter_cls(
                     target_dto=target_conn_dto,
                     rqe_data=self._remote_qe_data,
                     req_ctx_info=DBAdapterScopedRCI.from_full_rci(req_ctx_info),
@@ -244,7 +247,7 @@ class DefaultSqlAlchemyConnExecutor(AsyncConnExecutorBase, Generic[_DBA_TV], met
     async def _execute_query(self, query: DBAdapterQuery) -> AsyncRawExecutionResult | AsyncRawJsonExecutionResult:
         return await self._target_dba.execute(query)
 
-    def _autodetect_user_types(self, raw_cursor_info: dict) -> Optional[List[UserDataType]]:
+    def _autodetect_user_types(self, raw_cursor_info: dict) -> Optional[list[UserDataType]]:
         db_types = raw_cursor_info.get("db_types")
         if not db_types:
             return None
@@ -277,7 +280,7 @@ class DefaultSqlAlchemyConnExecutor(AsyncConnExecutorBase, Generic[_DBA_TV], met
         if query.autodetect_user_types:
             user_types = self._autodetect_user_types(raw_result.raw_cursor_info)
 
-        result_footer: Dict[str, Any] = {}
+        result_footer: dict[str, Any] = {}
 
         async def data_generator() -> TBIChunksGen:
             async for chunk in raw_result.raw_chunk_generator:
@@ -299,11 +302,11 @@ class DefaultSqlAlchemyConnExecutor(AsyncConnExecutorBase, Generic[_DBA_TV], met
         return await self._target_dba.get_db_version(db_ident)
 
     @_common_exec_wrapper
-    async def _get_schema_names(self, db_ident: DBIdent) -> List[str]:
+    async def _get_schema_names(self, db_ident: DBIdent) -> list[str]:
         return await self._target_dba.get_schema_names(db_ident)
 
     @_common_exec_wrapper
-    async def _get_tables(self, schema_ident: SchemaIdent) -> List[TableIdent]:
+    async def _get_tables(self, schema_ident: SchemaIdent) -> list[TableIdent]:
         return await self._target_dba.get_tables(schema_ident)
 
     @_common_exec_wrapper

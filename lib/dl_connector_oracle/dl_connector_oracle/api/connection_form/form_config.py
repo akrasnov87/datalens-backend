@@ -101,6 +101,8 @@ class OracleConnectionFormFactory(ConnectionFormFactory):
         if connector_settings.ENABLE_DATASOURCE_TEMPLATE:
             raw_sql_levels.append(RawSQLLevel.template)
 
+        form_params = self._get_form_params()
+
         return ConnectionForm(
             title=OracleConnectionInfoProvider.get_title(self._localizer),
             rows=[
@@ -117,7 +119,11 @@ class OracleConnectionFormFactory(ConnectionFormFactory):
                     enabled_help_text=self._localizer.translate(Translatable("label_oracle-ssl-enabled-tooltip")),
                     enabled_default_value=False,
                 ),
-                rc.data_export_forbidden_row(),
+                rc.data_export_forbidden_row(
+                    conn_id=form_params.conn_id,
+                    exports_history_url_path=form_params.exports_history_url_path,
+                    mode=self.mode,
+                ),
             ],
             api_schema=FormApiSchema(
                 create=create_api_schema if self.mode == ConnectionFormMode.create else None,

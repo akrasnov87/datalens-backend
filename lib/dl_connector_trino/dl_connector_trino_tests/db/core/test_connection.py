@@ -2,12 +2,16 @@ from dl_core.us_connection_base import DataSourceTemplate
 from dl_core_testing.testcases.connection import DefaultConnectionTestClass
 
 from dl_connector_trino.core.adapters import TRINO_SYSTEM_SCHEMAS
-from dl_connector_trino.core.constants import TrinoAuthType
+from dl_connector_trino.core.constants import (
+    ListingSources,
+    TrinoAuthType,
+)
 from dl_connector_trino.core.us_connection import (
     TRINO_SYSTEM_CATALOGS,
     ConnectionTrino,
 )
 from dl_connector_trino_tests.db.core.base import (
+    BaseTrinoConnectionWithListingSourcesDisabled,
     BaseTrinoJwtTestClass,
     BaseTrinoPasswordTestClass,
     BaseTrinoTestClass,
@@ -41,10 +45,10 @@ class TestTrinoConnection(
 
         assert "sample" in tmpl_titles
 
-        assert "test_data" in tmpl_schema_names  # for source MySQL server this is the database name
+        assert "default" in tmpl_schema_names
         assert len(set(tmpl_schema_names) & set(TRINO_SYSTEM_SCHEMAS)) == 0
 
-        assert "test_mysql_catalog" in tmpl_db_names
+        assert "test_memory_catalog" in tmpl_db_names
         assert len(set(tmpl_db_names) & set(TRINO_SYSTEM_CATALOGS)) == 0
 
 
@@ -70,3 +74,18 @@ class TestTrinoJwtConnection(BaseTrinoJwtTestClass, TestTrinoConnection):
         assert conn.data.auth_type == TrinoAuthType.jwt
         assert conn.data.ssl_enable == params["ssl_enable"]
         assert conn.data.ssl_ca == params["ssl_ca"]
+
+
+class TestTrinoConnectionWithListingSourcesDisabled(
+    BaseTrinoConnectionWithListingSourcesDisabled,
+    TestTrinoConnection,
+):
+    def check_data_source_templates(
+        self,
+        conn: ConnectionTrino,
+        dsrc_templates: list[DataSourceTemplate],
+    ) -> None:
+        assert not dsrc_templates
+
+    def check_saved_connection(self, conn: ConnectionTrino, params: dict) -> None:
+        assert conn.data.listing_sources is ListingSources.off

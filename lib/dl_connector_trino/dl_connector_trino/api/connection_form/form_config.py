@@ -31,42 +31,55 @@ from dl_i18n.localizer_base import Localizer
 
 from dl_connector_trino.api.connection_info import TrinoConnectionInfoProvider
 from dl_connector_trino.api.i18n.localizer import Translatable
-from dl_connector_trino.core.constants import TrinoAuthType
+from dl_connector_trino.core.constants import (
+    ListingSources,
+    TrinoAuthType,
+)
 
 
 @unique
 class TrinoFormFieldName(FormFieldName):
     auth_type = "auth_type"
     jwt = "jwt"
+    listing_sources = "listing_sources"
 
 
 @attr.s
 class TrinoRowConstructor(RowConstructor):
     _localizer: Localizer = attr.ib()
 
-    def auth_type_row(self) -> C.CustomizableRow:
+    def _auth_type_options(self) -> list[C.SelectableOption]:
+        return [
+            C.SelectableOption(
+                text=self._localizer.translate(Translatable("value_auth-type-none")),
+                value=TrinoAuthType.none.value,
+            ),
+            C.SelectableOption(
+                text=self._localizer.translate(Translatable("value_auth-type-password")),
+                value=TrinoAuthType.password.value,
+            ),
+            C.SelectableOption(
+                text=self._localizer.translate(Translatable("value_auth-type-jwt")),
+                value=TrinoAuthType.jwt.value,
+            ),
+        ]
+
+    def auth_type_row(
+        self,
+        default_value: str = TrinoAuthType.password.value,
+        display_conditions: TDisplayConditions | None = None,
+    ) -> C.CustomizableRow:
         return C.CustomizableRow(
             items=[
                 C.LabelRowItem(
                     text=self._localizer.translate(Translatable("field_auth-type")),
+                    display_conditions=display_conditions,
                 ),
                 C.RadioButtonRowItem(
                     name=TrinoFormFieldName.auth_type,
-                    options=[
-                        C.SelectableOption(
-                            text=self._localizer.translate(Translatable("value_auth-type-none")),
-                            value=TrinoAuthType.none.value,
-                        ),
-                        C.SelectableOption(
-                            text=self._localizer.translate(Translatable("value_auth-type-password")),
-                            value=TrinoAuthType.password.value,
-                        ),
-                        C.SelectableOption(
-                            text=self._localizer.translate(Translatable("value_auth-type-jwt")),
-                            value=TrinoAuthType.jwt.value,
-                        ),
-                    ],
-                    default_value=TrinoAuthType.password.value,
+                    options=self._auth_type_options(),
+                    default_value=default_value,
+                    display_conditions=display_conditions,
                 ),
             ]
         )
@@ -76,7 +89,6 @@ class TrinoRowConstructor(RowConstructor):
         mode: ConnectionFormMode,
         display_conditions: TDisplayConditions | None = None,
     ) -> C.CustomizableRow:
-        display_conditions = {TrinoFormFieldName.auth_type: TrinoAuthType.password.value}
         label_text = self._localizer.translate(Translatable("field_password"))
         return C.CustomizableRow(
             items=[
@@ -97,7 +109,6 @@ class TrinoRowConstructor(RowConstructor):
         mode: ConnectionFormMode,
         display_conditions: TDisplayConditions | None = None,
     ) -> C.CustomizableRow:
-        display_conditions = {TrinoFormFieldName.auth_type: TrinoAuthType.jwt.value}
         label_text = self._localizer.translate(Translatable("field_jwt"))
         return C.CustomizableRow(
             items=[
@@ -115,6 +126,45 @@ class TrinoRowConstructor(RowConstructor):
 
     def cache_ttl_row(self) -> C.CacheTTLRow:
         return C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec)
+
+    def trino_ssl_rows(
+        self,
+        display_conditions: TDisplayConditions | None = None,
+    ) -> list[C.CustomizableRow]:
+        return list(
+            self.ssl_rows(
+                enabled_name=CommonFieldName.ssl_enable,
+                enabled_help_text=self._localizer.translate(Translatable("label_trino-ssl-enabled-tooltip")),
+                enabled_default_value=True,
+                display_conditions=display_conditions,
+            )
+        )
+
+    def listing_sources_row(self) -> C.CustomizableRow:
+        return C.CustomizableRow(
+            items=[
+                C.LabelRowItem(
+                    text=self._localizer.translate(Translatable("field_listing-sources")),
+                    display_conditions={CommonFieldName.advanced_settings: "opened"},
+                    help_text=self._localizer.translate(Translatable("label_listing-sources-tooltip")),
+                ),
+                C.RadioButtonRowItem(
+                    name=TrinoFormFieldName.listing_sources,
+                    options=[
+                        C.SelectableOption(
+                            text=self._localizer.translate(Translatable("value_listing-sources-off")),
+                            value=ListingSources.off.value,
+                        ),
+                        C.SelectableOption(
+                            text=self._localizer.translate(Translatable("value_listing-sources-on")),
+                            value=ListingSources.on.value,
+                        ),
+                    ],
+                    default_value=ListingSources.on.value,
+                    display_conditions={CommonFieldName.advanced_settings: "opened"},
+                ),
+            ]
+        )
 
 
 class TrinoConnectionFormFactory(ConnectionFormFactory):
@@ -142,6 +192,7 @@ class TrinoConnectionFormFactory(ConnectionFormFactory):
             FormFieldApiSchema(name=CommonFieldName.cache_ttl_sec, nullable=True),
             FormFieldApiSchema(name=CommonFieldName.raw_sql_level),
             FormFieldApiSchema(name=CommonFieldName.data_export_forbidden),
+            FormFieldApiSchema(name=TrinoFormFieldName.listing_sources),
             FormFieldApiSchema(name=CommonFieldName.ssl_enable),
             FormFieldApiSchema(name=CommonFieldName.ssl_ca),
         ]
@@ -215,6 +266,8 @@ class TrinoConnectionFormFactory(ConnectionFormFactory):
         create_api_schema = self._get_create_api_schema(connector_settings, edit_api_schema)
         check_api_schema = self._get_check_api_schema(connector_settings)
 
+        form_params = self._get_form_params()
+
         return ConnectionForm(
             title=TrinoConnectionInfoProvider.get_title(self._localizer),
             rows=self._filter_nulls(
@@ -223,17 +276,22 @@ class TrinoConnectionFormFactory(ConnectionFormFactory):
                     rc.host_row(),
                     rc.port_row(default_value=self.DEFAULT_HTTPS_PORT),
                     rc.username_row(),
-                    rc.password_row(mode=self.mode),
-                    rc.jwt_row(mode=self.mode),
+                    rc.password_row(
+                        mode=self.mode, display_conditions={TrinoFormFieldName.auth_type: TrinoAuthType.password.value}
+                    ),
+                    rc.jwt_row(
+                        mode=self.mode, display_conditions={TrinoFormFieldName.auth_type: TrinoAuthType.jwt.value}
+                    ),
                     rc.cache_ttl_row(),
                     rc.raw_sql_level_row_v2(raw_sql_levels=[RawSQLLevel.subselect, RawSQLLevel.dashsql]),
                     rc.collapse_advanced_settings_row(),
-                    *rc.ssl_rows(
-                        enabled_name=CommonFieldName.ssl_enable,
-                        enabled_help_text=self._localizer.translate(Translatable("label_trino-ssl-enabled-tooltip")),
-                        enabled_default_value=True,
+                    *rc.trino_ssl_rows(),
+                    rc.data_export_forbidden_row(
+                        conn_id=form_params.conn_id,
+                        exports_history_url_path=form_params.exports_history_url_path,
+                        mode=self.mode,
                     ),
-                    rc.data_export_forbidden_row(),
+                    rc.listing_sources_row(),
                 ]
             ),
             api_schema=FormApiSchema(

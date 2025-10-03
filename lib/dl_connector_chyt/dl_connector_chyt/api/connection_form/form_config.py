@@ -35,7 +35,9 @@ class CHYTFieldName(FormFieldName):
 
 class CHYTConnectionFormFactory(ConnectionFormFactory):
     def get_form_config(
-        self, connector_settings: Optional[ConnectorSettingsBase], tenant: Optional[TenantDef]
+        self,
+        connector_settings: Optional[ConnectorSettingsBase],
+        tenant: Optional[TenantDef],
     ) -> ConnectionForm:
         assert connector_settings is not None and isinstance(connector_settings, CHYTConnectorSettings)
 
@@ -102,6 +104,8 @@ class CHYTConnectionFormFactory(ConnectionFormFactory):
         if connector_settings.ENABLE_DATASOURCE_TEMPLATE:
             raw_sql_levels.append(RawSQLLevel.template)
 
+        form_params = self._get_form_params()
+
         return ConnectionForm(
             title=CHYTConnectionInfoProvider.get_title(self._localizer),
             rows=[
@@ -113,7 +117,11 @@ class CHYTConnectionFormFactory(ConnectionFormFactory):
                 rc.raw_sql_level_row_v2(raw_sql_levels=raw_sql_levels),
                 secure_row,
                 rc.collapse_advanced_settings_row(),
-                rc.data_export_forbidden_row(),
+                rc.data_export_forbidden_row(
+                    conn_id=form_params.conn_id,
+                    exports_history_url_path=form_params.exports_history_url_path,
+                    mode=self.mode,
+                ),
             ],
             api_schema=FormApiSchema(
                 create=create_api_schema if self.mode == ConnectionFormMode.create else None,

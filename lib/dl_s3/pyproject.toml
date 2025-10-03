@@ -1,27 +1,42 @@
-
 [tool.poetry]
-name = "dl-s3"
-version = "0.0.1"
-description = ""
 authors = ["DataLens Team <datalens-opensource@yandex-team.ru>"]
-packages = [{include = "dl_s3"}]
+description = ""
 license = "Apache 2.0"
+name = "dl-s3"
+packages = [{include = "dl_s3"}]
 readme = "README.md"
-
+version = "0.0.1"
 
 [tool.poetry.dependencies]
-aiobotocore = ">=2.19.0"
-aiohttp = ">=3.9.1"
-attrs = ">=22.2.0"
-boto3 = ">=1.36.3"
-botocore = ">=1.36.3"
-python = ">=3.10, <3.13"
-typing_extensions = ">=4.1.0"
-ujson = ">=1.35"
+aiobotocore = "*"
+aiohttp = "*"
+attrs = "*"
+boto3 = "*"
+botocore = "*"
 dl-constants = {path = "../dl_constants"}
+python = ">=3.10, <3.13"
+typing_extensions = "*"
+ujson = "*"
 
 [tool.poetry.group.tests.dependencies]
-pytest = ">=7.2.2"
+pytest = "*"
+
+[tool.mypy]
+check_untyped_defs = true
+disallow_untyped_defs = true
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_configs = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = ["mypy_boto3_s3.*", "types_aiobotocore_s3.*"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+minversion = "6.0"
+testpaths = []
 
 [build-system]
 build-backend = "poetry.core.masonry.api"
@@ -29,22 +44,5 @@ requires = [
   "poetry-core",
 ]
 
-[tool.pytest.ini_options]
-minversion = "6.0"
-addopts = "-ra"
-testpaths = []
-
 [datalens_ci]
 skip_test = true
-
-[tool.mypy]
-warn_unused_ignores = true
-warn_redundant_casts = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-check_untyped_defs = true
-strict_optional = true
-
-[[tool.mypy.overrides]]
-module = ["types_aiobotocore_s3.*", "mypy_boto3_s3.*"]
-ignore_missing_imports = true

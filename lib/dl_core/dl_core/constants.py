@@ -13,6 +13,9 @@ class DatasetConstraints(ConstContainer):
     FIELD_COUNT_LIMIT_SOFT = 1200
     FIELD_COUNT_LIMIT_HARD = 1250
 
+    FIELD_UI_SETTINGS_MAX_SIZE = 32 * 1024
+    OVERALL_UI_SETTINGS_MAX_SIZE = 1.4 * 1024 * 1024
+
 
 class DataAPILimits(ConstContainer):
     """
@@ -24,5 +27,6 @@ class DataAPILimits(ConstContainer):
     PREVIEW_ROW_LIMIT = 1000
 
     # endpoint-specific
+    PREVIEW_API_DEFAULT_ROW_COUNT_HARD_LIMIT = 100_000
     DATA_API_DEFAULT_ROW_COUNT_HARD_LIMIT = 1_000_000
     PIVOT_API_DEFAULT_ROW_COUNT_HARD_LIMIT = 100_000

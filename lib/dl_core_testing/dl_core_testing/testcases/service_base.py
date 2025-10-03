@@ -49,6 +49,7 @@ from dl_core_testing.database import (
 )
 from dl_core_testing.fixtures.dispenser import DbCsvTableDispenser
 from dl_db_testing.database.engine_wrapper import DbEngineConfig
+import dl_retrier
 from dl_testing.utils import get_root_certificates
 from dl_utils.aio import ContextVarExecutor
 
@@ -233,6 +234,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
             us_base_url=conn_us_config.us_base_url,
             us_auth_context=conn_us_config.us_auth_context,
             crypto_keys_config=conn_us_config.us_crypto_keys_config,
+            retry_policy_factory=dl_retrier.DefaultRetryPolicyFactory(),
         )
         return us_manager
 
@@ -251,6 +253,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
             us_auth_context=conn_us_config.us_auth_context,
             crypto_keys_config=conn_us_config.us_crypto_keys_config,
             ca_data=root_certificates,
+            retry_policy_factory=dl_retrier.DefaultRetryPolicyFactory(),
         )
         return us_manager
 

@@ -9,16 +9,16 @@ from requests.adapters import HTTPAdapter
 import sqlalchemy as sa
 from sqlalchemy import exc as sa_exc
 from sqlalchemy import types as sqltypes
-from sqlalchemy.sql import compiler
 from trino.auth import (
     BasicAuthentication,
     JWTAuthentication,
 )
 from trino.sqlalchemy import URL as trino_url
+from trino.sqlalchemy.compiler import TrinoSQLCompiler
 from trino.sqlalchemy.datatype import parse_sqltype
 from trino.sqlalchemy.dialect import TrinoDialect
 
-from dl_configs.utils import get_root_certificates_path
+import dl_configs
 from dl_core.connection_executors.adapters.adapters_base_sa_classic import BaseClassicAdapter
 from dl_core.connection_executors.models.db_adapter_data import (
     DBAdapterQuery,
@@ -69,18 +69,23 @@ GET_TRINO_TABLES_QUERY = (
 
 
 class CustomHTTPAdapter(HTTPAdapter):
-    def __init__(self, ssl_ca: str, *args: Any, **kwargs: Any) -> None:
+    """
+    This custom adapter is here to create an SSL context with a custom CA certificate provided as a string instead of a file path.
+    """
+
+    def __init__(self, ssl_ca: str | None = None, *args: Any, **kwargs: Any) -> None:
         self.ssl_ca = ssl_ca
         super().__init__(*args, **kwargs)
 
     def init_poolmanager(self, connections: int, maxsize: int, block: bool = False, **pool_kwargs: Any) -> None:
-        # Use a secure context with the provided SSL CA
-        context = ssl.create_default_context(cadata=self.ssl_ca)
-        context.check_hostname = False  # TODO: @khamitovdr Resolve "ValueError: check_hostname requires server_hostname" and enable check_hostname!!!
+        if self.ssl_ca is None:
+            context = dl_configs.get_default_ssl_context()
+        else:
+            context = ssl.create_default_context(cadata=self.ssl_ca)
         super().init_poolmanager(connections, maxsize, block, ssl_context=context, **pool_kwargs)
 
 
-class CustomTrinoCompiler(compiler.SQLCompiler):
+class CustomTrinoCompiler(TrinoSQLCompiler):
     def render_literal_value(self, value: Any, type_: sqltypes.TypeEngine) -> str:
         if isinstance(type_, sqltypes.Date) and isinstance(value, datetime.date):
             return f"DATE '{value.strftime('%Y-%m-%d')}'"
@@ -123,10 +128,6 @@ class TrinoDefaultAdapter(BaseClassicAdapter[TrinoConnTargetDTO]):
     EXTRA_EXC_CLS = (sa_exc.DBAPIError,)
 
     def get_conn_line(self, db_name: str | None = None, params: dict[str, Any] | None = None) -> str:
-        # We do not expect to transfer any additional parameters when creating the engine.
-        # This check is needed to track if it still passed.
-        assert params is None
-
         params = params or {}
         return trino_url(
             host=self._target_dto.host,
@@ -137,11 +138,24 @@ class TrinoDefaultAdapter(BaseClassicAdapter[TrinoConnTargetDTO]):
             **params,
         )
 
+    def _get_http_session(self) -> requests.Session:
+        session = requests.Session()
+        adapter = CustomHTTPAdapter(ssl_ca=self._target_dto.ssl_ca)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        return session
+
     def get_connect_args(self) -> dict[str, Any]:
-        args: dict[str, Any] = {
-            **super().get_connect_args(),
-            "legacy_primitive_types": True,
-        }
+        timeout = (
+            self._target_dto.connect_timeout,
+            self._target_dto.total_timeout,
+        )
+        args: dict[str, Any] = super().get_connect_args() | dict(
+            http_scheme="https" if self._target_dto.ssl_enable else "http",
+            http_session=self._get_http_session(),
+            legacy_primitive_types=True,
+            request_timeout=timeout,
+        )
         if self._target_dto.auth_type is TrinoAuthType.none:
             pass
         elif self._target_dto.auth_type is TrinoAuthType.password:
@@ -150,18 +164,6 @@ class TrinoDefaultAdapter(BaseClassicAdapter[TrinoConnTargetDTO]):
             args["auth"] = JWTAuthentication(self._target_dto.jwt)
         else:
             raise NotImplementedError(f"{self._target_dto.auth_type.name} authentication is not supported yet")
-
-        if not self._target_dto.ssl_enable:
-            args["http_scheme"] = "http"
-            return args
-
-        args["http_scheme"] = "https"
-        if self._target_dto.ssl_ca:
-            session = requests.Session()
-            session.mount("https://", CustomHTTPAdapter(self._target_dto.ssl_ca))
-            args["http_session"] = session
-        else:
-            args["verify"] = get_root_certificates_path()
 
         return args
 

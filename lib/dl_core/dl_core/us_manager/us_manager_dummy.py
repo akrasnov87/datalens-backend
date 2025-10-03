@@ -8,6 +8,7 @@ from dl_core.services_registry.top_level import (
 )
 from dl_core.united_storage_client import USAuthContextMaster
 from dl_core.us_manager.us_manager import USManagerBase
+import dl_retrier
 
 
 class DummyUSManager(USManagerBase):
@@ -26,4 +27,5 @@ class DummyUSManager(USManagerBase):
             ),
             us_auth_context=USAuthContextMaster("FakeKey"),
             services_registry=services_registry,
+            retry_policy_factory=dl_retrier.DefaultRetryPolicyFactory(),
         )

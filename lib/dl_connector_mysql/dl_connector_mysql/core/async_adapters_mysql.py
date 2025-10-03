@@ -8,7 +8,6 @@ from typing import (
     Any,
     AsyncIterator,
     Optional,
-    Type,
     TypeVar,
 )
 
@@ -81,6 +80,7 @@ class AsyncMySQLAdapter(
     EXTRA_EXC_CLS = (
         OperationalError,
         ProgrammingError,
+        RuntimeError,
     )
 
     def _make_async_db_version_action(self) -> AsyncDBVersionAdapterAction:
@@ -99,7 +99,7 @@ class AsyncMySQLAdapter(
 
     @classmethod
     def create(
-        cls: Type[_DBA_ASYNC_MYSQL_TV],
+        cls: type[_DBA_ASYNC_MYSQL_TV],
         target_dto: MySQLConnTargetDTO,
         req_ctx_info: DBAdapterScopedRCI,
         default_chunk_size: int,
@@ -125,6 +125,7 @@ class AsyncMySQLAdapter(
             db=db_name,
             dialect=self._dialect,
             ssl=self._get_ssl_ctx(force_ssl),
+            local_infile=0,
         )
 
     async def _get_engine(self, db_name: str) -> aiomysql.sa.Engine:

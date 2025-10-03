@@ -26,6 +26,7 @@ from dl_api_lib.dataset.utils import check_permissions_for_origin_sources
 from dl_api_lib.enums import (
     FILTERS_BY_TYPE,
     DatasetAction,
+    DatasetSettingName,
     USPermissionKind,
 )
 from dl_api_lib.query.formalization.block_formalizer import BlockFormalizer
@@ -46,6 +47,7 @@ from dl_api_lib.request_model.data import (
     ReplaceConnectionAction,
     SourceActionBase,
     UpdateField,
+    UpdateSettingAction,
 )
 from dl_app_tools.profiling_base import generic_profiler
 from dl_constants.enums import (
@@ -58,7 +60,9 @@ from dl_constants.enums import (
     DataSourceRole,
     DataSourceType,
     ManagedBy,
+    ParameterValueConstraintType,
     TopLevelComponentId,
+    UserDataType,
 )
 from dl_core.base_models import (
     DefaultConnectionRef,
@@ -230,7 +234,10 @@ class DatasetValidator(DatasetBaseWrapper):
 
         if isinstance(item_data, FieldAction):
             self.apply_field_action(
-                action=action, field_data=item_data.field, order_index=item_data.order_index or 0, by=by
+                action=action,
+                field_data=item_data.field,
+                order_index=item_data.order_index or 0,
+                by=by,
             )
         elif isinstance(item_data, SourceActionBase):
             self.apply_source_action(action=action, source_data=item_data.source, by=by)
@@ -247,6 +254,8 @@ class DatasetValidator(DatasetBaseWrapper):
             self.apply_connection_action(action=action, connection_data=item_data.connection, by=by)
         elif isinstance(item_data, ObligatoryFilterActionBase):
             self.apply_obligatory_filter_action(action=action, filter_data=item_data.obligatory_filter, by=by)
+        elif isinstance(item_data, UpdateSettingAction):
+            self.apply_setting_action(action=action, setting=item_data.setting, by=by)
 
         self.update_validity_of_affected_components()
 
@@ -286,6 +295,16 @@ class DatasetValidator(DatasetBaseWrapper):
                 message="Too many fields in the result schema",
                 code=exc.TooManyFieldsError.err_code,
             )
+
+    def validate_overall_ui_settings_length(self, field_ui_settings_len: int) -> None:
+        if self._is_data_api:
+            return
+
+        overall_ui_settings_size = (
+            sum(len(field.ui_settings.encode("utf-8")) for field in self._ds.result_schema) + field_ui_settings_len
+        )
+        if overall_ui_settings_size > DatasetConstraints.OVERALL_UI_SETTINGS_MAX_SIZE:
+            raise exc.DLValidationFatal("Dataset exceeds the maximum size of UI settings")
 
     def get_dependent_fields(self, field: Optional[BIField]) -> list[BIField]:
         """Return list of fields directly dependent on the given one"""
@@ -523,6 +542,23 @@ class DatasetValidator(DatasetBaseWrapper):
         # Clear old errors
         self._ds.error_registry.remove_errors(id=field_id)
 
+        if (
+            new_field is not None
+            and new_field.calc_mode == CalcMode.parameter
+            and new_field.cast == UserDataType.string
+            and new_field.template_enabled
+            and (
+                new_field.value_constraint is None
+                or new_field.value_constraint.type == ParameterValueConstraintType.null
+            )
+        ):
+            self._ds.error_registry.add_error(
+                id=new_field.guid,
+                type=ComponentType.field,
+                message="Value constraint is required for string parameters with template enabled",
+                code=common_exc.ParameterValueConstraintRequiredError.err_code,
+            )
+
         # Remove expression and dependency caches for field
         self.formula_compiler.uncache_field(latest_field)
 
@@ -538,14 +574,15 @@ class DatasetValidator(DatasetBaseWrapper):
             new_field = self._get_autoupdated_field(new_field, explicitly_updated=explicitly_updated)
             self.formula_compiler.update_field(new_field)
             self._ds.result_schema.add(idx=order_index, field=new_field)
-        else:
-            assert new_field is not None
+        elif new_field is not None and old_field is not None:
             # Field is being updated
             new_field = self._get_autoupdated_field(new_field, explicitly_updated=explicitly_updated)
             if new_field != old_field:
                 self.formula_compiler.update_field(new_field)
                 field_idx = self._ds.result_schema.index(field_id=field_id)
                 self._ds.result_schema.update_field(idx=field_idx, field=new_field)
+        else:
+            raise ValueError("Either new_field or old_field must be provided")
 
         self._reload_formalized_specs()
         if recursive and new_field != old_field:
@@ -600,7 +637,8 @@ class DatasetValidator(DatasetBaseWrapper):
             field_dep_mgr.clear_field_direct_references(dep_field_id=field_id)  # type: ignore  # TODO: fix
         else:
             field_dep_mgr.set_field_direct_references(
-                dep_field_id=field_id, ref_field_ids=self.formula_compiler.get_referenced_fields(new_field)
+                dep_field_id=field_id,
+                ref_field_ids=self.formula_compiler.get_referenced_fields(new_field),
             )
 
     def _get_unpatched_field_ids(self) -> list[str]:
@@ -636,6 +674,20 @@ class DatasetValidator(DatasetBaseWrapper):
             LOGGER.warning("No field with source %s found in raw_schema", field.source)
             return None
 
+    def _refresh_templated_sources(self) -> None:
+        if self._is_data_api:
+            return
+
+        for source_id in self._ds_accessor.get_data_source_id_list():
+            dsrc_coll = self._get_data_source_coll_strict(source_id=source_id)
+            dsrc = dsrc_coll.get_strict(role=DataSourceRole.origin)
+
+            if not dsrc.is_templated():
+                continue
+
+            LOGGER.info("Refreshing templated source %s", source_id)
+            self.apply_source_action(action=DatasetAction.refresh_source, source_data=dict(id=source_id))
+
     @generic_profiler("validator-apply-field-action")
     def apply_field_action(
         self,
@@ -656,8 +708,9 @@ class DatasetValidator(DatasetBaseWrapper):
 
         update_field_id = new_field_id is not None and action == DatasetAction.update_field
         if update_field_id:
-            if not self._id_validator.is_valid(new_field_id):
-                raise exc.DLValidationFatal("Field ID must be [a-z0-9_\\-]{1,36}")
+            if field_data.calc_mode != CalcMode.parameter and not self._id_validator.is_valid(new_field_id):
+                err_msg = f"Field ID must be [a-z0-9_\\-]{{1,{self._id_validator.id_length}}}: {new_field_id}"
+                raise exc.DLValidationFatal(err_msg)
             new_component_ref = DatasetComponentRef(component_type=ComponentType.field, component_id=new_field_id)
             self.perform_component_id_validation(component_ref=new_component_ref)
             # non strict option is used only for old charts. not needed for id update
@@ -677,10 +730,16 @@ class DatasetValidator(DatasetBaseWrapper):
                 field_data_dict["formula"] = ""
 
             if self._is_data_api:
-                # forbidden fields to be mutated via Data API
                 for field_name in ("value_constraint", "template_enabled"):
                     if field_name in field_data_dict:
+                        LOGGER.info("Ignoring forbidden field mutation: %s", field_name)
                         del field_data_dict[field_name]
+
+            ui_settings_len = len(field_data_dict.get("ui_settings", "").encode("utf-8"))
+            if ui_settings_len > DatasetConstraints.FIELD_UI_SETTINGS_MAX_SIZE:
+                err_msg = f"Field with ID {field_id} exceeds the maximum size of UI settings"
+                raise exc.DLValidationFatal(err_msg)
+            self.validate_overall_ui_settings_length(field_ui_settings_len=ui_settings_len)
 
         if action in (DatasetAction.update_field, DatasetAction.delete_field):
             try:
@@ -824,6 +883,16 @@ class DatasetValidator(DatasetBaseWrapper):
         # errors can be cleared or fixed by now, so revalidate the result schema length
         if action in (DatasetAction.add_field, DatasetAction.delete_field):
             self.validate_result_schema_length()
+
+        if (
+            self._ds.template_enabled
+            and action in (DatasetAction.update_field, DatasetAction.add_field, DatasetAction.delete_field)
+            and (
+                (old_field is not None and old_field.calc_mode == CalcMode.parameter and old_field.template_enabled)
+                or (new_field is not None and new_field.calc_mode == CalcMode.parameter and new_field.template_enabled)
+            )
+        ):
+            self._refresh_templated_sources()
 
     def _update_direct_fields_for_updated_raw_schema(
         self,
@@ -1159,7 +1228,7 @@ class DatasetValidator(DatasetBaseWrapper):
             connection_id=source_data.get("connection_id"),
             created_from=source_data["source_type"],
             parameters=source_data.get("parameters"),
-            # Currently ignoring: `title`
+            title=source_data.get("title"),
         )
         if existing_id:
             # such source already exists, don't add its copy to the dataset
@@ -1600,7 +1669,10 @@ class DatasetValidator(DatasetBaseWrapper):
 
     @generic_profiler("validator-apply-obligatory-filter-action")
     def apply_obligatory_filter_action(
-        self, action: DatasetAction, filter_data: ObligatoryFilterBase, by: Optional[ManagedBy] = ManagedBy.user
+        self,
+        action: DatasetAction,
+        filter_data: ObligatoryFilterBase,
+        by: Optional[ManagedBy] = ManagedBy.user,
     ) -> None:
         assert isinstance(filter_data, ObligatoryFilterBase)
         component_ref = DatasetComponentRef(component_type=ComponentType.obligatory_filter, component_id=filter_data.id)
@@ -1647,6 +1719,26 @@ class DatasetValidator(DatasetBaseWrapper):
         if action == DatasetAction.delete_obligatory_filter:
             assert isinstance(filter_data, DeleteObligatoryFilter)
             self._ds_editor.remove_obligatory_filter(obfilter_id=filter_data.id)
+
+    @generic_profiler("validator-apply-setting-action")
+    def apply_setting_action(
+        self,
+        action: DatasetAction,
+        setting: UpdateSettingAction.Setting,
+        by: ManagedBy | None = ManagedBy.user,
+    ) -> None:
+        if action == DatasetAction.update_setting:
+            if setting.name == DatasetSettingName.load_preview_by_default:
+                self._ds_editor.set_load_preview_by_default(setting.value)
+            elif setting.name == DatasetSettingName.template_enabled:
+                self._ds_editor.set_template_enabled(setting.value)
+                self._refresh_templated_sources()
+            elif setting.name == DatasetSettingName.data_export_forbidden:
+                self._ds_editor.set_data_export_forbidden(setting.value)
+            else:
+                raise NotImplementedError(f"Not implemented setting name: {setting.name}")
+        else:
+            raise NotImplementedError(f"Not implemented setting action: {action}")
 
     @generic_profiler("validator-get-single-formula-errors")
     def get_single_formula_errors(self, formula: str, feature_errors: bool = False) -> list[ErrorInfo]:

@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import (
-    Any,
-    Dict,
-)
+from typing import Any
 
 from marshmallow import (
     post_dump,
@@ -377,13 +374,14 @@ class ResultSchemaStorageSchema(DefaultStorageSchema):
         has_auto_aggregation = ma_fields.Boolean(allow_none=True)
         lock_aggregation = ma_fields.Boolean(allow_none=True)
         managed_by = ma_fields.Enum(ManagedBy, allow_none=True, dump_default=ManagedBy.user)
+        ui_settings = ma_fields.String(dump_default="", load_default="")
 
         # this will be flattened on dump and un-flattened before load
         # TODO: dump/load as is and migrate data in storage respectively
         calc_spec = ma_fields.Nested(CalculationSpecSchema)
 
         @post_dump(pass_many=False)
-        def add_calc_spec(self, data: Dict[str, Any], **_: Any) -> Dict[str, Any]:
+        def add_calc_spec(self, data: dict[str, Any], **_: Any) -> dict[str, Any]:
             data = deepcopy(data)
             calc_spec_data = data.pop("calc_spec")
             calc_spec_data["calc_mode"] = calc_spec_data.pop("mode")
@@ -396,7 +394,7 @@ class ResultSchemaStorageSchema(DefaultStorageSchema):
             return data
 
         @pre_load(pass_many=False)
-        def extract_calc_spec(self, data: Dict[str, Any], **_: Any) -> Dict[str, Any]:
+        def extract_calc_spec(self, data: dict[str, Any], **_: Any) -> dict[str, Any]:
             data = deepcopy(data)
             mode = data["calc_mode"]
             data["calc_spec"] = dict(filter_calc_spec_kwargs(mode, data), mode=mode)
@@ -415,7 +413,7 @@ class ResultSchemaStorageSchema(DefaultStorageSchema):
         return data.get("fields")
 
     @post_load
-    def make_missing_formulas(self, data: Dict[str, Any], **_: Any) -> Dict[str, Any]:
+    def make_missing_formulas(self, data: dict[str, Any], **_: Any) -> dict[str, Any]:
         field: BIField
         titles_to_guids = {field.title: field.guid for field in data["fields"]}
         guids_to_titles = {field.guid: field.title for field in data["fields"]}

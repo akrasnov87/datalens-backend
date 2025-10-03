@@ -1,24 +1,19 @@
-from __future__ import annotations
-
 import abc
 import collections
 import logging
-from typing import (
-    TYPE_CHECKING,
-    Callable,
-    Optional,
-)
+from typing import Callable
 import urllib.parse
 
 import attr
 import sqlalchemy as sa
-from sqlalchemy.sql.elements import ClauseElement
+from sqlalchemy.sql.elements import TextClause
 
 from dl_constants.enums import (
     DataSourceType,
     UserDataType,
 )
 from dl_core import exc
+from dl_core.connection_executors.sync_base import SyncConnExecutorBase
 from dl_core.connection_models.common_models import (
     SATextTableDefinition,
     TableDefinition,
@@ -33,6 +28,7 @@ from dl_core.db import (
     SchemaColumn,
     SchemaInfo,
 )
+from dl_core.query.bi_query import SqlSourceType
 from dl_sqlalchemy_chyt import (
     CHYTTablesConcat,
     CHYTTablesRange,
@@ -56,10 +52,6 @@ from dl_connector_clickhouse.core.clickhouse_base.data_source import (
     ClickHouseBaseMixin,
     CommonClickHouseSubselectDataSource,
 )
-
-
-if TYPE_CHECKING:
-    from dl_core.connection_executors.sync_base import SyncConnExecutorBase
 
 
 LOGGER = logging.getLogger(__name__)
@@ -100,19 +92,23 @@ class BaseCHYTTableDataSource(CHYTDataSourceBaseMixin, TableSQLDataSourceMixin, 
         return self.spec.table_name.split("/")[-1]
 
     @require_table_name
-    def get_sql_source(self, alias: Optional[str] = None) -> ClauseElement:
+    def get_sql_source(self, alias: str | None = None) -> SqlSourceType:
         if alias:
             return sa.alias(self.get_sql_source(), name=alias)
-        path = self.spec.table_name
-        assert path is not None
-        path = self._render_dataset_parameter_values(path)
-        path = self.normalize_path(path)
-        return sa.table(path)
+
+        table_name = self.table_name
+        if not table_name:
+            raise exc.TableNameNotConfiguredError
+
+        table_name = self.normalize_path(table_name)
+        return sa.table(table_name)
 
     @require_table_name
     def get_table_definition(self) -> TableDefinition:
         table_name = self.table_name
-        assert table_name is not None
+        if not table_name:
+            raise exc.TableNameNotConfiguredError
+
         return TableIdent(db_name=None, schema_name=None, table_name=table_name)
 
 
@@ -123,11 +119,11 @@ class BaseCHYTSpecialDataSource(CHYTDataSourceBaseMixin, BaseSQLDataSource, abc.
     def default_title(self) -> str:
         raise NotImplementedError
 
-    def get_sql_source(self, alias: Optional[str] = None) -> ClauseElement:
+    def get_sql_source(self, alias: str | None = None) -> TextClause:
         raise NotImplementedError
 
     def get_table_definition(self) -> TableDefinition:
-        return SATextTableDefinition(self.get_sql_source())  # type: ignore  # 2024-01-24 # TODO: Argument 1 to "SATextTableDefinition" has incompatible type "ClauseElement"; expected "TextClause"  [arg-type]
+        return SATextTableDefinition(self.get_sql_source())
 
 
 class BaseCHYTTableFuncDataSource(BaseCHYTSpecialDataSource, abc.ABC):
@@ -157,7 +153,7 @@ class BaseCHYTTableFuncDataSource(BaseCHYTSpecialDataSource, abc.ABC):
 
 @attr.s
 class BaseCHYTTableListDataSource(BaseCHYTTableFuncDataSource, abc.ABC):
-    table_names: str = attr.ib(kw_only=True, default=None)  # stored as single `\n` separated string
+    _table_names: str = attr.ib(kw_only=True, default=None)  # stored as single `\n` separated string
 
     @property
     def spec(self) -> CHYTTableListDataSourceSpec:
@@ -183,28 +179,34 @@ class BaseCHYTTableListDataSource(BaseCHYTTableFuncDataSource, abc.ABC):
             table_names=self.spec.table_names,
         )
 
-    def get_sql_source(self, alias: Optional[str] = None) -> ClauseElement:
+    def get_sql_source(self, alias: str | None = None) -> TextClause:
         if not self.spec.table_names:
             raise exc.TableNameNotConfiguredError
+
         raw_table_names = self._render_dataset_parameter_values(self.spec.table_names)
         table_names = self.normalize_tables_paths(raw_table_names)
         return CHYTTablesConcat(*table_names, alias=alias)
 
+    def is_templated(self) -> bool:
+        return self._is_value_templated(self.spec.table_names)
+
     @property
     def default_title(self) -> str:
-        assert self.spec.table_names is not None
+        if not self.spec.table_names:
+            raise exc.TableNameNotConfiguredError
+
         return self.normalize_tables_paths(self.spec.table_names)[0].split("/")[-1]
 
 
-def _value_or_none(value: Optional[str]) -> Optional[str]:
+def _value_or_none(value: str | None) -> str | None:
     return value or None
 
 
 @attr.s
 class BaseCHYTTableRangeDataSource(BaseCHYTTableFuncDataSource, abc.ABC):
-    _directory_path: Optional[str] = attr.ib(default=None)
-    _range_from: Optional[str] = attr.ib(default=None, converter=_value_or_none)
-    _range_to: Optional[str] = attr.ib(default=None, converter=_value_or_none)
+    _directory_path: str | None = attr.ib(default=None)
+    _range_from: str | None = attr.ib(default=None, converter=_value_or_none)
+    _range_to: str | None = attr.ib(default=None, converter=_value_or_none)
 
     @property
     def spec(self) -> CHYTTableRangeDataSourceSpec:
@@ -212,15 +214,15 @@ class BaseCHYTTableRangeDataSource(BaseCHYTTableFuncDataSource, abc.ABC):
         return self._spec
 
     @property
-    def directory_path(self) -> Optional[str]:
+    def directory_path(self) -> str | None:
         return self.spec.directory_path
 
     @property
-    def range_from(self) -> Optional[str]:
+    def range_from(self) -> str | None:
         return self.spec.range_from
 
     @property
-    def range_to(self) -> Optional[str]:
+    def range_to(self) -> str | None:
         return self.spec.range_to
 
     def get_parameters(self) -> dict:
@@ -231,7 +233,7 @@ class BaseCHYTTableRangeDataSource(BaseCHYTTableFuncDataSource, abc.ABC):
             range_to=self.range_to or "",
         )
 
-    def get_sql_source(self, alias: Optional[str] = None) -> ClauseElement:
+    def get_sql_source(self, alias: str | None = None) -> TextClause:
         if not self.directory_path:
             raise exc.TableNameNotConfiguredError
         directory = self.directory_path
@@ -253,6 +255,9 @@ class BaseCHYTTableRangeDataSource(BaseCHYTTableFuncDataSource, abc.ABC):
             alias=alias,
         )
 
+    def is_templated(self) -> bool:
+        return any(self._is_value_templated(value) for value in (self.directory_path, self.range_from, self.range_to))
+
     @property
     def default_title(self) -> str:
         assert self.directory_path is not None
@@ -271,7 +276,7 @@ class BaseCHYTTableSubselectDataSource(BaseCHYTSpecialDataSource, CommonClickHou
             subsql=self.subsql,
         )
 
-    def get_sql_source(self, alias: Optional[str] = None) -> ClauseElement:
+    def get_sql_source(self, alias: str | None = None) -> TextClause:
         if not self.connection.is_subselect_allowed:
             raise exc.SubselectNotAllowed()
 

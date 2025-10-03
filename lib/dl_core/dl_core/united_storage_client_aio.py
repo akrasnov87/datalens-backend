@@ -18,10 +18,8 @@ from typing import (
 
 import aiohttp
 
-from dl_api_commons.aiohttp.aiohttp_client import (
-    BIAioHTTPClient,
-    PredefinedIntervalsRetrier,
-)
+from dl_api_commons.aiohttp.aiohttp_client import BIAioHTTPClient
+from dl_api_commons.retrier.aiohttp import AiohttpPolicyRetrier
 from dl_api_commons.tracing import get_current_tracing_headers
 from dl_app_tools.profiling_base import GenericProfiler
 from dl_core.base_models import EntryLocation
@@ -34,6 +32,7 @@ from dl_core.united_storage_client import (
     USClientHTTPExceptionWrapper,
     UStorageClientBase,
 )
+import dl_retrier
 
 
 LOGGER = logging.getLogger(__name__)
@@ -117,57 +116,55 @@ class UStorageClientAIO(UStorageClientBase):
         prefix: Optional[str],
         auth_ctx: USAuthContextBase,
         ca_data: bytes,
+        retry_policy_factory: dl_retrier.BaseRetryPolicyFactory,
         context_request_id: Optional[str] = None,
         context_forwarded_for: Optional[str] = None,
         context_workbook_id: Optional[str] = None,
-        context_rpc_authorization_id: Optional[str] = None,
-        timeout: int = 30,
+        context_rpc_authorization_id: Optional[str] = None
     ):
         super().__init__(
             host=host,
             auth_ctx=auth_ctx,
             prefix=prefix,
-            timeout=timeout,
+            retry_policy_factory=retry_policy_factory,
             context_request_id=context_request_id,
             context_forwarded_for=context_forwarded_for,
             context_workbook_id=context_workbook_id,
             context_rpc_authorization_id=context_rpc_authorization_id
         )
 
-        self._retry_intervals = (0.5, 1.0, 1.1, 2.0, 2.2)
-        self._retry_codes = {408, 429, 500, 502, 503, 504}
-
         self._bi_http_client = BIAioHTTPClient(
             base_url="/".join([self.host, self.prefix]),
-            retrier=PredefinedIntervalsRetrier(
-                retry_intervals=self._retry_intervals,
-                retry_codes=self._retry_codes,
-                retry_methods={"GET", "POST", "PUT", "DELETE"},  # TODO: really retry all of them?..
-            ),
             headers=self._default_headers,
             cookies=self._cookies,
             raise_for_status=False,
             ca_data=ca_data,
         )
 
-    async def _request(self, request_data: UStorageClientBase.RequestData) -> dict:
+    async def _request(
+        self,
+        request_data: UStorageClientBase.RequestData,
+        retry_policy_name: Optional[str] = None,
+    ) -> dict:
         self._raise_for_disabled_interactions()
         self._log_request_start(request_data)
         tracing_headers = get_current_tracing_headers()
         start = time.monotonic()
 
         with GenericProfiler("us-client-request"):
+            retry_policy = self._retry_policy_factory.get_policy(retry_policy_name)
             async with self._bi_http_client.request(
                 method=request_data.method,
                 path=request_data.relative_url,
                 params=request_data.params,
                 json_data=request_data.json,
-                read_timeout_sec=self.timeout,  # TODO: total timeout
-                conn_timeout_sec=1,
                 headers={
                     **self._extra_headers,
                     **tracing_headers,
                 },
+                retrier=AiohttpPolicyRetrier(
+                    retry_policy=retry_policy,
+                ),
             ) as response:
                 content = await response.read()
 
@@ -187,11 +184,17 @@ class UStorageClientAIO(UStorageClientBase):
         params: Optional[dict[str, str]] = None,
         include_permissions: bool = True,
         include_links: bool = True,
+        include_favorite: bool = False,
     ) -> dict:
         return await self._request(
             self._req_data_get_entry(
-                entry_id=entry_id, params=params, include_permissions=include_permissions, include_links=include_links
-            )
+                entry_id=entry_id,
+                params=params,
+                include_permissions=include_permissions,
+                include_links=include_links,
+                include_favorite=include_favorite,
+            ),
+            retry_policy_name="get_entry",
         )
 
     async def create_entry(
@@ -199,6 +202,7 @@ class UStorageClientAIO(UStorageClientBase):
         key: EntryLocation,
         scope: str,
         meta: Optional[dict[str, str]] = None,
+        annotation: Optional[dict[str, Any]] = None,
         data: Optional[dict[str, Any]] = None,
         unversioned_data: Optional[dict[str, Any]] = None,
         type_: Optional[str] = None,
@@ -210,6 +214,7 @@ class UStorageClientAIO(UStorageClientBase):
             key=key,
             scope=scope,
             meta=meta,
+            annotation=annotation,
             data=data,
             unversioned_data=unversioned_data,
             type_=type_,
@@ -217,7 +222,10 @@ class UStorageClientAIO(UStorageClientBase):
             links=links,
             **kwargs,
         )
-        return await self._request(rq_data)
+        return await self._request(
+            rq_data,
+            retry_policy_name="create_entry",
+        )
 
     async def update_entry(
         self,
@@ -225,6 +233,7 @@ class UStorageClientAIO(UStorageClientBase):
         data: Optional[dict[str, Any]] = None,
         unversioned_data: Optional[dict[str, Any]] = None,
         meta: Optional[dict[str, str]] = None,
+        annotation: Optional[dict[str, Any]] = None,
         lock: Optional[str] = None,
         hidden: Optional[bool] = None,
         links: Optional[dict[str, Any]] = None,
@@ -236,15 +245,20 @@ class UStorageClientAIO(UStorageClientBase):
                 data=data,
                 unversioned_data=unversioned_data,
                 meta=meta,
+                annotation=annotation,
                 lock=lock,
                 hidden=hidden,
                 links=links,
                 update_revision=update_revision,
-            )
+            ),
+            retry_policy_name="update_entry",
         )
 
     async def delete_entry(self, entry_id: str, lock: Optional[str] = None) -> None:
-        await self._request(self._req_data_delete_entry(entry_id, lock=lock))
+        await self._request(
+            self._req_data_delete_entry(entry_id, lock=lock),
+            retry_policy_name="delete_entry",
+        )
 
     async def entries_iterator(
         self,
@@ -292,7 +306,8 @@ class UStorageClientAIO(UStorageClientBase):
                     page=page,
                     created_at_from=created_at_from_ts,
                     limit=limit,
-                )
+                ),
+                retry_policy_name="entries_iterator",
             )
 
             # 2. Deal with pagination
@@ -345,7 +360,10 @@ class UStorageClientAIO(UStorageClientBase):
         start_ts = time.time()
         while True:
             try:
-                resp = await self._request(req_data)
+                resp = await self._request(
+                    req_data,
+                    retry_policy_name="acquire_lock",
+                )
                 lock = resp["lockToken"]
                 LOGGER.info('Acquired lock "%s" for object "%s"', lock, entry_id)
                 return lock
@@ -357,7 +375,10 @@ class UStorageClientAIO(UStorageClientBase):
 
     async def release_lock(self, entry_id: str, lock: str) -> None:
         try:
-            await self._request(self._req_data_release_lock(entry_id, lock=lock))
+            await self._request(
+                self._req_data_release_lock(entry_id, lock=lock),
+                retry_policy_name="release_lock",
+            )
         except USReqException:
             LOGGER.exception('Unable to release lock "%s"', lock)
 
@@ -365,5 +386,8 @@ class UStorageClientAIO(UStorageClientBase):
         await self._bi_http_client.close()
 
     async def get_entry_revisions(self, entry_id: str) -> list[dict[str, Any]]:
-        resp = await self._request(self._req_data_entry_revisions(entry_id))
+        resp = await self._request(
+            self._req_data_entry_revisions(entry_id),
+            retry_policy_name="get_entry_revisions",
+        )
         return resp["entries"]

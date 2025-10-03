@@ -37,6 +37,7 @@ from dl_core.services_registry.env_manager_factory_base import EnvManagerFactory
 from dl_core.services_registry.inst_specific_sr import InstallationSpecificServiceRegistryFactory
 from dl_core.services_registry.rqe_caches import RQECachesSetting
 from dl_data_api import app_version
+import dl_retrier
 
 
 LOGGER = logging.getLogger(__name__)
@@ -125,19 +126,28 @@ class StandaloneDataApiAppFactory(
             us_base_url=self._settings.US_BASE_URL,
             crypto_keys_config=self._settings.CRYPTO_KEYS_CONFIG,
             ca_data=ca_data,
+            retry_policy_factory=dl_retrier.RetryPolicyFactory(self._settings.US_CLIENT.RETRY_POLICY),
         )
 
         if self._settings.AUTH is not None and self._settings.AUTH == "NONE":
             usm_middleware_list = [
-                service_us_manager_middleware(us_master_token=self._settings.US_MASTER_TOKEN, **common_us_kw),
                 service_us_manager_middleware(
-                    us_master_token=self._settings.US_MASTER_TOKEN, as_user_usm=True, **common_us_kw
+                    us_master_token=self._settings.US_MASTER_TOKEN,
+                    **common_us_kw,
+                ),
+                service_us_manager_middleware(
+                    us_master_token=self._settings.US_MASTER_TOKEN,
+                    as_user_usm=True,
+                    **common_us_kw,
                 ),
             ]
         else:
             usm_middleware_list = [
                 us_manager_middleware(**common_us_kw),
-                service_us_manager_middleware(us_master_token=self._settings.US_MASTER_TOKEN, **common_us_kw),
+                service_us_manager_middleware(
+                    us_master_token=self._settings.US_MASTER_TOKEN,
+                    **common_us_kw,
+                ),
             ]
 
         result = EnvSetupResult(

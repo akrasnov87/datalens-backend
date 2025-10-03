@@ -3,13 +3,17 @@ from __future__ import annotations
 import abc
 from enum import Enum
 from typing import (
+    TYPE_CHECKING,
     Any,
     Optional,
 )
 
 import attr
 
-from dl_api_commons.base_models import TenantDef
+from dl_api_commons.base_models import (
+    FormConfigParams,
+    TenantDef,
+)
 from dl_api_connector.form_config.models.api_schema import (
     FormApiSchema,
     FormFieldApiSchema,
@@ -30,6 +34,10 @@ from dl_api_connector.form_config.models.rows.base import (
 from dl_api_connector.form_config.models.rows.prepared.base import PreparedRow
 from dl_configs.connectors_settings import ConnectorSettingsBase
 from dl_i18n.localizer_base import Localizer
+
+
+if TYPE_CHECKING:
+    from dl_api_lib.service_registry.service_registry import ApiServiceRegistry
 
 
 @attr.s(kw_only=True, frozen=True)
@@ -145,9 +153,10 @@ class ConnectionFormMode(Enum):
 
 
 class ConnectionFormFactory:
-    def __init__(self, mode: ConnectionFormMode, localizer: Localizer):
+    def __init__(self, mode: ConnectionFormMode, localizer: Localizer, form_params: FormConfigParams):
         self.mode = mode
         self._localizer = localizer
+        self._form_params = form_params
 
     def _filter_nulls(self, coll: list[Optional[Any]]) -> list[Any]:
         return [item for item in coll if item is not None]
@@ -166,9 +175,17 @@ class ConnectionFormFactory:
             else []
         )
 
+    def _get_form_params(self) -> FormConfigParams:
+        return self._form_params
+
+    def preprocess_form_params(self, service_registry: ApiServiceRegistry) -> None:
+        pass
+
     @abc.abstractmethod
     def get_form_config(
-        self, connector_settings: Optional[ConnectorSettingsBase], tenant: Optional[TenantDef]
+        self,
+        connector_settings: Optional[ConnectorSettingsBase],
+        tenant: Optional[TenantDef],
     ) -> ConnectionForm:
         """Returns a form config built according to the specified settings"""
 

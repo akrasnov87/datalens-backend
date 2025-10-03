@@ -1,10 +1,5 @@
 from __future__ import annotations
 
-from typing import (
-    List,
-    Type,
-)
-
 from dl_formula.core.datatype import DataType
 from dl_formula.core.dialect import StandardDialect as D
 import dl_formula.core.nodes as nodes
@@ -25,6 +20,7 @@ from dl_formula.definitions.functions_string import (
     FuncStartswith,
 )
 from dl_formula.definitions.literals import un_literal
+from dl_formula.definitions.scope import Scope
 from dl_formula.definitions.type_strategy import (
     Fixed,
     FromArgs,
@@ -47,7 +43,7 @@ class FuncCreateArray(ArrayFunction):
     arg_cnt = None
 
 
-def _normalize_arr_items(val: List[TranslationCtx], item_type: Type) -> list:
+def _normalize_arr_items(val: list[TranslationCtx], item_type: type) -> list:
     """Unliteralize and convert array items"""
     result = []
     for item in val:
@@ -568,6 +564,60 @@ class FuncArrayIntersect(ArrayFunction):
     return_type = FromArgs(0)
 
 
+class FuncArrayDistinct(ArrayFunction):
+    name = "arr_distinct"
+    arg_names = ["array"]
+    arg_cnt = 1
+    scopes = Function.scopes & ~Scope.SUGGESTED & ~Scope.DOCUMENTED
+
+
+class FuncArrayDistinctStr(FuncArrayDistinct):
+    argument_types = [
+        ArgTypeSequence([{DataType.ARRAY_STR, DataType.CONST_ARRAY_STR}]),
+    ]
+    return_type = Fixed(DataType.ARRAY_STR)
+
+
+class FuncArrayDistinctInt(FuncArrayDistinct):
+    argument_types = [
+        ArgTypeSequence([{DataType.ARRAY_INT, DataType.CONST_ARRAY_INT}]),
+    ]
+    return_type = Fixed(DataType.ARRAY_INT)
+
+
+class FuncArrayDistinctFloat(FuncArrayDistinct):
+    argument_types = [
+        ArgTypeSequence([{DataType.ARRAY_FLOAT, DataType.CONST_ARRAY_FLOAT}]),
+    ]
+    return_type = Fixed(DataType.ARRAY_FLOAT)
+
+
+class FuncArrayIndexOf(ArrayFunction):
+    name = "arr_index_of"
+    arg_names = ["array", "value"]
+    arg_cnt = 2
+    return_type = Fixed(DataType.INTEGER)
+    scopes = Function.scopes & ~Scope.SUGGESTED & ~Scope.DOCUMENTED
+
+
+class FuncArrayIndexOfStr(FuncArrayIndexOf):
+    argument_types = [
+        ArgTypeSequence([{DataType.ARRAY_STR, DataType.CONST_ARRAY_STR}, {DataType.STRING, DataType.CONST_STRING}]),
+    ]
+
+
+class FuncArrayIndexOfInt(FuncArrayIndexOf):
+    argument_types = [
+        ArgTypeSequence([{DataType.ARRAY_INT, DataType.CONST_ARRAY_INT}, {DataType.INTEGER, DataType.CONST_INTEGER}]),
+    ]
+
+
+class FuncArrayIndexOfFloat(FuncArrayIndexOf):
+    argument_types = [
+        ArgTypeSequence([{DataType.ARRAY_FLOAT, DataType.CONST_ARRAY_FLOAT}, {DataType.FLOAT, DataType.CONST_FLOAT}]),
+    ]
+
+
 DEFINITIONS_ARRAY = [
     # arr_avg
     FuncArrayAvg,
@@ -642,4 +692,12 @@ DEFINITIONS_ARRAY = [
     FuncUnnestArrayStr,
     # intersect
     FuncArrayIntersect,
+    # distinct
+    FuncArrayDistinctStr,
+    FuncArrayDistinctInt,
+    FuncArrayDistinctFloat,
+    # indexof
+    FuncArrayIndexOfStr,
+    FuncArrayIndexOfInt,
+    FuncArrayIndexOfFloat,
 ]

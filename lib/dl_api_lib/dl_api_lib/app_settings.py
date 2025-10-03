@@ -10,7 +10,10 @@ from typing import (
 import attr
 import pydantic
 
-from dl_api_commons.base_models import TenantDef
+from dl_api_commons.base_models import (
+    AuthData,
+    TenantDef,
+)
 from dl_api_lib.connector_availability.base import ConnectorAvailabilityConfig
 from dl_configs.crypto_keys import CryptoKeysConfig
 from dl_configs.enums import RedisMode
@@ -33,10 +36,10 @@ from dl_constants.enums import (
     USAuthMode,
 )
 from dl_core.components.ids import FieldIdGeneratorType
+from dl_core.us_manager.settings import USClientSettings
 from dl_formula.parser.factory import ParserType
 from dl_pivot_pandas.pandas.constants import PIVOT_ENGINE_TYPE_PANDAS
 import dl_settings
-import dl_settings.validators as dl_settings_validators
 
 
 @attr.s(frozen=True)
@@ -196,6 +199,7 @@ class DeprecatedAppSettings:
         env_var_converter=lambda s: (DataPivotEngineType[s.lower()] if s is not None else PIVOT_ENGINE_TYPE_PANDAS),
         missing=PIVOT_ENGINE_TYPE_PANDAS,  # TODO: Switch to another default
     )
+    EXPORTS_HISTORY_URL_PATH: Optional[str] = s_attrib("EXPORTS_HISTORY_URL_PATH", missing=None)  # type: ignore  # 2025-08-12 # TODO: Incompatible types in assignment (expression has type "Attribute[Any]", variable has type "str | None")
 
 
 @attr.s(frozen=True)
@@ -305,6 +309,7 @@ class DeprecatedDataApiAppSettings(DeprecatedAppSettings):
 class ControlApiAppTestingsSettings:
     us_auth_mode_override: Optional[USAuthMode] = attr.ib(default=None)
     fake_tenant: Optional[TenantDef] = attr.ib(default=None)
+    fake_auth_data: Optional[AuthData] = attr.ib(default=None)
 
 
 @attr.s(frozen=True)
@@ -341,7 +346,7 @@ BaseAuthSettingsOS.register("ZITADEL", ZitadelAuthSettingsOS)
 
 
 class NativeAuthSettingsOS(BaseAuthSettingsOS):
-    JWT_KEY: typing.Annotated[str, pydantic.BeforeValidator(dl_settings_validators.decode_multiline)]
+    JWT_KEY: typing.Annotated[str, dl_settings.decode_multiline_validator]
     JWT_ALGORITHM: str
 
 
@@ -353,11 +358,11 @@ class AppSettings(dl_settings.BaseRootSettingsWithFallback):
 
 
 class ControlApiAppSettings(AppSettings):
-    ...
+    US_CLIENT: USClientSettings = pydantic.Field(default_factory=USClientSettings)
 
 
 class DataApiAppSettings(AppSettings):
-    ...
+    US_CLIENT: USClientSettings = pydantic.Field(default_factory=USClientSettings)
 
 
 class AppSettingsOS(

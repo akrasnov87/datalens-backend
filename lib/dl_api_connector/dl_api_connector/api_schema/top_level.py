@@ -261,7 +261,18 @@ class BaseTopLevelSchema(Schema, Generic[_TARGET_OBJECT_TV]):
 _US_ENTRY_TV = TypeVar("_US_ENTRY_TV", bound=USEntry)
 
 
-class USEntryBaseSchema(BaseTopLevelSchema[_US_ENTRY_TV]):
+class USEntryAnnotationMixin(Schema):
+    description = ma_fields.String(
+        required=False,
+        allow_none=True,
+        load_default="",
+        dump_default="",
+        bi_extra=FieldExtra(editable=True),
+        attribute="annotation.description",
+    )
+
+
+class USEntryBaseSchema(BaseTopLevelSchema[_US_ENTRY_TV], USEntryAnnotationMixin):
     CTX_KEY_USM: ClassVar[str] = "us_manager"
 
     id = ma_fields.String(dump_only=True, attribute="uuid")
@@ -328,6 +339,7 @@ class USEntryBaseSchema(BaseTopLevelSchema[_US_ENTRY_TV]):
                 workbook_id=entry_wb_id,
             ),
             us_manager=self.us_manager,
+            annotation=data["annotation"],
         )
 
     # TODO FIX: Find a way to specify return type
@@ -371,6 +383,11 @@ class USEntryBaseSchema(BaseTopLevelSchema[_US_ENTRY_TV]):
     @final
     def update_object(self, obj: _US_ENTRY_TV, data: dict[str, Any]) -> _US_ENTRY_TV:
         obj.entry_op_mode = self.operations_mode
+
+        # Update annotation
+        if "annotation" in data:
+            assert obj.annotation is not None
+            obj.annotation.update(data.pop("annotation"))
 
         # Assumed that only data of USEntry can be modified with schema
         assert not (data.keys() - {"data"})

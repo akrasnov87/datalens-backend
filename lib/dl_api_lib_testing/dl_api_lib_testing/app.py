@@ -39,6 +39,7 @@ from dl_core.services_registry.inst_specific_sr import (
 from dl_core.services_registry.rqe_caches import RQECachesSetting
 from dl_core.utils import FutureRef
 from dl_core_testing.app_test_workarounds import TestEnvManagerFactory
+import dl_retrier
 from dl_rls.models import (
     RLS_FAILED_USER_NAME_PREFIX,
     RLSSubject,
@@ -139,6 +140,7 @@ class TestingControlApiAppFactory(ControlApiAppFactory[ControlApiAppSettings], T
             fake_user_id=TEST_USER_ID,
             fake_user_name=TEST_USER_NAME,
             fake_tenant=None if testing_app_settings is None else testing_app_settings.fake_tenant,
+            fake_auth_data=None if testing_app_settings is None else testing_app_settings.fake_auth_data,
         ).set_up(app)
 
         us_auth_mode_override = None if testing_app_settings is None else testing_app_settings.us_auth_mode_override
@@ -193,11 +195,18 @@ class TestingDataApiAppFactory(DataApiAppFactory[DataApiAppSettings], TestingSRF
             us_base_url=self._settings.US_BASE_URL,
             crypto_keys_config=self._settings.CRYPTO_KEYS_CONFIG,
             ca_data=ca_data,
+            retry_policy_factory=dl_retrier.RetryPolicyFactory(self._settings.US_CLIENT.RETRY_POLICY),
         )
+
         usm_middleware_list = [
-            service_us_manager_middleware(us_master_token=self._settings.US_MASTER_TOKEN, **common_us_kw),
             service_us_manager_middleware(
-                us_master_token=self._settings.US_MASTER_TOKEN, as_user_usm=True, **common_us_kw
+                us_master_token=self._settings.US_MASTER_TOKEN,
+                **common_us_kw,
+            ),
+            service_us_manager_middleware(
+                us_master_token=self._settings.US_MASTER_TOKEN,
+                as_user_usm=True,
+                **common_us_kw,
             ),
         ]
 
