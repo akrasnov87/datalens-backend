@@ -26,6 +26,7 @@ from dl_core.connection_executors.models.db_adapter_data import (
 )
 from dl_core.connection_models.common_models import (
     DBIdent,
+    PageIdent,
     SchemaIdent,
     TableIdent,
 )
@@ -53,19 +54,36 @@ TRINO_TABLES = sa.Table(
     sa.Column("table_name", sa.String),
     schema="information_schema",
 )
-GET_TRINO_TABLES_QUERY = (
-    sa.select(
+
+
+def get_trino_tables_query(
+    search_text: str | None = None,
+    limit: int | None = None,
+    offset: int | None = None,
+) -> sa.sql.Select:
+    """Build a dynamic query to get Trino tables with optional filtering and pagination."""
+
+    query = sa.select(
         TRINO_TABLES.c.table_schema,
         TRINO_TABLES.c.table_name,
-    )
-    .where(
+    ).where(
         ~TRINO_TABLES.c.table_schema.in_(TRINO_SYSTEM_SCHEMAS),
     )
-    .order_by(
+
+    if search_text is not None:
+        query = query.where(TRINO_TABLES.c.table_name.like(f"%{search_text}%"))
+
+    query = query.order_by(
         TRINO_TABLES.c.table_schema,
         TRINO_TABLES.c.table_name,
     )
-)
+
+    if limit is not None:
+        query = query.limit(limit)
+    if offset is not None:
+        query = query.offset(offset)
+
+    return query
 
 
 class CustomHTTPAdapter(HTTPAdapter):
@@ -148,11 +166,14 @@ class TrinoDefaultAdapter(BaseClassicAdapter[TrinoConnTargetDTO]):
     def get_connect_args(self) -> dict[str, Any]:
         timeout = (
             self._target_dto.connect_timeout,
-            self._target_dto.total_timeout,
+            None,  # read timeout is handled by trino with query_max_run_time
         )
         args: dict[str, Any] = super().get_connect_args() | dict(
             http_scheme="https" if self._target_dto.ssl_enable else "http",
             http_session=self._get_http_session(),
+            session_properties=dict(
+                query_max_run_time=f"{self._target_dto.total_timeout}s",
+            ),
             legacy_primitive_types=True,
             request_timeout=timeout,
         )
@@ -193,12 +214,18 @@ class TrinoDefaultAdapter(BaseClassicAdapter[TrinoConnTargetDTO]):
 
         return self._db_version
 
-    def _get_tables(self, schema_ident: SchemaIdent) -> list[TableIdent]:
+    def _get_tables(self, schema_ident: SchemaIdent, page_ident: PageIdent | None = None) -> list[TableIdent]:
         """
         Regardless accepting schema_ident, this method returns all tables from the catalog (schema_ident.db_name).
         schema_ident.schema_name is ignored.
         """
-        result = self.execute(DBAdapterQuery(GET_TRINO_TABLES_QUERY, db_name=schema_ident.db_name))
+        query = (
+            get_trino_tables_query(search_text=page_ident.search_text, limit=page_ident.limit, offset=page_ident.offset)
+            if page_ident
+            else get_trino_tables_query()
+        )
+
+        result = self.execute(DBAdapterQuery(query, db_name=schema_ident.db_name))
         return [
             TableIdent(
                 db_name=schema_ident.db_name,

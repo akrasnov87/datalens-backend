@@ -8,8 +8,14 @@ readme = "README.md"
 version = "0.0.1"
 
 [tool.poetry.dependencies]
+deepdiff = "*"
 pydantic = "*"
+pydantic-core = "*"
 python = ">=3.10, <3.13"
+typing-extensions = "*"
+
+[tool.poetry.group.tests.dependencies]
+pytest = "*"
 
 [tool.mypy]
 check_untyped_defs = true
@@ -18,6 +24,10 @@ strict_optional = true
 warn_redundant_casts = true
 warn_unused_configs = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = ["deepdiff.*"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

@@ -19,6 +19,7 @@ from dl_api_connector.api_schema.source_base import (
     RawSchemaColumnSchema,
 )
 from dl_api_lib.schemas.main import NotificationContentSchema
+from dl_api_lib.schemas.options import SourceListingSchema
 from dl_constants.enums import ConnectionType as CT
 from dl_core.us_connection_base import (
     ConnectionBase,
@@ -33,6 +34,8 @@ LOGGER = logging.getLogger(__name__)
 class ConnectionSourcesQuerySchema(BaseSchema):
     search_text = ma_fields.String(required=False, load_default=None)
     limit = ma_fields.Integer(required=False, load_default=10_000)
+    offset = ma_fields.Integer(required=False, load_default=0)
+    db_name = ma_fields.String(required=False, load_default=None)
 
 
 class ConnectionItemQuerySchema(BaseSchema):
@@ -43,6 +46,10 @@ class ConnectionInfoSourceSchemaQuerySchema(BaseSchema):
     source = ma_fields.Nested(DataSourceSchema, required=True)
 
 
+class ConnectionInfoSourceListingOptionsResponseSchema(BaseSchema):
+    source_listing = ma_fields.Nested(SourceListingSchema)
+
+
 class ConnectionSourceTemplatesResponseSchema(BaseSchema):
     # # Complete:
     # sources = ma_fields.Nested(DataSourceTemplateResponseSchema, many=True)
@@ -50,6 +57,10 @@ class ConnectionSourceTemplatesResponseSchema(BaseSchema):
     # # Minimal processing:
     sources = ma_fields.List(DataSourceTemplateResponseField)
     freeform_sources = ma_fields.List(DataSourceTemplateResponseField)
+
+
+class ConnectionDBNamesResponseSchema(BaseSchema):
+    db_names = ma_fields.List(ma_fields.String())
 
 
 class ConnectionInfoSourceSchemaResponseSchema(BaseSchema):
@@ -63,6 +74,7 @@ class ConnectionExportResponseSchema(BaseSchema):
 
 class ConnectionDataContentImportSchema(BaseSchema):
     connection = ma_fields.Raw(required=True)
+    collection_id = ma_fields.String()
     workbook_id = ma_fields.String()
 
 
@@ -72,6 +84,10 @@ class ConnectionImportRequestSchema(BaseSchema):
 
 class ConnectionFormQuerySchema(BaseSchema):
     conn_id = ma_fields.String(default=None)
+
+
+class BadRequestResponseSchema(BaseSchema):
+    message = ma_fields.String()
 
 
 class GenericConnectionSchema(OneOfSchema):

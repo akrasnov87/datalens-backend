@@ -10,12 +10,23 @@ from .client import (
 )
 from .models import (
     BaseRequest,
-    BaseResponseModel,
+    BaseResponseSchema,
+    BaseSchema,
+    TypedBaseSchema,
+    TypedSchemaAnnotation,
+    TypedSchemaDictAnnotation,
+    TypedSchemaListAnnotation,
 )
+from .testing import TestingHttpxClient
 
 
 __all__ = [
-    "BaseResponseModel",
+    "BaseSchema",
+    "BaseResponseSchema",
+    "TypedBaseSchema",
+    "TypedSchemaAnnotation",
+    "TypedSchemaListAnnotation",
+    "TypedSchemaDictAnnotation",
     "BaseRequest",
     "HttpxBaseClient",
     "HttpxSyncClient",
@@ -25,4 +36,6 @@ __all__ = [
     "HttpStatusHttpxClientException",
     "RequestHttpxClientException",
     "NoRetriesHttpxClientException",
+    "TestingHttpxClient",
+    "serialize_datetime",
 ]

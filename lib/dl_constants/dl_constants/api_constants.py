@@ -29,6 +29,7 @@ class DLHeadersCommon(DLHeaders):
     FILE_UPLOADER_MASTER_TOKEN = "X-DL-File-Uploader-Master-Token"
     X_RPC_AUTHORIZATION = "X-Rpc-Authorization"
     TENANT_ID = "X-DL-TenantId"  # Tenant in the UnitedStorage format.
+    COLLECTION_ID = "X-DL-CollectionId"
     WORKBOOK_ID = "X-DL-WorkbookId"
     PROJECT_ID = "X-DC-ProjectId"
     FORWARDED_FOR = "X-Forwarded-For"
@@ -53,6 +54,7 @@ class DLHeadersCommon(DLHeaders):
     US_PUBLIC_TOKEN = "X-US-Public-API-Token"
 
     EMBED_TOKEN = "X-DL-Embed-Token"
+    DATASET_ID = "X-DL-DatasetId"
 
     # TODO: BI-4918 drop after all usages moved to bi_api_commons_ya_cloud.constants.DLHeadersYC
     IAM_TOKEN = "X-YaCloud-SubjectToken"

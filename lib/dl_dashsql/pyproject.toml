@@ -17,9 +17,6 @@ marshmallow = "*"
 python = ">=3.10, <3.13"
 sqlalchemy = "*"
 
-[tool.poetry.group.tests.dependencies]
-pytest = "*"
-
 [tool.mypy]
 check_untyped_defs = true
 disallow_untyped_defs = true
@@ -40,4 +37,4 @@ requires = [
 ]
 
 [datalens_ci]
-skip_test = true
+skip_test = true # no tests in package

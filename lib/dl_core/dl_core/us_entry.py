@@ -19,6 +19,7 @@ from dl_constants.enums import (
 )
 from dl_core.base_models import (
     BaseAttrsDataModel,
+    CollectionEntryLocation,
     EntryLocation,
     PathEntryLocation,
     WorkbookEntryLocation,
@@ -67,6 +68,7 @@ class USEntry:
         ds_key: Union[EntryLocation, str, None] = None,
         type_: Optional[str] = None,
         meta: Any = None,
+        annotation: Optional[dict[str, Any]] = None,
         *,
         us_manager: SyncUSManager,
         **kwargs: Any,
@@ -101,6 +103,7 @@ class USEntry:
             entry_key=effective_entry_key,
             type_=type_,
             meta=meta,
+            annotation=annotation,
             us_manager=us_manager,
             **kwargs,
         )
@@ -246,6 +249,12 @@ class USEntry:
         if isinstance(self.entry_key, WorkbookEntryLocation):
             ret.update(
                 workbook_id=self.entry_key.workbook_id,
+                name=self.entry_key.entry_name,
+                key=self.raw_us_key,
+            )
+        elif isinstance(self.entry_key, CollectionEntryLocation):
+            ret.update(
+                collection_id=self.entry_key.collection_id,
                 name=self.entry_key.entry_name,
                 key=self.raw_us_key,
             )

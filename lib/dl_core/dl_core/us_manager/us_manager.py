@@ -34,6 +34,7 @@ from dl_constants.enums import (
 )
 from dl_core import exc
 from dl_core.base_models import (
+    CollectionEntryLocation,
     ConnectionRef,
     DefaultConnectionRef,
     EntryLocation,
@@ -316,6 +317,12 @@ class USManagerBase:
                 workbook_id=us_resp["workbookId"],
                 entry_name=entry_name,
             )
+        elif us_resp.get("collectionId") is not None:
+            entry_name = raw_entry_key.split("/")[-1]
+            entry_loc = CollectionEntryLocation(
+                collection_id=us_resp["collectionId"],
+                entry_name=entry_name,
+            )
         else:
             entry_loc = PathEntryLocation(path=raw_entry_key)
 
@@ -504,6 +511,7 @@ class USManagerBase:
         copied_entry = type(source)(
             uuid=None,
             data=source_save_params["data"],
+            annotation=source_save_params["annotation"],
             entry_key=key,
             type_=source.type_,
             is_locked=source.is_locked,
@@ -563,3 +571,7 @@ class USManagerBase:
         if self._services_registry is not None:
             return self._services_registry
         raise ValueError("Services registry was not passed to US manager")
+
+    def set_dataset_context(self, dataset_id: Optional[str]) -> None:
+        """Set or clear dataset context for US requests."""
+        self._us_client.set_dataset_context(dataset_id)

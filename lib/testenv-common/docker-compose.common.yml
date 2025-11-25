@@ -4,8 +4,7 @@ x-constants:
 services:
   pg-us:
     build:
-      context: ./images
-      dockerfile: Dockerfile.pg-us
+      context: ./images/pg-us
     environment:
       POSTGRES_DB: us-db-ci_purgeable
       POSTGRES_USER: us
@@ -20,8 +19,7 @@ services:
     labels:
       datalens.ci.service: united-storage
     build:
-      context: ./images
-      dockerfile: Dockerfile.us
+      context: ./images/us
     depends_on:
       pg-us:
         condition: service_healthy
@@ -38,3 +36,45 @@ services:
       MINIO_ROOT_PASSWORD: verySecretKey1
       MINIO_DOMAIN: local
     command: server --address ":8000" /export
+
+  ssl-provider:
+    build:
+      context: ./images/ssl-provider
+      dockerfile: Dockerfile
+
+  temporal-postgresql:
+    image: postgres:13-alpine3.20
+    hostname: temporal-postgresql
+    environment:
+      POSTGRES_DB: temporal-db
+      POSTGRES_USER: temporal-username
+      POSTGRES_PASSWORD: temporal-password
+    healthcheck:
+      test: ["CMD", "pg_isready", "-d", "temporal-db"]
+      interval: 5s
+      retries: 10
+      start_period: 3s
+
+  temporal:
+    build:
+      context: ./images/temporal
+    hostname: temporal
+    environment:
+      - DEFAULT_NAMESPACE=temporal-namespace
+      - POSTGRES_SEEDS=temporal-postgresql
+      - DB_PORT=5432
+      - DB=postgres12
+      - POSTGRES_USER=temporal-username
+      - POSTGRES_PWD=temporal-password
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development.yaml
+    depends_on:
+      - temporal-postgresql
+
+  temporal-ui: # Use in dev environment only, not in CI
+    image: temporalio/ui:2.31.2
+    hostname: temporal-ui
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000 # TODO: change to proper port
+    depends_on:
+      - temporal

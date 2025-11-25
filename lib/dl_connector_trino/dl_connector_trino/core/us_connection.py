@@ -73,6 +73,10 @@ class ConnectionTrinoBase(
     allow_cache: ClassVar[bool] = True
     is_always_user_source: ClassVar[bool] = True
     settings_type = TrinoConnectorSettings
+    supports_source_search = True
+    supports_source_pagination = True
+    db_name_required_for_search = True
+    supports_db_name_listing = True
 
     @attr.s(kw_only=True)
     class DataModel(ConnectionSQL.DataModel):
@@ -119,7 +123,7 @@ class ConnectionTrinoBase(
 
         return result
 
-    def get_catalogs(
+    def get_db_names(  # db names - catalogs in the case of trino
         self,
         conn_executor_factory: Callable[[ConnectionBase], SyncConnExecutorBase],
     ) -> list[str]:
@@ -131,14 +135,45 @@ class ConnectionTrinoBase(
     def get_parameter_combinations(
         self,
         conn_executor_factory: Callable[[ConnectionBase], SyncConnExecutorBase],
+        search_text: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+        db_name: str | None = None,
     ) -> list[dict]:
         parameter_combinations: list[dict] = []
 
         if self.data.listing_sources is ListingSources.off:
             return parameter_combinations
 
-        for catalog_name in self.get_catalogs(conn_executor_factory=conn_executor_factory):
-            tables = self.get_tables(conn_executor_factory=conn_executor_factory, db_name=catalog_name)
+        if db_name:
+            # List tables only from the specified catalog
+            tables = self.get_tables(
+                conn_executor_factory=conn_executor_factory,
+                db_name=db_name,
+                search_text=search_text,
+                limit=limit,
+                offset=offset,
+            )
+            return [
+                dict(
+                    db_name=db_name,
+                    schema_name=table.schema_name,
+                    table_name=table.table_name,
+                )
+                for table in tables
+            ]
+
+        # List tables from all available catalogs
+        catalog_names = self.get_db_names(conn_executor_factory=conn_executor_factory)
+
+        # Get tables from each catalog - listing is not supported in this case
+        # Here we assume that the parameters are already validated by
+        # validate_source_listing_parameters method of the base class
+        for catalog_name in catalog_names:
+            tables = self.get_tables(
+                conn_executor_factory=conn_executor_factory,
+                db_name=catalog_name,
+            )
             parameter_combinations.extend(
                 dict(
                     db_name=catalog_name,
@@ -149,6 +184,10 @@ class ConnectionTrinoBase(
             )
 
         return parameter_combinations
+
+    @classmethod
+    def get_db_name_label(cls, localizer: Localizer) -> str | None:
+        return localizer.translate(Translatable("db_name-label"))
 
 
 class ConnectionTrino(ConnectionTrinoBase):

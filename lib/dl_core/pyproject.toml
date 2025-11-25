@@ -16,11 +16,13 @@ attrs = "*"
 cryptography = "*"
 dl-api-commons = {path = "../dl_api_commons"}
 dl-app-tools = {path = "../dl_app_tools"}
+dl-auth = {path = "../dl_auth"}
 dl-cache-engine = {path = "../dl_cache_engine"}
 dl-configs = {path = "../dl_configs"}
 dl-constants = {path = "../dl_constants"}
 dl-dashsql = {path = "../../lib/dl_dashsql"}
 dl-i18n = {path = "../dl_i18n"}
+dl-json = {path = "../dl_json"}
 dl-model-tools = {path = "../dl_model_tools"}
 dl-query-processing = {path = "../dl_query_processing"}
 dl-retrier = {path = "../dl_retrier"}
@@ -35,7 +37,6 @@ marshmallow = "*"
 marshmallow-oneofschema = "*"
 multidict = "*"
 opentracing = "*"
-orjson = "*"
 pydantic = "*"
 python = ">=3.10, <3.13"
 redis = "*"
@@ -49,9 +50,11 @@ werkzeug = "*"
 xxhash = "*"
 
 [tool.poetry.group.tests.dependencies]
+aiopg = "*"
+asyncpg = "*"
+dl-compeng-pg = {path = "../dl_compeng_pg"}
 dl-connector-clickhouse = {path = "../dl_connector_clickhouse"}
 dl-core-testing = {path = "../dl_core_testing"}
-dl-rls = {path = "../dl_rls"}
 dl-testing = {path = "../dl_testing"}
 flaky = "*"
 pytest = "*"

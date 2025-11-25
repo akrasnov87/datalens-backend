@@ -16,13 +16,10 @@ import pytest
 import pytest_asyncio
 import redis.asyncio
 
+import dl_api_commons
 from dl_api_commons.aio.middlewares.auth_trust_middleware import auth_trust_middleware
-from dl_api_commons.base_models import (
-    NoAuthData,
-    RequestContextInfo,
-    TenantCommon,
-)
 from dl_api_commons.client.common import DLCommonAPIClient
+import dl_auth
 from dl_configs.crypto_keys import (
     CryptoKeysConfig,
     get_dummy_crypto_keys_config,
@@ -69,7 +66,6 @@ from dl_file_uploader_worker_lib.settings import (
 )
 from dl_file_uploader_worker_lib.testing.task_processor_client import get_task_processor_client
 import dl_retrier
-from dl_s3.s3_service import S3Service
 from dl_task_processor.processor import TaskProcessor
 from dl_task_processor.state import (
     BITaskStateImpl,
@@ -220,8 +216,8 @@ async def fu_client(bi_file_uploader_app) -> DLCommonAPIClient:
     async with get_default_aiohttp_session() as session:
         yield DLCommonAPIClient(
             base_url=f"http://{bi_file_uploader_app.host}:{bi_file_uploader_app.port}",
-            tenant=TenantCommon(),
-            auth_data=NoAuthData(),
+            tenant=dl_api_commons.TenantCommon(),
+            auth_data=dl_auth.NoAuthData(),
             session=session,
         )
 
@@ -256,32 +252,16 @@ def redis_cli(redis_app_settings) -> redis.asyncio.Redis:
     )
 
 
-@pytest_asyncio.fixture(scope="function")
-async def s3_service(s3_settings: S3Settings, s3_tmp_bucket) -> S3Service:
-    service = S3Service(
-        access_key_id=s3_settings.ACCESS_KEY_ID,
-        secret_access_key=s3_settings.SECRET_ACCESS_KEY,
-        endpoint_url=s3_settings.ENDPOINT_URL,
-        use_virtual_host_addressing=False,
-        tmp_bucket_name=s3_tmp_bucket,
-        persistent_bucket_name=s3_persistent_bucket,
-    )
-
-    await service.initialize()
-
-    return service
-
-
 @pytest.fixture(scope="function")
-def rci() -> RequestContextInfo:
-    return RequestContextInfo(user_id=TEST_USER_ID)
+def rci() -> dl_api_commons.RequestContextInfo:
+    return dl_api_commons.RequestContextInfo(user_id=TEST_USER_ID)
 
 
 @pytest.fixture(scope="session")
-def bi_context() -> RequestContextInfo:
-    return RequestContextInfo.create(
+def bi_context() -> dl_api_commons.RequestContextInfo:
+    return dl_api_commons.RequestContextInfo.create(
         request_id=None,
-        tenant=TenantCommon(),
+        tenant=dl_api_commons.TenantCommon(),
         user_name=None,
         user_id="_the_tests_fixture_user_id_",
         x_dl_debug_mode=None,
@@ -405,7 +385,7 @@ def prepare_us(us_config):
 
 @pytest_asyncio.fixture(scope="function")
 async def default_async_usm_per_test(bi_context, prepare_us, us_config, root_certificates):
-    rci = RequestContextInfo.create_empty()
+    rci = dl_api_commons.RequestContextInfo.create_empty()
     return AsyncUSManager(
         us_base_url=us_config.base_url,
         us_auth_context=USAuthContextMaster(us_config.master_token),

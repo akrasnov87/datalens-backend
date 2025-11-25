@@ -10,22 +10,22 @@ version = "0.0.1"
 [tool.poetry.dependencies]
 aiohttp = {optional = true, version = "*"}
 attrs = "*"
-dl-api-commons = {path = "../../lib/dl_api_commons"}
-dl-constants = {path = "../../lib/dl_constants"}
+dl-api-commons = {path = "../dl_api_commons"}
+dl-auth = {path = "../dl_auth"}
+dl-constants = {path = "../dl_constants"}
 dl-httpx = {path = "../dl_httpx"}
 flask = {optional = true, version = "*"}
 httpx = "*"
 python = ">=3.10, <3.13"
 werkzeug = "*"
 
+[tool.poetry.group.tests.dependencies]
+pytest = "*"
+pytest-mock = "*"
+
 [tool.poetry.extras]
 aiohttp = ["aiohttp"]
 flask = ["flask"]
-
-[tool.poetry.group.tests.dependencies]
-pytest = "*"
-pytest-asyncio = "*"
-pytest-mock = "*"
 
 [tool.mypy]
 check_untyped_defs = true
@@ -49,8 +49,7 @@ requires = [
 [datalens.pytest.db]
 labels = ["fat"]
 root_dir = "dl_zitadel_tests/db"
-# TODO: fix for CI, not working due to mounted secrets
-skip_tests = true
+skip_tests = true # won't fix until deleted from repository
 
 [datalens.pytest.unit]
 labels = ["no_compose"]

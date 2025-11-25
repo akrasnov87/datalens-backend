@@ -24,8 +24,11 @@ from dl_api_lib.app.control_api.resources.base import (
 )
 from dl_api_lib.enums import USPermissionKind
 from dl_api_lib.schemas.connection import (
+    BadRequestResponseSchema,
+    ConnectionDBNamesResponseSchema,
     ConnectionExportResponseSchema,
     ConnectionImportRequestSchema,
+    ConnectionInfoSourceListingOptionsResponseSchema,
     ConnectionInfoSourceSchemaQuerySchema,
     ConnectionInfoSourceSchemaResponseSchema,
     ConnectionItemQuerySchema,
@@ -34,7 +37,11 @@ from dl_api_lib.schemas.connection import (
     GenericConnectionSchema,
 )
 from dl_api_lib.schemas.main import ImportResponseSchema
-from dl_api_lib.utils import need_permission_on_entry
+from dl_api_lib.utils import (
+    check_permission_on_entry,
+    need_permission_on_entry,
+)
+from dl_constants.api_constants import DLHeadersCommon
 from dl_constants.enums import (
     ConnectionType,
     CreateMode,
@@ -49,11 +56,11 @@ from dl_core.data_source_merge_tools import make_spec_from_dict
 from dl_core.exc import (
     DatabaseUnavailable,
     InvalidRequestError,
-    USPermissionRequired,
 )
 from dl_core.us_connection_base import (
     ConnectionBase,
     DataSourceTemplate,
+    ListingOptions,
 )
 
 
@@ -107,6 +114,9 @@ class ConnectionTester(BIResource):
     @schematic_request(ns=ns)
     def post(self, connection_id: str) -> None | tuple[list | dict, int]:
         usm = self.get_us_manager()
+        dataset_id = request.headers.get(DLHeadersCommon.DATASET_ID.value)
+        usm.set_dataset_context(dataset_id)
+
         service_registry = self.get_service_registry()
         conn = usm.get_by_id(connection_id, expected_type=ConnectionBase)
         conn_orig = usm.clone_entry_instance(conn)
@@ -186,6 +196,7 @@ class ConnectionsImportList(BIResource):
                 f"Connector {conn_type_str} is not available for export/import in current environment"
             )
 
+        conn_data["collection_id"] = body["data"].get("collection_id")
         conn_data["workbook_id"] = body["data"].get("workbook_id")
         conn_data["type"] = conn_type_str
 
@@ -253,6 +264,8 @@ class ConnectionItem(BIResource):
     )
     def get(self, connection_id: str, query: dict) -> dict:
         us_manager = self.get_us_manager()
+        dataset_id = request.headers.get(DLHeadersCommon.DATASET_ID.value)
+        us_manager.set_dataset_context(dataset_id)
 
         if "rev_id" in query:
             conn = us_manager.get_by_id(
@@ -275,6 +288,7 @@ class ConnectionItem(BIResource):
     @schematic_request(ns=ns)
     def delete(self, connection_id: str) -> None:
         us_manager = self.get_us_manager()
+
         conn = us_manager.get_by_id(connection_id, expected_type=ConnectionBase)
         need_permission_on_entry(conn, USPermissionKind.admin)
 
@@ -366,16 +380,18 @@ def _dump_source_templates(tpls: list[DataSourceTemplate] | None) -> list[dict[s
 class ConnectionInfoMetadataSources(BIResource):
     @schematic_request(ns=ns, responses={200: ("Success", ConnectionSourceTemplatesResponseSchema())})
     def get(self, connection_id: str) -> dict[str, list[dict[str, Any]] | None]:
-        connection: ConnectionBase = self.get_us_manager().get_by_id(connection_id, expected_type=ConnectionBase)
+        us_manager = self.get_us_manager()
+        dataset_id = request.headers.get(DLHeadersCommon.DATASET_ID.value)
+        us_manager.set_dataset_context(dataset_id)
+
+        connection: ConnectionBase = us_manager.get_by_id(connection_id, expected_type=ConnectionBase)
 
         localizer = self.get_service_registry().get_localizer()
         source_template_templates = connection.get_data_source_template_templates(localizer=localizer)
 
-        source_templates: list[DataSourceTemplate] | None = []
-        try:
-            need_permission_on_entry(connection, USPermissionKind.read)
-        except USPermissionRequired:
-            pass
+        source_templates: list[DataSourceTemplate] | None
+        if not check_permission_on_entry(connection, USPermissionKind.read):
+            source_templates = []
         else:
             source_templates = connection.get_data_source_local_templates()
 
@@ -385,38 +401,110 @@ class ConnectionInfoMetadataSources(BIResource):
         }
 
 
+@ns.route("/<connection_id>/db_names")
+class ConnectionDBNames(BIResource):
+    @schematic_request(
+        ns=ns,
+        responses={200: ("Success", ConnectionDBNamesResponseSchema()), 400: ("Failed", BadRequestResponseSchema())},
+    )
+    def get(self, connection_id: str) -> dict[str, list[str]]:
+        us_manager = self.get_us_manager()
+        dataset_id = request.headers.get(DLHeadersCommon.DATASET_ID.value)
+        us_manager.set_dataset_context(dataset_id)
+
+        connection = us_manager.get_by_id(connection_id, expected_type=ConnectionBase)
+
+        service_registry = self.get_service_registry()
+        if not connection.supports_db_name_listing:
+            raise exc.UnsupportedForEntityType("DB names listing is not supported for current connection type")
+        return {
+            "db_names": connection.get_db_names(
+                conn_executor_factory=service_registry.get_conn_executor_factory().get_sync_conn_executor
+            )
+        }
+
+
+@ns.route("/<connection_id>/info/source_listing_options")
+class ConnectionInfoSourceListingOptions(BIResource):
+    def _prepare_response(self, listing_options: ListingOptions) -> dict[str, ListingOptions]:
+        return {
+            "source_listing": listing_options,
+        }
+
+    @schematic_request(
+        ns=ns,
+        responses={
+            200: ("Success", ConnectionInfoSourceListingOptionsResponseSchema()),
+            400: ("Failed", BadRequestResponseSchema()),
+        },
+    )
+    def get(self, connection_id: str) -> dict:
+        us_manager = self.get_us_manager()
+        dataset_id = request.headers.get(DLHeadersCommon.DATASET_ID.value)
+        us_manager.set_dataset_context(dataset_id)
+
+        connection = us_manager.get_by_id(connection_id, expected_type=ConnectionBase)
+
+        if not check_permission_on_entry(connection, USPermissionKind.read):
+            # It does not matter what options we provide if the user does not have sufficient permissions,
+            # because the listing itself will not attempt to list actual DB sources, see `/info/sources`
+            listing_options = ListingOptions(
+                supports_source_search=False,
+                supports_source_pagination=False,
+                supports_db_name_listing=False,
+                db_name_required_for_search=False,
+                db_name_label=None,
+            )
+            return self._prepare_response(listing_options)
+
+        service_registry = self.get_service_registry()
+        localizer = service_registry.get_localizer()
+        listing_options = connection.get_listing_options(localizer)
+        return self._prepare_response(listing_options)
+
+
 @ns.route("/<connection_id>/info/sources")
 class ConnectionInfoSources(BIResource):
     @schematic_request(
         ns=ns,
         query=ConnectionSourcesQuerySchema(),
-        responses={200: ("Success", ConnectionSourceTemplatesResponseSchema())},
+        responses={
+            200: ("Success", ConnectionSourceTemplatesResponseSchema()),
+            400: ("Failed", BadRequestResponseSchema()),
+        },
     )
     def get(self, connection_id: str, query: dict) -> dict:
-        connection = self.get_us_manager().get_by_id(connection_id, expected_type=ConnectionBase)
+        us_manager = self.get_us_manager()
+        dataset_id = request.headers.get(DLHeadersCommon.DATASET_ID.value)
+        us_manager.set_dataset_context(dataset_id)
+
+        connection = us_manager.get_by_id(connection_id, expected_type=ConnectionBase)
 
         service_registry = self.get_service_registry()
         localizer = service_registry.get_localizer()
+
+        # Extract query parameters
+        search_text = query.get("search_text")
+        limit = query.get("limit")
+        offset = query.get("offset")
+        db_name = query.get("db_name")
+
+        # Get template sources (always available, no DB query needed)
         source_template_templates = connection.get_data_source_template_templates(localizer=localizer)
 
-        source_templates = []
-        try:
-            need_permission_on_entry(connection, USPermissionKind.read)
-        except USPermissionRequired:
-            pass
+        # Get actual data source templates (requires DB access)
+        source_templates: list[DataSourceTemplate]
+        if not check_permission_on_entry(connection, USPermissionKind.read):
+            source_templates = []
         else:
-            source_templates = connection.get_data_source_templates(
+            source_templates = connection.get_data_source_templates_paginated(
                 conn_executor_factory=service_registry.get_conn_executor_factory().get_sync_conn_executor,
+                search_text=search_text,
+                limit=limit,
+                offset=offset,
+                db_name=db_name,
             )
 
-        search_text = query.get("search_text")
-        if search_text is not None:
-            # TODO: for some connections, do the filtering in the database.
-            search_text = search_text.lower()
-            source_templates = [item for item in source_templates if search_text in item.title.lower()]
-        limit = query.get("limit")
-        if limit is not None:  # Note that `load_default=1000` in the schema, so it should always be defined.
-            source_templates = source_templates[:limit]
         return {
             "sources": _dump_source_templates(source_templates),
             "freeform_sources": _dump_source_templates(source_template_templates),
