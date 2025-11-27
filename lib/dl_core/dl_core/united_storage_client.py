@@ -271,6 +271,7 @@ class UStorageClientBase:
         context_request_id: str | None = None,
         context_forwarded_for: str | None = None,
         context_workbook_id: str | None = None,
+        context_rpc_authorization_id: str | None = None
     ):
         self.host = host
         self.prefix = auth_ctx.get_default_prefix() if prefix is None else prefix
@@ -706,6 +707,7 @@ class UStorageClient(UStorageClientBase):
         context_request_id: str | None = None,
         context_forwarded_for: str | None = None,
         context_workbook_id: str | None = None,
+        context_rpc_authorization_id: str | None = None
     ):
         super().__init__(
             host=host,
