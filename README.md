@@ -41,6 +41,10 @@ git clone git@github.com:datalens-tech/datalens-backend.git && cd datalens-backe
 ./docker_build/run-project-bake dl_data_api --set "dl_data_api.tags=akrasnov87/datalens-data-api:0.2396.0"
 </pre>
 
+или
+
+`./build.sh`
+
 ## Получение последних изменений
 
 <pre>
