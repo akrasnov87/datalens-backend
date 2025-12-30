@@ -71,8 +71,8 @@
                 {
                     "id": "input",
                     "name": "password",
+                    "defaultValue": "",
                     "width": "m",
-                    "fakeValue": "******",
                     "controlProps": {
                         "type": "password"
                     }
@@ -140,7 +140,7 @@
         }
     ],
     "apiSchema": {
-        "edit": {
+        "create": {
             "items": [
                 {
                     "name": "host",
@@ -164,7 +164,7 @@
                 },
                 {
                     "name": "password",
-                    "required": false,
+                    "required": true,
                     "defaultAction": "include"
                 },
                 {
@@ -185,6 +185,14 @@
                     "defaultAction": "include"
                 },
                 {
+<<<<<<<< HEAD:lib/dl_connector_promql/dl_connector_promql_tests/unit/expected_forms/TenantCommon(is_background_data_export_allowed=False, is_data_export_enabled=True)_edit.json
+========
+                    "name": "type",
+                    "required": false,
+                    "defaultAction": "include"
+                },
+                {
+>>>>>>>> 8b3cd15162476b5ba6992c9a8ac9edceab20bb29:lib/dl_connector_mssql/dl_connector_mssql_tests/unit/expected_forms/False_True_TenantCommon(is_background_data_export_allowed=False, is_data_export_enabled=True)_create.json
                     "name": "description",
                     "type": "string",
                     "required": false,
@@ -218,6 +226,11 @@
                 },
                 {
                     "name": "password",
+                    "required": true,
+                    "defaultAction": "include"
+                },
+                {
+                    "name": "type",
                     "required": false,
                     "defaultAction": "include"
                 },

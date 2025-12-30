@@ -69,8 +69,8 @@
                 {
                     "id": "input",
                     "name": "password",
-                    "defaultValue": "",
                     "width": "m",
+                    "fakeValue": "******",
                     "controlProps": {
                         "type": "password"
                     }
@@ -171,7 +171,7 @@
         }
     ],
     "apiSchema": {
-        "create": {
+        "edit": {
             "items": [
                 {
                     "name": "host",
@@ -195,7 +195,7 @@
                 },
                 {
                     "name": "password",
-                    "required": true,
+                    "required": false,
                     "defaultAction": "include"
                 },
                 {
@@ -215,8 +215,10 @@
                     "defaultAction": "include"
                 },
                 {
-                    "name": "type",
+                    "name": "description",
+                    "type": "string",
                     "required": false,
+                    "nullable": false,
                     "defaultAction": "include"
                 },
                 {
@@ -253,11 +255,6 @@
                 },
                 {
                     "name": "password",
-                    "required": true,
-                    "defaultAction": "include"
-                },
-                {
-                    "name": "type",
                     "required": false,
                     "defaultAction": "include"
                 }

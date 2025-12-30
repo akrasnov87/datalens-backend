@@ -174,10 +174,6 @@ class ApiTestBase(abc.ABC):
         return None
 
     @pytest.fixture(scope="function")
-    def fake_auth_data(self) -> Optional[AuthData]:
-        return None
-
-    @pytest.fixture(scope="function")
     def control_api_app(
         self,
         environment_readiness: None,

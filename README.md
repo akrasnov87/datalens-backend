@@ -49,7 +49,7 @@ git clone git@github.com:datalens-tech/datalens-backend.git && cd datalens-backe
 
 <pre>
 git remote add upstream https://github.com/datalens-tech/datalens-backend.git
-git pull upstream v0.2396.0
+git pull upstream v0.2429.2
 </pre>
 
 ## Запуск mc

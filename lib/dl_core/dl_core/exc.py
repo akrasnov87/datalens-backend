@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any
 
+import aiohttp
 import requests
 
 from dl_constants.exc import DLBaseException
@@ -219,12 +217,12 @@ class USReqException(DLBaseException):
 
     def __init__(
         self,
-        message: Optional[str] = None,
-        details: Optional[dict[str, Any]] = None,
-        orig: Optional[Exception] = None,
-        orig_exc: Optional[Exception] = None,
-        debug_info: Optional[dict[str, Any]] = None,
-        params: Optional[dict[str, Any]] = None,
+        message: str | None = None,
+        details: dict[str, Any] | None = None,
+        orig: Exception | None = None,
+        orig_exc: Exception | None = None,
+        debug_info: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
     ):
         self.orig_exc = orig_exc  # TODO: stop using '.orig_exc' and '.orig
         super().__init__(
@@ -237,23 +235,50 @@ class USReqException(DLBaseException):
 
 
 class USObjectNotFoundException(USReqException):
-    default_message = "Object not found"
     err_code = USReqException.err_code + ["OBJ_NOT_FOUND"]
+    default_message = "Object not found"
 
 
 class USAccessDeniedException(USReqException):
-    default_message = "Access denied"
     err_code = USReqException.err_code + ["ACCESS_DENIED"]
+    default_message = "Access denied"
+
+
+class USValidationException(USReqException):
+    err_code = USReqException.err_code + ["VALIDATION_FAILED"]
+    default_message = "Invalid input data: validation failed"
+
+
+class USConnectionNotFound(USObjectNotFoundException):
+    err_code = USObjectNotFoundException.err_code + ["CONNECTION"]
+    default_message = "Connection not found"
+    formatting_messages = {
+        frozenset(
+            {"entry_id"}
+        ): "Connection with ID `{entry_id}` not found. Please check that the connection ID is correct."
+    }
+
+
+class USConnectionAccessDenied(USAccessDeniedException):
+    err_code = USAccessDeniedException.err_code + ["CONNECTION"]
+    default_message = "Access to the connection was denied"
+    formatting_messages = {frozenset({"entry_id"}): "Access to the connection with ID `{entry_id}` was denied."}
+
+
+class USInvalidConnectionID(USValidationException):
+    err_code = USValidationException.err_code + ["CONNECTION"]
+    default_message = "Invalid connection ID"
+    formatting_messages = {frozenset({"entry_id"}): "Invalid connection ID: `{entry_id}`."}
 
 
 class USWorkbookIsolationInterruptionException(USReqException):
-    default_message = "Workbook isolation interruption"
     err_code = USReqException.err_code + ["WORKBOOK_ISOLATION_INTERRUPTION"]
+    default_message = "Workbook isolation interruption"
 
 
 class USLockUnacquiredException(USReqException):
-    default_message = "Object locked"
     err_code = USReqException.err_code + ["ENTRY_LOCKED"]
+    default_message = "Object locked"
 
 
 class USPermissionCheckError(USReqException):
@@ -281,7 +306,8 @@ class USBadRequestException(USReqException):
             if self.orig_exc and isinstance(self.orig_exc.response, requests.Response):  # type: ignore  # 2024-01-24 # TODO: "Exception" has no attribute "response"  [attr-defined]
                 return self.orig_exc.response.json()["message"]  # type: ignore  # 2024-01-24 # TODO: "Exception" has no attribute "response"  [attr-defined]
         except (ValueError, KeyError, AttributeError):
-            pass
+            if isinstance(self.orig_exc, aiohttp.ClientResponseError):
+                return self.orig_exc.message
         return super().message
 
 
@@ -327,18 +353,19 @@ class DatabaseQueryError(DLBaseException):
     err_code = DLBaseException.err_code + ["DB"]
     default_message = "Database error."
 
-    db_message: Optional[str] = None
-    query: Optional[str] = None
+    db_message: str | None = None
+    query: str | None = None
 
     def __init__(
         self,
-        db_message: Optional[str] = None,
-        query: Optional[str] = None,
-        message: Optional[str] = None,
-        details: Optional[dict[str, Any]] = None,
-        orig: Optional[Exception] = None,
-        debug_info: Optional[dict[str, Any]] = None,
-        params: Optional[dict[str, Any]] = None,
+        db_message: str | None = None,
+        query: str | None = None,  # log / debug query
+        inspector_query: str | None = None,
+        message: str | None = None,
+        details: dict[str, Any] | None = None,
+        orig: Exception | None = None,
+        debug_info: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
     ):
         super().__init__(message=message, details=details, orig=orig, debug_info=debug_info, params=params)
         self.db_message = db_message
@@ -353,7 +380,7 @@ class DatabaseQueryError(DLBaseException):
         # Therefore, for now, there's no use case for `details`,
         # and they're not printed to the user.
         self.debug_info.setdefault("db_message", db_message)
-        self.debug_info.setdefault("query", query)
+        self.debug_info.setdefault("query", inspector_query)
 
     @classmethod
     def _from_jsonable_dict(cls, data: dict) -> "DLBaseException":
@@ -393,17 +420,19 @@ class SourceDoesNotExist(DatabaseQueryError):
 
     def __init__(
         self,
-        db_message: Optional[str] = None,
-        query: Optional[str] = None,
-        message: Optional[str] = None,
-        details: Optional[dict[str, Any]] = None,
-        orig: Optional[Exception] = None,
-        debug_info: Optional[dict[str, Any]] = None,
-        params: Optional[dict[str, Any]] = None,
+        db_message: str | None = None,
+        query: str | None = None,
+        inspector_query: str | None = None,
+        message: str | None = None,
+        details: dict[str, Any] | None = None,
+        orig: Exception | None = None,
+        debug_info: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
     ):
         super(SourceDoesNotExist, self).__init__(
             db_message=db_message,
             query=query,
+            inspector_query=inspector_query,
             message=message,
             details=details,
             orig=orig,
@@ -553,25 +582,25 @@ class DBSessionError(Exception):
 
 
 class EntryValidationError(Exception):
-    def __init__(self, message: str, model_field: Optional[str] = None):
+    def __init__(self, message: str, model_field: str | None = None):
         self.message = message
         self.model_field = model_field
 
 
 class DataStreamValidationError(Exception):
-    line_idx: Optional[int]
-    line_value: Optional[str]
-    field_idx: Optional[int]
-    field_name: Optional[str]
-    value: Optional[Any]
+    line_idx: int | None
+    line_value: str | None
+    field_idx: int | None
+    field_name: str | None
+    value: Any | None
 
     def __init__(
         self,
         *args: Any,
-        line_idx: Optional[int] = None,
-        line_value: Optional[str] = None,
-        field_idx: Optional[int] = None,
-        field_name: Optional[str] = None,
+        line_idx: int | None = None,
+        line_value: str | None = None,
+        field_idx: int | None = None,
+        field_name: str | None = None,
         value: Any = None,
     ):
         self.line_idx = line_idx

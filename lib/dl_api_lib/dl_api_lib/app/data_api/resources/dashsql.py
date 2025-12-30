@@ -255,26 +255,6 @@ class DashSQLView(BaseView):
         )
         return response
 
-    async def collect_dashsql_response(self, result_events: TResultEvents, conn: ConnectionBase) -> web.Response:
-        events: list = []
-        async for event_name, event_data in result_events:
-            events.append(dict(event=event_name, data=event_data))
-
-        resp_data = dict(events=events)
-
-        data_export_info = self.get_data_export_info(conn)
-        data_export_result = get_data_export_base_result(data_export_info)
-        data_export_result.background.allowed = False
-        data_export_result.background.reason.append(DataExportForbiddenReason.prohibited_in_dashsql.value)
-        enrich_resp_dict_with_data_export_info(resp_data, data_export_result)
-
-        data = json.dumps(resp_data, default=self._json_default)
-        response = web.Response(
-            body=data.encode(),
-            content_type="application/json",
-        )
-        return response
-
     @generic_profiler_async("dashsql-result")
     @requires(RequiredResourceDSAPI.JSON_REQUEST)
     async def post(self) -> web.Response:

@@ -17,10 +17,11 @@ async def test_ttl(
     metadata_provider.get_metadata.return_value = {"test": "test_before"}
     metadata_provider.ttl = ttl
 
-    temporal_client = await dl_temporal.TemporalClient.from_settings(
-        settings=dl_temporal.TemporalClientSettings(
+    temporal_client = await dl_temporal.TemporalClient.from_dependencies(
+        dependencies=dl_temporal.TemporalClientDependencies(
             host="test-host",
             port=1234,
+            tls=False,
             namespace="test-namespace",
             metadata_provider=metadata_provider,
         ),

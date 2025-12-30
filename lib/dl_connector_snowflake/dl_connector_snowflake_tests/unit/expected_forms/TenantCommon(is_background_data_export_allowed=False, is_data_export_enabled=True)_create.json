@@ -235,7 +235,6 @@
                     ]
                 }
             ]
-
         },
         {
             "items": [
@@ -245,7 +244,7 @@
                     "defaultValue": ""
                 }
             ]
-       }
+        }
     ],
     "apiSchema": {
         "create": {
