@@ -5,6 +5,32 @@
             "items": [
                 {
                     "id": "label",
+<<<<<<< HEAD
+=======
+                    "text": "Authentication type"
+                },
+                {
+                    "id": "radio_button",
+                    "name": "auth_type",
+                    "defaultValue": "password",
+                    "options": [
+                        {
+                            "text": "Password",
+                            "value": "password"
+                        },
+                        {
+                            "text": "Header",
+                            "value": "header"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "items": [
+                {
+                    "id": "label",
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "text": "Hostname"
                 },
                 {
@@ -53,11 +79,23 @@
             "items": [
                 {
                     "id": "label",
+<<<<<<< HEAD
+=======
+                    "displayConditions": {
+                        "auth_type": "password"
+                    },
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "text": "Username"
                 },
                 {
                     "id": "input",
                     "name": "username",
+<<<<<<< HEAD
+=======
+                    "displayConditions": {
+                        "auth_type": "password"
+                    },
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "width": "m"
                 }
             ]
@@ -66,13 +104,50 @@
             "items": [
                 {
                     "id": "label",
+<<<<<<< HEAD
+=======
+                    "displayConditions": {
+                        "auth_type": "password"
+                    },
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "text": "Password"
                 },
                 {
                     "id": "input",
                     "name": "password",
+<<<<<<< HEAD
+                    "defaultValue": "",
+                    "width": "m",
+=======
+                    "displayConditions": {
+                        "auth_type": "password"
+                    },
                     "width": "m",
                     "fakeValue": "******",
+                    "controlProps": {
+                        "type": "password"
+                    }
+                }
+            ]
+        },
+        {
+            "items": [
+                {
+                    "id": "label",
+                    "displayConditions": {
+                        "auth_type": "header"
+                    },
+                    "text": "Header Authorization"
+                },
+                {
+                    "id": "input",
+                    "name": "auth_header",
+                    "displayConditions": {
+                        "auth_type": "header"
+                    },
+                    "width": "l",
+                    "fakeValue": "******",
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "controlProps": {
                         "type": "password"
                     }
@@ -140,9 +215,20 @@
         }
     ],
     "apiSchema": {
+<<<<<<< HEAD
+        "create": {
+            "items": [
+                {
+=======
         "edit": {
             "items": [
                 {
+                    "name": "auth_type",
+                    "required": true,
+                    "defaultAction": "include"
+                },
+                {
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "name": "host",
                     "required": true,
                     "defaultAction": "include"
@@ -160,12 +246,26 @@
                 {
                     "name": "username",
                     "required": false,
+<<<<<<< HEAD
                     "defaultAction": "include"
                 },
                 {
                     "name": "password",
-                    "required": false,
+                    "required": true,
                     "defaultAction": "include"
+=======
+                    "defaultAction": "skip"
+                },
+                {
+                    "name": "password",
+                    "required": false,
+                    "defaultAction": "skip"
+                },
+                {
+                    "name": "auth_header",
+                    "required": false,
+                    "defaultAction": "skip"
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                 },
                 {
                     "name": "cache_ttl_sec",
@@ -185,6 +285,17 @@
                     "defaultAction": "include"
                 },
                 {
+<<<<<<< HEAD
+<<<<<<<< HEAD:lib/dl_connector_promql/dl_connector_promql_tests/unit/expected_forms/TenantCommon(is_background_data_export_allowed=False, is_data_export_enabled=True)_edit.json
+========
+                    "name": "type",
+                    "required": false,
+                    "defaultAction": "include"
+                },
+                {
+>>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796:lib/dl_connector_mssql/dl_connector_mssql_tests/unit/expected_forms/False_True_TenantCommon(is_background_data_export_allowed=False, is_data_export_enabled=True)_create.json
+=======
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "name": "description",
                     "type": "string",
                     "required": false,
@@ -192,11 +303,58 @@
                     "defaultAction": "include"
                 }
             ],
+<<<<<<< HEAD
             "conditions": []
+=======
+            "conditions": [
+                {
+                    "when": {
+                        "name": "auth_type"
+                    },
+                    "equals": "password",
+                    "then": [
+                        {
+                            "selector": {
+                                "name": "username"
+                            },
+                            "action": "include"
+                        },
+                        {
+                            "selector": {
+                                "name": "password"
+                            },
+                            "action": "include"
+                        }
+                    ]
+                },
+                {
+                    "when": {
+                        "name": "auth_type"
+                    },
+                    "equals": "header",
+                    "then": [
+                        {
+                            "selector": {
+                                "name": "auth_header"
+                            },
+                            "action": "include"
+                        }
+                    ]
+                }
+            ]
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
         },
         "check": {
             "items": [
                 {
+<<<<<<< HEAD
+=======
+                    "name": "auth_type",
+                    "required": true,
+                    "defaultAction": "include"
+                },
+                {
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "name": "host",
                     "required": true,
                     "defaultAction": "include"
@@ -214,12 +372,31 @@
                 {
                     "name": "username",
                     "required": false,
+<<<<<<< HEAD
                     "defaultAction": "include"
                 },
                 {
                     "name": "password",
+                    "required": true,
+                    "defaultAction": "include"
+                },
+                {
+                    "name": "type",
                     "required": false,
                     "defaultAction": "include"
+=======
+                    "defaultAction": "skip"
+                },
+                {
+                    "name": "password",
+                    "required": false,
+                    "defaultAction": "skip"
+                },
+                {
+                    "name": "auth_header",
+                    "required": false,
+                    "defaultAction": "skip"
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                 },
                 {
                     "name": "secure",
@@ -228,7 +405,46 @@
                     "defaultAction": "include"
                 }
             ],
+<<<<<<< HEAD
             "conditions": []
+=======
+            "conditions": [
+                {
+                    "when": {
+                        "name": "auth_type"
+                    },
+                    "equals": "password",
+                    "then": [
+                        {
+                            "selector": {
+                                "name": "username"
+                            },
+                            "action": "include"
+                        },
+                        {
+                            "selector": {
+                                "name": "password"
+                            },
+                            "action": "include"
+                        }
+                    ]
+                },
+                {
+                    "when": {
+                        "name": "auth_type"
+                    },
+                    "equals": "header",
+                    "then": [
+                        {
+                            "selector": {
+                                "name": "auth_header"
+                            },
+                            "action": "include"
+                        }
+                    ]
+                }
+            ]
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
         }
     },
     "uiSchema": {

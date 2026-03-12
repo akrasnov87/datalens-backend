@@ -1,5 +1,9 @@
-from typing import ClassVar
+from typing import (
+    ClassVar,
+    Iterable,
+)
 
+from frozendict import frozendict
 import pytest
 
 from dl_api_lib_testing.configuration import ApiTestEnvironmentConfiguration
@@ -39,6 +43,18 @@ class YDBConnectionTestBase(ConnectionTestBase):
     @pytest.fixture(scope="class")
     def db_url(self) -> str:
         return DB_CORE_URL
+
+    @pytest.fixture(scope="class")
+    def engine_params(self) -> dict:
+        return dict(
+            connect_args=frozendict(
+                dict(
+                    host=CoreConnectionSettings.HOST,
+                    port=CoreConnectionSettings.PORT,
+                    protocol="grpc",
+                )
+            ),
+        )
 
     @pytest.fixture(scope="class")
     def bi_test_config(self) -> ApiTestEnvironmentConfiguration:
@@ -85,6 +101,36 @@ class YDBDatasetTestBase(YDBConnectionTestBase, DatasetTestBase):
             source_type=SOURCE_TYPE_YDB_TABLE.name,
             parameters=dict(
                 table_name=sample_table.name,
+            ),
+        )
+
+
+class YDBViewDatasetTestBase(YDBConnectionTestBase, DatasetTestBase):
+    @pytest.fixture(scope="class")
+    def sample_view_name(
+        self,
+        db: Db,
+        sample_table: DbTable,
+    ) -> Iterable[str]:
+        view_name = sample_table.name + "_view"
+
+        db.get_current_connection().connection.cursor().execute_scheme(
+            f"CREATE VIEW `{view_name}` WITH (security_invoker = TRUE) AS SELECT * FROM `{sample_table.name}`;"
+        )
+
+        yield view_name
+
+        db.get_current_connection().connection.cursor().execute_scheme(f"DROP VIEW `{view_name}`;")
+
+    @pytest.fixture(scope="class")
+    def dataset_params(
+        self,
+        sample_view_name: str,
+    ) -> dict:
+        return dict(
+            source_type=SOURCE_TYPE_YDB_TABLE.name,
+            parameters=dict(
+                table_name=sample_view_name,
             ),
         )
 

@@ -1,9 +1,14 @@
+from typing import ClassVar
+
 import attr
 
-from dl_configs.connectors_settings import ConnectorSettingsBase
+from dl_configs.connectors_settings import DeprecatedConnectorSettingsBase
 from dl_configs.settings_loaders.fallback_cfg_resolver import ObjectLikeConfig
+from dl_core.connectors.settings.base import ConnectorSettings
 from dl_core.connectors.settings.mixins import (
     DatasourceTemplateSettingsMixin,
+    DeprecatedDatasourceTemplateSettingsMixin,
+    DeprecatedTableDatasourceSettingsMixin,
     TableDatasourceSettingsMixin,
 )
 from dl_core.connectors.settings.primitives import (
@@ -11,28 +16,41 @@ from dl_core.connectors.settings.primitives import (
     get_connectors_settings_config,
 )
 
+from dl_connector_greenplum.core.constants import CONNECTION_TYPE_GREENPLUM
+
 
 @attr.s(frozen=True)
-class GreenplumConnectorSettings(
-    ConnectorSettingsBase,
-    DatasourceTemplateSettingsMixin,
-    TableDatasourceSettingsMixin,
+class DeprecatedGreenplumConnectorSettings(
+    DeprecatedConnectorSettingsBase,
+    DeprecatedDatasourceTemplateSettingsMixin,
+    DeprecatedTableDatasourceSettingsMixin,
 ):
     pass
 
 
-def greenplum_settings_fallback(full_cfg: ObjectLikeConfig) -> dict[str, ConnectorSettingsBase]:
+def greenplum_settings_fallback(full_cfg: ObjectLikeConfig) -> dict[str, DeprecatedConnectorSettingsBase]:
     cfg = get_connectors_settings_config(full_cfg, object_like_config_key="GREENPLUM")
     if cfg is None:
-        settings = GreenplumConnectorSettings()
+        settings = DeprecatedGreenplumConnectorSettings()
     else:
-        settings = GreenplumConnectorSettings(  # type: ignore
+        settings = DeprecatedGreenplumConnectorSettings(  # type: ignore
             ENABLE_DATASOURCE_TEMPLATE=cfg.get("ENABLE_DATASOURCE_TEMPLATE", True),
             ENABLE_TABLE_DATASOURCE_FORM=cfg.get("ENABLE_TABLE_DATASOURCE_FORM", True),
         )
     return dict(GREENPLUM=settings)
 
 
+class GreenplumConnectorSettings(ConnectorSettings, TableDatasourceSettingsMixin, DatasourceTemplateSettingsMixin):
+    type: str = CONNECTION_TYPE_GREENPLUM.value
+
+    root_fallback_env_keys: ClassVar[dict[str, str]] = {
+        "CONNECTORS__GREENPLUM__ENABLE_DATASOURCE_TEMPLATE": "CONNECTORS_GREENPLUM_ENABLE_DATASOURCE_TEMPLATE",
+        "CONNECTORS__GREENPLUM__ENABLE_TABLE_DATASOURCE_FORM": "CONNECTORS_GREENPLUM_ENABLE_TABLE_DATASOURCE_FORM",
+    }
+
+
 class GreenplumSettingDefinition(ConnectorSettingsDefinition):
-    settings_class = GreenplumConnectorSettings
+    settings_class = DeprecatedGreenplumConnectorSettings
     fallback = greenplum_settings_fallback
+
+    pydantic_settings_class = GreenplumConnectorSettings

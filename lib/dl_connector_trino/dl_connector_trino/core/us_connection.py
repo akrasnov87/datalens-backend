@@ -30,7 +30,7 @@ from dl_connector_trino.core.constants import (
     TrinoAuthType,
 )
 from dl_connector_trino.core.dto import TrinoConnDTO
-from dl_connector_trino.core.settings import TrinoConnectorSettings
+from dl_connector_trino.core.settings import DeprecatedTrinoConnectorSettings
 
 
 TRINO_SYSTEM_CATALOGS = (
@@ -61,7 +61,7 @@ GET_TRINO_CATALOGS_QUERY = str(
 
 
 class ConnectionTrinoBase(
-    ConnectionSettingsMixin[TrinoConnectorSettings],
+    ConnectionSettingsMixin[DeprecatedTrinoConnectorSettings],
     ConnectionSQL,
 ):
     conn_type = CONNECTION_TYPE_TRINO
@@ -72,7 +72,7 @@ class ConnectionTrinoBase(
     allow_dashsql: ClassVar[bool] = True
     allow_cache: ClassVar[bool] = True
     is_always_user_source: ClassVar[bool] = True
-    settings_type = TrinoConnectorSettings
+    settings_type = DeprecatedTrinoConnectorSettings
     supports_source_search = True
     supports_source_pagination = True
     db_name_required_for_search = True
@@ -85,6 +85,10 @@ class ConnectionTrinoBase(
         ssl_ca: str | None = attr.ib(default=None)
         jwt: str | None = attr.ib(repr=secrepr, default=None)
         listing_sources: ListingSources = attr.ib()
+
+    @property
+    def allow_public_usage(self) -> bool:
+        return True
 
     def get_conn_options(self) -> TrinoConnectOptions:
         base = super().get_conn_options()

@@ -54,7 +54,7 @@ class USClientHTTPExceptionWrapper(Exception):
 
 
 @attr.s
-class USAuthContextBase:
+class USAuthContextBase(abc.ABC):
     DEFAULT_US_PREFIX: ClassVar[USApiType] = USApiType.v1
     IS_TENANT_ID_MUTABLE: ClassVar[bool] = False
 
@@ -133,22 +133,35 @@ class USAuthContextPublic(USAuthContextBase):
         return {}
 
 
-@attr.s(frozen=True)
-class USAuthContextMaster(USAuthContextBase):
+class USAuthContextPrivateBase(USAuthContextBase):
+    """
+    Common base class for environment-specific US authentication contexts.
+    Used for service requests to US private API.
+    """
+
     DEFAULT_US_PREFIX = USApiType.private
     DEFAULT_TENANT = TenantCommon()
     IS_TENANT_ID_MUTABLE = True
 
-    us_master_token: str = attr.ib(repr=False)
-
     def get_tenant(self) -> TenantDef:
         return self.DEFAULT_TENANT
 
+    @abc.abstractmethod
     def get_outbound_headers(self, include_tenancy: bool = True) -> dict[DLHeaders, str]:
-        return {DLHeadersCommon.US_MASTER_TOKEN: self.us_master_token}
+        raise NotImplementedError()
 
     def get_outbound_cookies(self) -> dict[DLCookies, str]:
         return {}
+
+
+@attr.s(frozen=True)
+class USAuthContextMaster(USAuthContextPrivateBase):
+    us_master_token: str = attr.ib(repr=False)
+
+    def get_outbound_headers(self, include_tenancy: bool = True) -> dict[DLHeaders, str]:
+        return {
+            DLHeadersCommon.US_MASTER_TOKEN: self.us_master_token,
+        }
 
 
 @attr.s(frozen=True)
@@ -240,6 +253,7 @@ class UStorageClientBase:
             pass
 
     ERROR_MAP: list[tuple[int, re.Pattern | None, type[exc.USReqException]]] = [
+        (400, re.compile("Validation error"), exc.USValidationException),
         (400, None, exc.USBadRequestException),
         (403, None, exc.USAccessDeniedException),
         (403, re.compile("Workbook isolation interruption"), exc.USWorkbookIsolationInterruptionException),
@@ -292,6 +306,8 @@ class UStorageClientBase:
         self._cookies = self._auth_ctx_to_cookies(auth_ctx)
         # Headers that might be changed during lifecycle e.g. Folder ID
         self._extra_headers: dict[str, str] = {}
+        # Named contexts with custom headers
+        self._named_contexts: dict[str, dict[str, str]] = {}
 
         if context_request_id is not None:
             self._default_headers["X-Request-Id"] = context_request_id
@@ -324,14 +340,19 @@ class UStorageClientBase:
                 f"US client folder ID is immutable with auth context {type(self._auth_ctx).__qualname__}"
             )
 
-    def set_dataset_context(self, dataset_id: str | None) -> None:
+    def set_context(
+        self,
+        context_name: str,
+        headers: dict[str, str],
+    ) -> None:
         """
-        Set `X-DL-DatasetId` header for requests or delete if None
+        Set custom headers for named context. Headers will be added to US request with corresponding context_name
+
+        :param context_name: Name of the context (e.g., "dataset", "connection")
+        :param headers: Dictionary of headers to set for this context
         """
-        if dataset_id is not None:
-            self._extra_headers[DLHeadersCommon.DATASET_ID.value] = dataset_id
-        else:
-            self._extra_headers.pop(DLHeadersCommon.DATASET_ID.value, None)
+
+        self._named_contexts[context_name] = headers.copy()
 
     @staticmethod
     def parse_datetime(dt: str) -> datetime:
@@ -731,6 +752,7 @@ class UStorageClient(UStorageClientBase):
         self,
         request_data: UStorageClientBase.RequestData,
         retry_policy_name: str | None = None,
+        context_name: str | None = None,
     ) -> dict[str, Any]:
         self._raise_for_disabled_interactions()
 
@@ -740,6 +762,8 @@ class UStorageClient(UStorageClientBase):
 
         request_kwargs: dict[str, Any] = {"json": request_data.json} if request_data.json is not None else {}
         tracing_headers = get_current_tracing_headers()
+
+        context_headers = self._named_contexts.get(context_name, {}) if context_name else {}
 
         retry_policy = self._retry_policy_factory.get_policy(retry_policy_name)
         retrier = RequestsPolicyRetrier(retry_policy=retry_policy)
@@ -753,6 +777,7 @@ class UStorageClient(UStorageClientBase):
             headers={
                 **self._extra_headers,
                 **tracing_headers,
+                **context_headers,
             },
             **request_kwargs,
         )
@@ -797,6 +822,7 @@ class UStorageClient(UStorageClientBase):
         include_permissions: bool = True,
         include_links: bool = True,
         include_favorite: bool = True,
+        context_name: str | None = None,
     ) -> dict[str, Any]:
         return self._request(
             self._req_data_get_entry(
@@ -807,6 +833,7 @@ class UStorageClient(UStorageClientBase):
                 include_favorite=include_favorite,
             ),
             retry_policy_name="get_entry",
+            context_name=context_name,
         )
 
     def move_entry(self, entry_id: str, destination: str) -> dict[str, Any]:

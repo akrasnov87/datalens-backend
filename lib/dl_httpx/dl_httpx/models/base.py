@@ -2,11 +2,15 @@ from typing import Any
 
 import attrs
 
+import dl_constants
 import dl_pydantic
+import dl_utils
 
 
 @attrs.define(kw_only=True, frozen=True)
 class BaseRequest:
+    request_id: str = attrs.field(factory=dl_utils.request_id_generator)
+
     @property
     def path(self) -> str:
         raise NotImplementedError
@@ -22,6 +26,16 @@ class BaseRequest:
     @property
     def body(self) -> dict[str, Any] | None:
         return None
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {
+            dl_constants.DLHeadersCommon.REQUEST_ID.value: self.request_id,
+        }
+
+    @property
+    def cookies(self) -> dict[str, str]:
+        return {}
 
 
 class BaseSchema(dl_pydantic.BaseModel):

@@ -37,8 +37,8 @@ docker tag control-api:test akrasnov87/datalens-control-api:0.2058.0
 <pre>
 git clone git@github.com:datalens-tech/datalens-backend.git && cd datalens-backend
 
-./docker_build/run-project-bake dl_control_api --set "dl_control_api.tags=akrasnov87/datalens-control-api:0.2396.0"
-./docker_build/run-project-bake dl_data_api --set "dl_data_api.tags=akrasnov87/datalens-data-api:0.2396.0"
+./docker_build/run-project-bake dl_control_api --set "dl_control_api.tags=akrasnov87/datalens-control-api:0.2457.0"
+./docker_build/run-project-bake dl_data_api --set "dl_data_api.tags=akrasnov87/datalens-data-api:0.2457.0"
 </pre>
 
 или

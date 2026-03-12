@@ -1,0 +1,9 @@
+HTTP_SERVER:
+  HOST: "0.0.0.0"
+  PORT: 53010
+
+TEMPORAL_CLIENT:
+  NAMESPACE: "test"
+  TLS: false
+  METADATA_PROVIDER:
+    TYPE: "empty"

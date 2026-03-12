@@ -1,14 +1,16 @@
 import uuid
 
 import attr
+import pydantic
 
-from dl_configs.connectors_settings import ConnectorSettingsBase
+from dl_configs.connectors_settings import DeprecatedConnectorSettingsBase
 from dl_configs.settings_loaders.meta_definition import s_attrib
+import dl_settings
 
 
-# TODO(catsona): Migrate settings to new model
+# TODO(vallbull): Migrate settings to new model
 @attr.s(frozen=True)
-class FileS3ConnectorSettings(ConnectorSettingsBase):
+class DeprecatedFileS3ConnectorSettings(DeprecatedConnectorSettingsBase):
     SECURE: bool = s_attrib("SECURE", missing=True)  # type: ignore
     HOST: str = s_attrib("HOST")  # type: ignore
     PORT: int = s_attrib("PORT", missing=8443)  # type: ignore
@@ -25,3 +27,35 @@ class FileS3ConnectorSettings(ConnectorSettingsBase):
     )
     # ^ Note that this is used in a query, which, in turn, is used in a cache key at the moment
     #   This means that the value must be set explicitly to preserve caches between restarts and instances
+
+
+class _RootSettings(dl_settings.BaseRootSettings):
+    S3_ENDPOINT_URL: str = NotImplemented
+    FILE_UPLOADER_S3_PERSISTENT_BUCKET_NAME: str = NotImplemented
+
+
+class FileS3ConnectorSettingsBase(dl_settings.BaseSettings):
+    model_config = pydantic.ConfigDict(alias_generator=dl_settings.prefix_alias_generator("CONN_FILE_"))
+
+    SECURE: bool = True
+    HOST: str
+    PORT: int = 8443
+    USERNAME: str
+    PASSWORD: str
+
+    ACCESS_KEY_ID: str = pydantic.Field(repr=False)
+    SECRET_ACCESS_KEY: str = pydantic.Field(repr=False)
+
+    REPLACE_SECRET_SALT: str = pydantic.Field(repr=False, default_factory=lambda: str(uuid.uuid4()))
+    # ^ Note that this is used in a query, which, in turn, is used in a cache key at the moment
+    #   This means that the value must be set explicitly to preserve caches between restarts and instances
+
+    root: _RootSettings = pydantic.Field(default_factory=_RootSettings)
+
+    @property
+    def S3_ENDPOINT(self) -> str:
+        return self.root.S3_ENDPOINT_URL
+
+    @property
+    def BUCKET(self) -> str:
+        return self.root.FILE_UPLOADER_S3_PERSISTENT_BUCKET_NAME

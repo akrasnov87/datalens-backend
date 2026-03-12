@@ -20,7 +20,7 @@ from dl_api_lib.app_settings import (
 )
 from dl_api_lib.connector_availability.base import ConnectorAvailabilityConfig
 from dl_cache_engine.primitives import CacheTTLConfig
-from dl_configs.connectors_settings import ConnectorSettingsBase
+from dl_configs.connectors_settings import DeprecatedConnectorSettingsBase
 from dl_configs.enums import RequiredService
 from dl_constants.enums import (
     ConnectionType,
@@ -163,7 +163,7 @@ class TestingDataApiAppFactory(DataApiAppFactory[DataApiAppSettings], TestingSRF
 
     def set_up_environment(
         self,
-        connectors_settings: dict[ConnectionType, ConnectorSettingsBase],
+        connectors_settings: dict[ConnectionType, DeprecatedConnectorSettingsBase],
     ) -> DataApiEnvSetupResult:
         conn_opts_factory = ConnOptionsMutatorsFactory()
         ca_data = get_root_certificates()
@@ -195,7 +195,7 @@ class TestingDataApiAppFactory(DataApiAppFactory[DataApiAppSettings], TestingSRF
             us_base_url=self._settings.US_BASE_URL,
             crypto_keys_config=self._settings.CRYPTO_KEYS_CONFIG,
             ca_data=ca_data,
-            retry_policy_factory=dl_retrier.RetryPolicyFactory(self._settings.US_CLIENT.RETRY_POLICY),
+            retry_policy_factory=dl_retrier.RetryPolicyFactory.from_settings(self._settings.US_CLIENT.RETRY_POLICY),
         )
 
         usm_middleware_list = [

@@ -22,7 +22,7 @@ from dl_api_lib.app_settings import (
 )
 from dl_api_lib.connector_availability.base import ConnectorAvailabilityConfig
 from dl_cache_engine.primitives import CacheTTLConfig
-from dl_configs.connectors_settings import ConnectorSettingsBase
+from dl_configs.connectors_settings import DeprecatedConnectorSettingsBase
 from dl_configs.enums import RequiredService
 from dl_configs.utils import get_multiple_root_certificates
 from dl_constants.enums import ConnectionType
@@ -90,7 +90,7 @@ class StandaloneDataApiAppFactory(
 
     def set_up_environment(
         self,
-        connectors_settings: dict[ConnectionType, ConnectorSettingsBase],
+        connectors_settings: dict[ConnectionType, DeprecatedConnectorSettingsBase],
     ) -> EnvSetupResult:
         sr_middleware_list: list[Middleware]
         usm_middleware_list: list[Middleware]
@@ -126,7 +126,7 @@ class StandaloneDataApiAppFactory(
             us_base_url=self._settings.US_BASE_URL,
             crypto_keys_config=self._settings.CRYPTO_KEYS_CONFIG,
             ca_data=ca_data,
-            retry_policy_factory=dl_retrier.RetryPolicyFactory(self._settings.US_CLIENT.RETRY_POLICY),
+            retry_policy_factory=dl_retrier.RetryPolicyFactory.from_settings(self._settings.US_CLIENT.RETRY_POLICY),
         )
 
         if self._settings.AUTH is not None and self._settings.AUTH == "NONE":
