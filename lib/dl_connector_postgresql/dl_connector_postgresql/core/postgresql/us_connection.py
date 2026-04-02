@@ -42,6 +42,8 @@ class ConnectionPostgreSQL(
             enforce_collate=self.data.enforce_collate,
             ssl_enable=self.data.ssl_enable,
             ssl_ca=self.data.ssl_ca,
+            # Добавляем параметр из модели данных
+            read_only=self.data.read_only,
         )
 
     def get_data_source_template_templates(self, localizer: Localizer) -> list[DataSourceTemplate]:

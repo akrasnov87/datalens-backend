@@ -161,7 +161,7 @@ class AsyncPostgresAdapter(
             # Fix for the "asyncpg.exceptions.InvalidSQLStatementNameError: unnamed prepared statement does not exist"
             # We have already disabled cache by statement_cache_size=0, but it still works,
             # so let's try to use cache inside a transaction.
-            async with connection.transaction(readonly=True):
+            async with connection.transaction(readonly=self._target_dto.read_only):
                 # TODO ^ make up a new DL exc and wrap asyncpg.exceptions.ReadOnlySQLTransactionError
                 # There is some decimal-magic in asyncpg
                 # and this magic is incompatible with magic in sqlalchemy-psycopg2
@@ -279,7 +279,7 @@ class AsyncPostgresAdapter(
         with self.handle_execution_error(debug_query), self.execution_context():
             async with self._get_connection(query.db_name) as conn:  # type: ignore  # 2024-01-24 # TODO: Argument 1 to "_get_connection" of "AsyncPostgresAdapter" has incompatible type "str | None"; expected "str"  [arg-type]
                 # prepare works only inside a transaction
-                async with conn.transaction(readonly=True):
+                async with conn.transaction(readonly=self._target_dto.read_only):
                     # TODO ^ make up a new DL exc and wrap asyncpg.exceptions.ReadOnlySQLTransactionError
                     async with self._query_preparation_context(conn):
                         prepared_query = await conn.prepare(compiled_query)

@@ -10,7 +10,7 @@ def make_uuid_from_parts(current: str, parent: Optional[str]) -> str:
     if not parent:
         return current
 
-    uuid_maxlen = 120
+    uuid_maxlen = 8192
     uuid_sep = "--"  # need to be a non-word character, to get successfully separated by elasticsearch
     cutted_replace = "..."
 

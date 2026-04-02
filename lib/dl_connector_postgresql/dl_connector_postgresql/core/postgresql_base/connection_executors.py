@@ -42,6 +42,9 @@ class BasePostgresConnExecutor(DefaultSqlAlchemyConnExecutor[_BASE_POSTGRES_ADAP
             multihosts=self._conn_dto.multihosts,
         )
         for host in self._conn_hosts_pool:
+            # Определяем read_only: если не задано явно, то False
+            read_only = getattr(self._conn_dto, 'read_only', False)
+
             dto_pool.append(
                 PostgresConnTargetDTO(
                     conn_id=self._conn_dto.conn_id,
@@ -55,6 +58,8 @@ class BasePostgresConnExecutor(DefaultSqlAlchemyConnExecutor[_BASE_POSTGRES_ADAP
                     enforce_collate=effective_enforce_collate,
                     ssl_enable=self._conn_dto.ssl_enable,
                     ssl_ca=self._conn_dto.ssl_ca,
+                    # Прокидываем параметр
+                    read_only=read_only,
                 )
             )
         return dto_pool

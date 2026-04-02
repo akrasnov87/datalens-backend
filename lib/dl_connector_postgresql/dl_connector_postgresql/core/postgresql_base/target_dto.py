@@ -25,6 +25,8 @@ class PostgresConnTargetDTO(BaseSQLConnTargetDTO):
     enforce_collate: PGEnforceCollateMode = attr.ib(kw_only=True, default=PGEnforceCollateMode.off)
     ssl_enable: bool = attr.ib(kw_only=True, default=False)
     ssl_ca: Optional[str] = attr.ib(kw_only=True, default=None)
+    # НОВЫЙ ПАРАМЕТР
+    read_only: bool = attr.ib(kw_only=True, default=True)
 
     def to_jsonable_dict(self) -> dict[str, TJSONLike]:
         return {
@@ -32,6 +34,7 @@ class PostgresConnTargetDTO(BaseSQLConnTargetDTO):
             "enforce_collate": self.enforce_collate.name,
             "ssl_enable": self.ssl_enable,
             "ssl_ca": self.ssl_ca,
+            "read_only": self.read_only,  # Добавляем
         }
 
     @classmethod

@@ -14,3 +14,5 @@ class PostgresConnDTOBase(DefaultSQLDTO):
     enforce_collate: PGEnforceCollateMode = attr.ib(kw_only=True, default=PGEnforceCollateMode.off)
     ssl_enable: bool = attr.ib(kw_only=True, default=False)
     ssl_ca: typing.Optional[str] = attr.ib(kw_only=True, default=None)
+    # НОВЫЙ ПАРАМЕТР
+    read_only: bool = attr.ib(kw_only=True, default=False)  # По умолчанию True для обратной совместимости

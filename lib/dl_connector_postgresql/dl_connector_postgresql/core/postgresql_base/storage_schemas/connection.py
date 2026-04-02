@@ -28,3 +28,10 @@ class ConnectionPostgreSQLBaseDataStorageSchema(
         dump_default=None,
         load_default=None,
     )
+    # НОВОЕ ПОЛЕ В СХЕМЕ
+    read_only = ma_fields.Boolean(
+        required=False,
+        allow_none=False,
+        dump_default=False,
+        load_default=False,
+    )

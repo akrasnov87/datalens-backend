@@ -27,6 +27,8 @@ class ConnectionPostgreSQLBase(ClassicConnectionSQL):
         enforce_collate: PGEnforceCollateMode = attr.ib(default=PGEnforceCollateMode.auto)
         ssl_enable: bool = attr.ib(kw_only=True, default=False)
         ssl_ca: Optional[str] = attr.ib(kw_only=True, default=None)
+        # НОВЫЙ ПАРАМЕТР В МОДЕЛИ ДАННЫХ
+        read_only: bool = attr.ib(kw_only=True, default=False)
 
     def get_parameter_combinations(
         self,
