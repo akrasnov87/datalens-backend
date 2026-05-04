@@ -6,7 +6,10 @@
                 {
                     "id": "label",
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "text": "Authentication type"
                 },
                 {
@@ -30,6 +33,9 @@
             "items": [
                 {
                     "id": "label",
+<<<<<<< HEAD
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
+=======
 >>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "text": "Hostname"
                 },
@@ -80,6 +86,12 @@
                 {
                     "id": "label",
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+                    "displayConditions": {
+                        "auth_type": "password"
+                    },
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
 =======
                     "displayConditions": {
                         "auth_type": "password"
@@ -91,6 +103,12 @@
                     "id": "input",
                     "name": "username",
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+                    "displayConditions": {
+                        "auth_type": "password"
+                    },
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
 =======
                     "displayConditions": {
                         "auth_type": "password"
@@ -105,6 +123,12 @@
                 {
                     "id": "label",
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+                    "displayConditions": {
+                        "auth_type": "password"
+                    },
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
 =======
                     "displayConditions": {
                         "auth_type": "password"
@@ -116,9 +140,12 @@
                     "id": "input",
                     "name": "password",
 <<<<<<< HEAD
+<<<<<<< HEAD
                     "defaultValue": "",
                     "width": "m",
 =======
+=======
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "displayConditions": {
                         "auth_type": "password"
                     },
@@ -147,6 +174,9 @@
                     },
                     "width": "l",
                     "fakeValue": "******",
+<<<<<<< HEAD
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
+=======
 >>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "controlProps": {
                         "type": "password"
@@ -216,10 +246,13 @@
     ],
     "apiSchema": {
 <<<<<<< HEAD
+<<<<<<< HEAD
         "create": {
             "items": [
                 {
 =======
+=======
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
         "edit": {
             "items": [
                 {
@@ -228,6 +261,9 @@
                     "defaultAction": "include"
                 },
                 {
+<<<<<<< HEAD
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
+=======
 >>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "name": "host",
                     "required": true,
@@ -247,6 +283,7 @@
                     "name": "username",
                     "required": false,
 <<<<<<< HEAD
+<<<<<<< HEAD
                     "defaultAction": "include"
                 },
                 {
@@ -254,6 +291,8 @@
                     "required": true,
                     "defaultAction": "include"
 =======
+=======
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "defaultAction": "skip"
                 },
                 {
@@ -265,6 +304,9 @@
                     "name": "auth_header",
                     "required": false,
                     "defaultAction": "skip"
+<<<<<<< HEAD
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
+=======
 >>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                 },
                 {
@@ -286,6 +328,7 @@
                 },
                 {
 <<<<<<< HEAD
+<<<<<<< HEAD
 <<<<<<<< HEAD:lib/dl_connector_promql/dl_connector_promql_tests/unit/expected_forms/TenantCommon(is_background_data_export_allowed=False, is_data_export_enabled=True)_edit.json
 ========
                     "name": "type",
@@ -296,6 +339,8 @@
 >>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796:lib/dl_connector_mssql/dl_connector_mssql_tests/unit/expected_forms/False_True_TenantCommon(is_background_data_export_allowed=False, is_data_export_enabled=True)_create.json
 =======
 >>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
+=======
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "name": "description",
                     "type": "string",
                     "required": false,
@@ -304,8 +349,11 @@
                 }
             ],
 <<<<<<< HEAD
+<<<<<<< HEAD
             "conditions": []
 =======
+=======
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
             "conditions": [
                 {
                     "when": {
@@ -342,18 +390,27 @@
                     ]
                 }
             ]
+<<<<<<< HEAD
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
+=======
 >>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
         },
         "check": {
             "items": [
                 {
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "name": "auth_type",
                     "required": true,
                     "defaultAction": "include"
                 },
                 {
+<<<<<<< HEAD
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
+=======
 >>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "name": "host",
                     "required": true,
@@ -373,6 +430,7 @@
                     "name": "username",
                     "required": false,
 <<<<<<< HEAD
+<<<<<<< HEAD
                     "defaultAction": "include"
                 },
                 {
@@ -385,6 +443,8 @@
                     "required": false,
                     "defaultAction": "include"
 =======
+=======
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "defaultAction": "skip"
                 },
                 {
@@ -396,6 +456,9 @@
                     "name": "auth_header",
                     "required": false,
                     "defaultAction": "skip"
+<<<<<<< HEAD
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
+=======
 >>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                 },
                 {
@@ -406,8 +469,11 @@
                 }
             ],
 <<<<<<< HEAD
+<<<<<<< HEAD
             "conditions": []
 =======
+=======
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
             "conditions": [
                 {
                     "when": {
@@ -444,6 +510,9 @@
                     ]
                 }
             ]
+<<<<<<< HEAD
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
+=======
 >>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
         }
     },

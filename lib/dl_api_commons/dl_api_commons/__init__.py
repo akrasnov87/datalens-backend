@@ -11,11 +11,6 @@ from .utils import (
     stringify_dl_cookies,
     stringify_dl_headers,
 )
-from .tracing import get_current_tracing_headers
-from .utils import (
-    stringify_dl_cookies,
-    stringify_dl_headers,
-)
 
 
 __all__ = (

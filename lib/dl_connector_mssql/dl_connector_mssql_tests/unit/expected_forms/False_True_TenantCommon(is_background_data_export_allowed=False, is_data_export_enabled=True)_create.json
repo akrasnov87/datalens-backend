@@ -69,8 +69,8 @@
                 {
                     "id": "input",
                     "name": "password",
+                    "defaultValue": "",
                     "width": "m",
-                    "fakeValue": "******",
                     "controlProps": {
                         "type": "password"
                     }
@@ -164,7 +164,7 @@
         }
     ],
     "apiSchema": {
-        "edit": {
+        "create": {
             "items": [
                 {
                     "name": "host",
@@ -188,7 +188,7 @@
                 },
                 {
                     "name": "password",
-                    "required": false,
+                    "required": true,
                     "defaultAction": "include"
                 },
                 {
@@ -208,10 +208,16 @@
                     "defaultAction": "include"
                 },
                 {
+<<<<<<< HEAD
                     "name": "description",
                     "type": "string",
                     "required": false,
                     "nullable": false,
+<<<<<<<< HEAD:lib/dl_connector_mssql/dl_connector_mssql_tests/unit/expected_forms/False_True_TenantCommon(is_background_data_export_allowed=False, is_data_export_enabled=True)_create.json
+=======
+                    "name": "type",
+                    "required": false,
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "defaultAction": "include"
                 },
                 {
@@ -219,6 +225,11 @@
                     "type": "string",
                     "required": false,
                     "nullable": false,
+<<<<<<< HEAD
+========
+>>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796:lib/dl_connector_mssql/dl_connector_mssql_tests/unit/expected_forms/False_True_TenantCommon(is_background_data_export_allowed=False, is_data_export_enabled=True)_edit.json
+=======
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "defaultAction": "include"
                 }
             ],
@@ -248,6 +259,14 @@
                 },
                 {
                     "name": "password",
+<<<<<<< HEAD
+=======
+                    "required": true,
+                    "defaultAction": "include"
+                },
+                {
+                    "name": "type",
+>>>>>>> 80989dd48e77916edf9c57142242c504aecd6796
                     "required": false,
                     "defaultAction": "include"
                 }
