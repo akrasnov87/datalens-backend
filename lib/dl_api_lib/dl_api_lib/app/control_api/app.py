@@ -151,7 +151,7 @@ class ControlApiAppFactory(SRFactoryBuilder, Generic[TControlApiAppSettings], ab
 
         self._get_us_manager_middleware(
             us_auth_mode=env_setup_result.us_auth_mode,
-            ca_data=ca_data
+            ca_data=ca_data,
         ).set_up(app)
 
         _ = app.logger

@@ -1,11 +1,5 @@
 # All variables should be prefixed with `DL_B_`
 
-variable DL_B_BASE_SERVER {
-  #default = "ghcr.io/datalens-tech/docker-mirror/"
-  # переопределил
-  default = ""
-}
-
 variable BASE_LINUX {
   default = "ubuntu:24.04"
 }
