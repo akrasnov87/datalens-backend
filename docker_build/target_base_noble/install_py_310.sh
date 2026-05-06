@@ -12,7 +12,6 @@ apt-get install -y \
     wget \
     curl \
     git \
-    # Базовые библиотеки
     zlib1g-dev \
     libncurses5-dev \
     libgdbm-dev \
@@ -21,7 +20,6 @@ apt-get install -y \
     libreadline-dev \
     libffi-dev \
     libsqlite3-dev \
-    # Добавляем недостающие библиотеки
     libbz2-dev \
     liblzma-dev \
     libgdbm-compat-dev \
@@ -35,7 +33,7 @@ wget https://www.python.org/ftp/python/3.10.14/Python-3.10.14.tgz
 tar -xf Python-3.10.14.tgz
 cd Python-3.10.14
 
-# Важно: проверяем зависимости перед компиляцией
+# Конфигурируем с оптимизациями
 ./configure --enable-optimizations --enable-loadable-sqlite-extensions
 
 # Компилируем
@@ -43,15 +41,15 @@ make -j$(nproc)
 make altinstall
 
 # Создаем символические ссылки
-ln -sf /usr/local/bin/python3.10 /usr/bin/python
 ln -sf /usr/local/bin/python3.10 /usr/bin/python3
+ln -sf /usr/local/bin/python3.10 /usr/bin/python
 
 # Устанавливаем pip
 /usr/local/bin/python3.10 -m ensurepip --upgrade
 /usr/local/bin/python3.10 -m pip install --upgrade pip
 
-# Проверяем, что bz2 модуль доступен
-python3.10 -c "import bz2; print('bz2 module ok')"
+# Проверяем, что все модули доступны
+python3.10 -c "import bz2; import sqlite3; import ssl; print('All modules OK')"
 
 # Очистка
 cd /
