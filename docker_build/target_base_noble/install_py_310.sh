@@ -18,8 +18,7 @@ apt-get install -y \
     libffi-dev \
     libsqlite3-dev \
     wget \
-    curl \
-    python3-pip
+    curl
 
 # Скачиваем и компилируем Python 3.10
 cd /tmp
@@ -30,13 +29,20 @@ cd Python-3.10.14
 make -j$(nproc)
 make altinstall
 
-# Чистим временные файлы
+# Очистка временных файлов
+cd /
 rm -rf /tmp/Python-3.10.14 /tmp/Python-3.10.14.tgz
-apt-get clean
 
-# Устанавливаем pip для Python 3.10
-curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
-
-# Создаем символические ссылки (как в вашем оригинальном скрипте)
+# Создаем символические ссылки
 ln -sf /usr/local/bin/python3.10 /usr/bin/python
 ln -sf /usr/local/bin/python3.10 /usr/bin/python3
+
+# Устанавливаем pip для Python 3.10
+# Важно: запускаем НЕ из удаленной директории
+python3.10 -m ensurepip --upgrade
+
+# Дополнительно обновляем pip до последней версии
+python3.10 -m pip install --upgrade pip
+
+# Очищаем кэш apt
+apt-get clean
