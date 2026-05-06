@@ -5,10 +5,14 @@ echo 'Using Yandex mirror...'
 sed -i 's|http://archive.ubuntu.com|http://mirror.yandex.ru|g' /etc/apt/sources.list
 sed -i 's|http://security.ubuntu.com|http://mirror.yandex.ru|g' /etc/apt/sources.list
 
-# Устанавливаем зависимости для компиляции Python 3.10
+# Устанавливаем ВСЕ зависимости для компиляции Python 3.10
 apt-get update
 apt-get install -y \
     build-essential \
+    wget \
+    curl \
+    git \
+    # Базовые библиотеки
     zlib1g-dev \
     libncurses5-dev \
     libgdbm-dev \
@@ -17,32 +21,39 @@ apt-get install -y \
     libreadline-dev \
     libffi-dev \
     libsqlite3-dev \
-    wget \
-    curl
+    # Добавляем недостающие библиотеки
+    libbz2-dev \
+    liblzma-dev \
+    libgdbm-compat-dev \
+    uuid-dev \
+    tk-dev \
+    libc6-dev
 
 # Скачиваем и компилируем Python 3.10
 cd /tmp
 wget https://www.python.org/ftp/python/3.10.14/Python-3.10.14.tgz
 tar -xf Python-3.10.14.tgz
 cd Python-3.10.14
-./configure --enable-optimizations
+
+# Важно: проверяем зависимости перед компиляцией
+./configure --enable-optimizations --enable-loadable-sqlite-extensions
+
+# Компилируем
 make -j$(nproc)
 make altinstall
-
-# Очистка временных файлов
-cd /
-rm -rf /tmp/Python-3.10.14 /tmp/Python-3.10.14.tgz
 
 # Создаем символические ссылки
 ln -sf /usr/local/bin/python3.10 /usr/bin/python
 ln -sf /usr/local/bin/python3.10 /usr/bin/python3
 
-# Устанавливаем pip для Python 3.10
-# Важно: запускаем НЕ из удаленной директории
-python3.10 -m ensurepip --upgrade
+# Устанавливаем pip
+/usr/local/bin/python3.10 -m ensurepip --upgrade
+/usr/local/bin/python3.10 -m pip install --upgrade pip
 
-# Дополнительно обновляем pip до последней версии
-python3.10 -m pip install --upgrade pip
+# Проверяем, что bz2 модуль доступен
+python3.10 -c "import bz2; print('bz2 module ok')"
 
-# Очищаем кэш apt
+# Очистка
+cd /
+rm -rf /tmp/Python-3.10.14*
 apt-get clean
