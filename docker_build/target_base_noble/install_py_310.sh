@@ -6,6 +6,6 @@ echo 'deb http://ppa.launchpad.net/deadsnakes/ppa/ubuntu noble main' > /etc/apt/
 
 apt-get update
 
-apt-get install -y python3.10 libpython3.10 || sleep "$y" ;
+apt-get install -y python3.10 python3.10-dev python3-pip python3.10-venv || sleep "$y" ;
 
 ln -sf python3.10 /usr/bin/python && ln -sf python3.10 /usr/bin/python3
