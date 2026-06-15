@@ -14,6 +14,8 @@ from typing import (
     overload,
 )
 
+import typing_extensions
+
 from dl_api_commons.base_models import RequestContextInfo
 from dl_app_tools.profiling_base import generic_profiler_async
 from dl_configs.crypto_keys import CryptoKeysConfig
@@ -21,6 +23,10 @@ from dl_core import exc
 from dl_core.base_models import (
     ConnectionRef,
     DefaultConnectionRef,
+)
+from dl_core.enums import (
+    USEntryBranch,
+    USEntryMode,
 )
 from dl_core.united_storage_client import USAuthContextBase
 from dl_core.united_storage_client_aio import UStorageClientAIO
@@ -69,7 +75,8 @@ class AsyncUSManager(USManagerBase):
             prefix=us_api_prefix,
             auth_ctx=us_auth_context,
             context_request_id=bi_context.request_id,
-            context_forwarded_for=bi_context.forwarder_for,
+            context_forwarded_for=bi_context.forwarded_for,
+            context_real_ip=bi_context.real_ip,
             context_workbook_id=bi_context.workbook_id,
             context_rpc_authorization_id=bi_context.rpc_authorization if bi_context is not None else None,
             ca_data=ca_data,
@@ -126,6 +133,7 @@ class AsyncUSManager(USManagerBase):
         expected_type: None = None,
         params: Optional[dict[str, str]] = None,
         context_name: Optional[str] = None,
+        branch: USEntryBranch = USEntryBranch.published,
     ) -> USEntry:
         pass
 
@@ -136,6 +144,7 @@ class AsyncUSManager(USManagerBase):
         expected_type: Optional[type[_ENTRY_TV]] = None,
         params: Optional[dict[str, str]] = None,
         context_name: Optional[str] = None,
+        branch: USEntryBranch = USEntryBranch.published,
     ) -> _ENTRY_TV:
         pass
 
@@ -146,6 +155,7 @@ class AsyncUSManager(USManagerBase):
         expected_type: Optional[type[USEntry]] = None,
         params: Optional[dict[str, str]] = None,
         context_name: Optional[str] = None,
+        branch: USEntryBranch = USEntryBranch.published,
     ) -> USEntry:
         with self._enrich_us_exception(
             entry_id=entry_id,
@@ -155,6 +165,7 @@ class AsyncUSManager(USManagerBase):
                 entry_id,
                 params=params,
                 context_name=context_name,
+                branch=branch,
             )
 
         obj = self._entry_dict_to_obj(us_resp, expected_type)
@@ -198,11 +209,13 @@ class AsyncUSManager(USManagerBase):
         entry_id: str,
         params: Optional[dict[str, str]] = None,
         context_name: Optional[str] = None,
+        branch: USEntryBranch = USEntryBranch.published,
     ) -> dict[str, Any]:
         us_resp = await self._us_client.get_entry(
             entry_id,
             params=params,
             context_name=context_name,
+            branch=branch,
         )
         return await self._migrate_response(us_resp)
 
@@ -218,8 +231,40 @@ class AsyncUSManager(USManagerBase):
                 break
         return us_resp
 
-    async def save(self, entry: USEntry, update_revision: Optional[bool] = None) -> None:
-        lifecycle_manager = self.get_lifecycle_manager(entry=entry)
+    @typing_extensions.deprecated("Use create/update instead", category=DeprecationWarning)
+    async def save(
+        self,
+        entry: USEntry,
+        update_revision: bool | None = None,
+        original_entry: USEntry | None = None,
+        mode: USEntryMode = USEntryMode.publish,
+    ) -> None:
+        await self._save(
+            entry=entry,
+            update_revision=update_revision,
+            original_entry=original_entry,
+            mode=mode,
+        )
+
+    async def _save(
+        self,
+        entry: USEntry,
+        update_revision: bool | None = None,
+        original_entry: USEntry | None = None,
+        mode: USEntryMode = USEntryMode.publish,
+    ) -> None:
+        """
+        Save USEntry to US.
+
+        :param entry: US entry to save
+        :param update_revision: Update revision on save
+        :param original_entry: Previous version of the entry for lifecycle hook handling
+        """
+
+        lifecycle_manager = self.get_lifecycle_manager(
+            entry=entry,
+            original_entry=original_entry,
+        )
         lifecycle_manager.pre_save_hook()
 
         save_params = self._get_entry_save_params(entry)
@@ -235,6 +280,7 @@ class AsyncUSManager(USManagerBase):
                 entry_loc,
                 scope=us_scope,
                 type_=us_type,
+                mode=mode,
                 **save_params,
             )
             entry.uuid = resp["entryId"]
@@ -245,6 +291,41 @@ class AsyncUSManager(USManagerBase):
             resp = await self._us_client.update_entry(entry.uuid, lock=entry._lock, **save_params)
 
         entry._us_resp = resp
+
+    async def create(
+        self,
+        entry: USEntry,
+        update_revision: bool | None = None,
+        mode: USEntryMode = USEntryMode.publish,
+    ) -> None:
+        """
+        Create entry - alias for save without previous entry.
+        """
+
+        await self._save(
+            entry=entry,
+            original_entry=None,
+            update_revision=update_revision,
+            mode=mode,
+        )
+
+    async def update(
+        self,
+        entry: USEntry,
+        original_entry: USEntry | None = None,
+        update_revision: bool | None = None,
+        mode: USEntryMode = USEntryMode.publish,
+    ) -> None:
+        """
+        Update entry - alias for save with a previous/original entry.
+        """
+
+        await self._save(
+            entry=entry,
+            original_entry=original_entry,
+            update_revision=update_revision,
+            mode=mode,
+        )
 
     async def delete(self, entry: USEntry) -> None:
         # TODO FIX: Use pre_delete_async_hook!!!

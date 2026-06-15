@@ -3,15 +3,22 @@ import datetime
 from typing import (
     Generator,
     Optional,
+    Union,
 )
 
 from frozendict import frozendict
 import pytest
 import sqlalchemy as sa
+from sqlalchemy.sql.elements import ClauseElement
 
 from dl_core_testing.database import Db
 from dl_formula.core.datatype import DataType
-from dl_formula_testing.database import FormulaDbDispenser
+from dl_formula.core.nodes import Formula
+from dl_formula.definitions.scope import Scope
+from dl_formula_testing.database import (
+    FormulaDbConfig,
+    FormulaDbDispenser,
+)
 from dl_formula_testing.evaluator import (
     FIELD_TYPES,
     DbEvaluator,
@@ -40,6 +47,39 @@ class YqlDbDispenser(FormulaDbDispenser):
             return True, ""
         except Exception as exc:
             return False, str(exc)
+
+
+class YQLDbEvaluator(DbEvaluator):
+    def eval(  # type: ignore  # 2024-01-29 # TODO: Function is missing a return type annotation  [no-untyped-def]
+        self,
+        formula: Union[str, Formula],
+        from_: Optional[ClauseElement] = None,
+        where: str | Formula | None = None,
+        many: bool = False,
+        other_fields: Optional[dict] = None,
+        order_by: Optional[list[str | Formula]] = None,
+        group_by: Optional[list[str | Formula]] = None,
+        first: bool = False,
+        required_scopes: int = Scope.EXPLICIT_USAGE,
+        field_types: Optional[dict[str, DataType]] = None,
+    ):
+        result = super().eval(
+            formula=formula,
+            from_=from_,
+            where=where,
+            many=many,
+            other_fields=other_fields,
+            order_by=order_by,
+            group_by=group_by,
+            first=first,
+            required_scopes=required_scopes,
+            field_types=field_types,
+        )
+
+        if isinstance(result, list):
+            return [value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value for value in result]
+
+        return result
 
 
 class YQLTestBase(FormulaConnectorTestBase):
@@ -124,14 +164,8 @@ class YQLTestBase(FormulaConnectorTestBase):
             dbe.db.drop_table(table)
 
     @pytest.fixture(scope="function")
-    def ydb_data_table_field_types_patch(self, monkeypatch):
-        """Patch parent evaluator to handle timestamp type for ydb_data_table"""
-
-        ydb_field_types = {**FIELD_TYPES, **self.YDB_FIELD_TYPES}
-
-        monkeypatch.setattr("dl_formula_testing.evaluator.FIELD_TYPES", ydb_field_types)
-
-        return ydb_field_types
+    def ydb_data_table_field_types(self) -> dict[str, DataType]:
+        return {**FIELD_TYPES, **self.YDB_FIELD_TYPES}
 
     @pytest.fixture(scope="class")
     def engine_params(self) -> dict:
@@ -144,3 +178,13 @@ class YQLTestBase(FormulaConnectorTestBase):
                 )
             ),
         )
+
+    @pytest.fixture(scope="class")
+    def dbe(self, db_config: FormulaDbConfig) -> DbEvaluator:
+        db = self.db_dispenser.get_database(db_config)
+        dbe = YQLDbEvaluator(
+            db=db,
+            attempts=self.eval_attempts,
+            retry_on_exceptions=self.retry_on_exceptions,
+        )
+        return dbe

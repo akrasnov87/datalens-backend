@@ -3,7 +3,11 @@ HTTP_SERVER:
   PORT: 54010
   OAUTH_CHECKER:
     USERS:
-      user1:
+      USER1:
         CLIENT_ID: "user1"
-      user2:
+      USER2:
         CLIENT_ID: "user2"
+
+APP_INFO:
+  NAME: "test_app"
+  VERSION: "test_app:1.0.0"

@@ -7,6 +7,7 @@ import temporalio.service
 
 import dl_pydantic
 import dl_temporal
+import dl_temporal_tests.db.common as common
 import dl_temporal_tests.db.workflows as workflows
 
 
@@ -28,6 +29,7 @@ def fixture_workflow_params() -> workflows.WorkflowParams:
         workflow_date_param=dl_pydantic.JsonableDate.today(),
         workflow_datetime_param=dl_pydantic.JsonableDatetime.now(tz=datetime.timezone.utc),
         workflow_datetime_with_timezone_param=dl_pydantic.JsonableDatetimeWithTimeZone.now(tz=datetime.timezone.utc),
+        workflow_nested_param=common.NestedModel(test_int=1),
         return_error=False,
     )
 
@@ -117,6 +119,81 @@ async def test_update_schedule_spec(
         description = await handle.describe()
         assert len(description.schedule.spec.intervals) == 1
         assert description.schedule.spec.intervals[0].every == datetime.timedelta(hours=2)
+    finally:
+        await temporal_client.delete_schedule(schedule_id)
+
+
+@pytest.mark.asyncio
+async def test_update_schedule(
+    temporal_client: dl_temporal.TemporalClient,
+    temporal_task_queue: str,
+    workflow_params: workflows.WorkflowParams,
+    schedule_spec: temporalio.client.ScheduleSpec,
+) -> None:
+    schedule_id = f"test-update-schedule-{uuid.uuid4()}"
+
+    raw_params = workflow_params.model_dump()
+    raw_params["workflow_str_param"] = "updated"
+    new_workflow_params = workflows.WorkflowParams.model_validate(raw_params)
+    new_task_queue = f"{temporal_task_queue}/updated"
+    new_spec = temporalio.client.ScheduleSpec(
+        intervals=[temporalio.client.ScheduleIntervalSpec(every=datetime.timedelta(hours=2))],
+    )
+
+    try:
+        await temporal_client.create_schedule(
+            schedule_id=schedule_id,
+            workflow=workflows.Workflow,
+            params=workflow_params,
+            task_queue=temporal_task_queue,
+            spec=schedule_spec,
+        )
+
+        await temporal_client.update_schedule(
+            schedule_id=schedule_id,
+            workflow=workflows.Workflow,
+            params=new_workflow_params,
+            task_queue=new_task_queue,
+            spec=new_spec,
+        )
+
+        handle = await temporal_client.get_schedule(schedule_id=schedule_id)
+        description = await handle.describe()
+        assert description.id == schedule_id
+        assert isinstance(description.schedule.action, temporalio.client.ScheduleActionStartWorkflow)
+        assert description.schedule.action.workflow == workflows.Workflow.name
+        new_workflow_params = workflows.WorkflowParams.model_validate_json(description.schedule.action.args[0].data)
+        assert description.schedule.action.id == schedule_id
+        assert description.schedule.action.task_queue == new_task_queue
+        assert description.schedule.action.execution_timeout == new_workflow_params.execution_timeout
+        assert len(description.schedule.spec.intervals) == 1
+        assert description.schedule.spec.intervals[0].every == datetime.timedelta(hours=2)
+    finally:
+        await temporal_client.delete_schedule(schedule_id)
+
+
+@pytest.mark.asyncio
+async def test_list_schedules(
+    temporal_client: dl_temporal.TemporalClient,
+    temporal_task_queue: str,
+    workflow_params: workflows.WorkflowParams,
+    schedule_spec: temporalio.client.ScheduleSpec,
+) -> None:
+    schedule_id = f"test-list-{uuid.uuid4()}"
+
+    try:
+        await temporal_client.create_schedule(
+            schedule_id=schedule_id,
+            workflow=workflows.Workflow,
+            params=workflow_params,
+            task_queue=temporal_task_queue,
+            spec=schedule_spec,
+        )
+
+        async def _schedule_visible() -> None:
+            assert schedule_id in {entry.id async for entry in await temporal_client.list_schedules()}
+
+        await common.await_for_success(f"{schedule_id} visible in schedule list", _schedule_visible)
     finally:
         await temporal_client.delete_schedule(schedule_id)
 

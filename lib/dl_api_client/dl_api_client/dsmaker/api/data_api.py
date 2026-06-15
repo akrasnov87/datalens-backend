@@ -915,6 +915,21 @@ class SyncHttpDataApiV2(SyncHttpDataApiBase):
 
         return self.make_response_obj(client_response=response, data=resp_data)
 
+    def get_response_for_cache_invalidation_test(
+        self,
+        dataset_id: str,
+        raw_body: dict | None = None,
+    ) -> ClientResponse:
+        url = f"/api/data/{self.api_v}/datasets/{dataset_id}/cache_invalidation_test"
+        return self._request(url, method="post", data=raw_body or {})
+
+    def get_response_for_cache_invalidation_last_result(
+        self,
+        dataset_id: str,
+    ) -> ClientResponse:
+        url = f"/api/data/{self.api_v}/datasets/{dataset_id}/cache_invalidation_last_result"
+        return self._request(url, method="get")
+
 
 @attr.s
 class AsyncHttpDataApiV2(AsyncHttpDataApiBase):
@@ -1151,6 +1166,21 @@ class AsyncHttpDataApiV2(AsyncHttpDataApiBase):
                 raise ValueError(response.data) from e
 
         return self.make_response_obj(client_response=response, data=resp_data)
+
+    async def get_response_for_cache_invalidation_test(
+        self,
+        dataset_id: str,
+        raw_body: dict | None = None,
+    ) -> ClientResponse:
+        url = f"/api/data/{self.api_v}/datasets/{dataset_id}/cache_invalidation_test"
+        return await self._request(url, method="post", data=raw_body or {})
+
+    async def get_response_for_cache_invalidation_last_result(
+        self,
+        dataset_id: str,
+    ) -> ClientResponse:
+        url = f"/api/data/{self.api_v}/datasets/{dataset_id}/cache_invalidation_last_result"
+        return await self._request(url, method="get")
 
 
 @attr.s

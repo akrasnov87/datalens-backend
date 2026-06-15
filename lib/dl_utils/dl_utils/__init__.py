@@ -1,4 +1,8 @@
-from .utils import request_id_generator
+from .utils import (
+    append_retry_suffix,
+    make_uuid_from_parts,
+    request_id_generator,
+)
 from .wait import (
     await_for,
     wait_for,
@@ -6,7 +10,9 @@ from .wait import (
 
 
 __all__ = [
+    "append_retry_suffix",
     "await_for",
-    "wait_for",
+    "make_uuid_from_parts",
     "request_id_generator",
+    "wait_for",
 ]

@@ -1,4 +1,5 @@
-import typing
+from typing import ClassVar
+import warnings
 
 import pydantic
 import pytest
@@ -19,12 +20,12 @@ def test_envs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class Settings(dl_settings.BaseRootSettings):
-        field: str = NotImplemented
+        FIELD: str = NotImplemented
 
     monkeypatch.setenv("FIELD", "value")
 
     settings = Settings()
-    assert settings.field == "value"
+    assert settings.FIELD == "value"
 
 
 def test_config(
@@ -58,9 +59,9 @@ def test_env_overrides_config(
     tmp_configs: test_utils.TmpConfigs,
 ) -> None:
     class Settings(dl_settings.BaseRootSettings):
-        field: str = NotImplemented
+        FIELD: str = NotImplemented
 
-    config = {"field": "config_value"}
+    config = {"FIELD": "config_value"}
     config_path = tmp_configs.add(config)
 
     monkeypatch.setenv("FIELD", "env_value")
@@ -68,7 +69,7 @@ def test_env_overrides_config(
 
     settings = Settings()
 
-    assert settings.field == "env_value"
+    assert settings.FIELD == "env_value"
 
 
 def test_multiple_configs(
@@ -117,15 +118,15 @@ def test_nested(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class NestedSettings(dl_settings.BaseSettings):
-        field: str = NotImplemented
+        FIELD: str = NotImplemented
 
     class Settings(dl_settings.BaseRootSettings):
-        nested: NestedSettings = pydantic.Field(default_factory=NestedSettings)
+        NESTED: NestedSettings = pydantic.Field(default_factory=NestedSettings)
 
     monkeypatch.setenv("NESTED__FIELD", "value")
 
     settings = Settings()
-    assert settings.nested.field == "value"
+    assert settings.NESTED.FIELD == "value"
 
 
 def test_nested_multiple_sources(
@@ -133,16 +134,16 @@ def test_nested_multiple_sources(
     tmp_configs: test_utils.TmpConfigs,
 ) -> None:
     class NestedSettings(dl_settings.BaseSettings):
-        field1: str = NotImplemented
-        field2: str = NotImplemented
+        FIELD1: str = NotImplemented
+        FIELD2: str = NotImplemented
 
     class Settings(dl_settings.BaseRootSettings):
-        nested: NestedSettings = pydantic.Field(default_factory=NestedSettings)
+        NESTED: NestedSettings = pydantic.Field(default_factory=NestedSettings)
 
     config = {
-        "nested": {
-            "field1": "config_value",
-            "field2": "config_value",
+        "NESTED": {
+            "FIELD1": "config_value",
+            "FIELD2": "config_value",
         }
     }
     config_path = tmp_configs.add(config)
@@ -152,8 +153,8 @@ def test_nested_multiple_sources(
 
     settings = Settings()
 
-    assert settings.nested.field1 == "env_value"
-    assert settings.nested.field2 == "config_value"
+    assert settings.NESTED.FIELD1 == "env_value"
+    assert settings.NESTED.FIELD2 == "config_value"
 
 
 def test_read_top_level_setting_fields_from_nested(
@@ -161,27 +162,28 @@ def test_read_top_level_setting_fields_from_nested(
     tmp_configs: test_utils.TmpConfigs,
 ) -> None:
     class _RootSettings(dl_settings.BaseRootSettings):
-        field3: str = NotImplemented
+        MODEL_ENABLE_EXTRA_FIELDS_WARNING: ClassVar[bool] = False
+        FIELD3: str = NotImplemented
 
     class NestedSettings(dl_settings.BaseSettings):
-        field1: str = NotImplemented
-        field2: str = NotImplemented
+        FIELD1: str = NotImplemented
+        FIELD2: str = NotImplemented
         root: _RootSettings = pydantic.Field(default_factory=_RootSettings)
 
         @property
-        def nested_field3(self) -> str:
-            return self.root.field3
+        def NESTED_FIELD3(self) -> str:
+            return self.root.FIELD3
 
     class Settings(dl_settings.BaseRootSettings):
-        nested: NestedSettings = pydantic.Field(default_factory=NestedSettings)
-        field3: str = "default"
+        NESTED: NestedSettings = pydantic.Field(default_factory=NestedSettings)
+        FIELD3: str = "default"
 
     config = {
-        "nested": {
-            "field1": "config_value",
-            "field2": "config_value",
+        "NESTED": {
+            "FIELD1": "config_value",
+            "FIELD2": "config_value",
         },
-        "field3": "top_level_setting_value",
+        "FIELD3": "top_level_setting_value",
     }
     config_path = tmp_configs.add(config)
 
@@ -189,7 +191,7 @@ def test_read_top_level_setting_fields_from_nested(
 
     settings = Settings()
 
-    assert settings.nested.nested_field3 == "top_level_setting_value"
+    assert settings.NESTED.NESTED_FIELD3 == "top_level_setting_value"
 
 
 def test_partial_field_aliases_in_child_classes(
@@ -197,41 +199,202 @@ def test_partial_field_aliases_in_child_classes(
     tmp_configs: test_utils.TmpConfigs,
 ) -> None:
     class ChildSettingsBase(pydantic.BaseModel):
-        field1: str = "default_value"
-        field2: str = "default_value"
-        field3: str = "default_value"
+        FIELD1: str = "default_value"
+        FIELD2: str = "default_value"
+        FIELD3: str = "default_value"
 
     class Child1SettingsBase(ChildSettingsBase):
-        DEPRECATED_PREFIX: typing.ClassVar[str] = "someprefix_"
+        DEPRECATED_PREFIX: ClassVar[str] = "someprefix_"
 
         model_config = pydantic.ConfigDict(alias_generator=dl_settings.prefix_alias_generator(DEPRECATED_PREFIX))
 
     class Child2SettingsBase(ChildSettingsBase):
-        DEPRECATED_PREFIX: typing.ClassVar[str] = "otherprefix_"
+        DEPRECATED_PREFIX: ClassVar[str] = "otherprefix_"
 
         model_config = pydantic.ConfigDict(alias_generator=dl_settings.prefix_alias_generator(DEPRECATED_PREFIX))
 
     class SettingsBase(dl_settings.BaseRootSettings):
-        child_1: Child1SettingsBase = pydantic.Field(default_factory=Child1SettingsBase)
-        child_2: Child2SettingsBase = pydantic.Field(default_factory=Child2SettingsBase)
+        CHILD_1: Child1SettingsBase = pydantic.Field(default_factory=Child1SettingsBase)
+        CHILD_2: Child2SettingsBase = pydantic.Field(default_factory=Child2SettingsBase)
 
     config1 = {
-        "child_1": {"someprefix_field1": "value1_1", "field2": "value1_2"},
-        "child_2": {"field1": "value2_1", "otherprefix_field2": "value2_2"},
+        "CHILD_1": {"someprefix_FIELD1": "value1_1", "FIELD2": "value1_2"},
+        "CHILD_2": {"FIELD1": "value2_1", "otherprefix_FIELD2": "value2_2"},
     }
 
     config_path = tmp_configs.add(config1)
 
     monkeypatch.setenv("CONFIG_PATH", str(config_path))
-    monkeypatch.setenv("child_1__FIELD1", "env_value_1_1")
-    monkeypatch.setenv("child_2__FIELD1", "env_value_2_1")
-    monkeypatch.setenv("child_2__FIELD3", "env_value_2_3")
+    monkeypatch.setenv("CHILD_1__FIELD1", "env_value_1_1")
+    monkeypatch.setenv("CHILD_2__FIELD1", "env_value_2_1")
+    monkeypatch.setenv("CHILD_2__FIELD3", "env_value_2_3")
 
     settings = SettingsBase()
 
-    assert settings.child_1.field1 == "env_value_1_1"
-    assert settings.child_2.field1 == "env_value_2_1"
-    assert settings.child_1.field2 == "value1_2"
-    assert settings.child_2.field2 == "value2_2"
-    assert settings.child_1.field3 == "default_value"
-    assert settings.child_2.field3 == "env_value_2_3"
+    assert settings.CHILD_1.FIELD1 == "env_value_1_1"
+    assert settings.CHILD_2.FIELD1 == "env_value_2_1"
+    assert settings.CHILD_1.FIELD2 == "value1_2"
+    assert settings.CHILD_2.FIELD2 == "value2_2"
+    assert settings.CHILD_1.FIELD3 == "default_value"
+    assert settings.CHILD_2.FIELD3 == "env_value_2_3"
+
+
+def test_extra_fields_warning_init() -> None:
+    class Settings(dl_settings.BaseRootSettings):
+        field: str = "value"
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        settings = Settings(field="value", extra_field="extra_value")  # type: ignore[call-arg]
+
+    assert settings.field == "value"
+    assert not hasattr(settings, "extra_field")
+
+    extra_warnings = [w for w in caught if "extra_field" in str(w.message)]
+    assert len(extra_warnings) == 1
+    assert "Settings" in str(extra_warnings[0].message)
+
+
+def test_extra_fields_warning_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_configs: test_utils.TmpConfigs,
+) -> None:
+    class Settings(dl_settings.BaseRootSettings):
+        field: str = NotImplemented
+
+    config = {"field": "value", "extra_field": "extra_value"}
+    config_path = tmp_configs.add(config)
+
+    monkeypatch.setenv("CONFIG_PATH", str(config_path))
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        settings = Settings()
+
+    assert settings.field == "value"
+    assert not hasattr(settings, "extra_field")
+
+    extra_warnings = [w for w in caught if "extra_field" in str(w.message)]
+    assert len(extra_warnings) == 1
+
+
+def test_extra_fields_warning_nested_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_configs: test_utils.TmpConfigs,
+) -> None:
+    class NestedSettings(dl_settings.BaseSettings):
+        FIELD: str = NotImplemented
+
+    class Settings(dl_settings.BaseRootSettings):
+        NESTED: NestedSettings = pydantic.Field(default_factory=NestedSettings)
+
+    config = {
+        "NESTED": {"FIELD": "value", "EXTRA": "extra_value"},
+    }
+    config_path = tmp_configs.add(config)
+
+    monkeypatch.setenv("CONFIG_PATH", str(config_path))
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        settings = Settings()
+
+    assert settings.NESTED.FIELD == "value"
+    assert not hasattr(settings.NESTED, "EXTRA")
+
+    extra_warnings = [w for w in caught if "EXTRA" in str(w.message)]
+    assert len(extra_warnings) == 1
+
+
+def test_extra_fields_warning_nested_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NestedSettings(dl_settings.BaseSettings):
+        FIELD: str = NotImplemented
+
+    class Settings(dl_settings.BaseRootSettings):
+        NESTED: NestedSettings = pydantic.Field(default_factory=NestedSettings)
+
+    monkeypatch.setenv("NESTED__FIELD", "value")
+    monkeypatch.setenv("NESTED__EXTRA", "extra_value")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        settings = Settings()
+
+    assert settings.NESTED.FIELD == "value"
+    assert not hasattr(settings.NESTED, "EXTRA")
+
+    extra_warnings = [w for w in caught if "EXTRA" in str(w.message)]
+    assert len(extra_warnings) == 1
+
+
+def test_extra_fields_warning_disabled_root() -> None:
+    class Settings(dl_settings.BaseRootSettings):
+        MODEL_ENABLE_EXTRA_FIELDS_WARNING: ClassVar[bool] = False
+        field: str = "value"
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Settings(field="value", extra_field="extra_value")  # type: ignore[call-arg]
+
+    extra_warnings = [w for w in caught if "will be ignored" in str(w.message)]
+    assert len(extra_warnings) == 0
+
+
+def test_extra_fields_warning_disabled_nested(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_configs: test_utils.TmpConfigs,
+) -> None:
+    class NestedSettings(dl_settings.BaseSettings):
+        MODEL_ENABLE_EXTRA_FIELDS_WARNING: ClassVar[bool] = False
+        FIELD: str = NotImplemented
+
+    class Settings(dl_settings.BaseRootSettings):
+        NESTED: NestedSettings = pydantic.Field(default_factory=NestedSettings)
+
+    config = {
+        "NESTED": {"FIELD": "value", "EXTRA": "extra_value"},
+    }
+    config_path = tmp_configs.add(config)
+
+    monkeypatch.setenv("CONFIG_PATH", str(config_path))
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Settings()
+
+    extra_warnings = [w for w in caught if "EXTRA" in str(w.message)]
+    assert len(extra_warnings) == 0
+
+
+def test_no_extra_fields_no_warning() -> None:
+    class Settings(dl_settings.BaseRootSettings):
+        field: str = "value"
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Settings(field="value")
+
+    extra_warnings = [w for w in caught if "will be ignored" in str(w.message)]
+    assert len(extra_warnings) == 0
+
+
+def test_nested_dict_leaves_case_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NestedSettings(dl_settings.BaseSettings):
+        VALUE: str
+
+    class Settings(dl_settings.BaseRootSettings):
+        NESTED: dict[str, NestedSettings] = NotImplemented
+
+    with monkeypatch.context() as m:
+        m.setenv("NESTED__CHILD__VALUE", "value")
+        settings = Settings()
+        assert settings.NESTED["CHILD"].VALUE == "value"
+
+    with monkeypatch.context() as m:
+        m.setenv("NESTED__child__VALUE", "value")
+        settings = Settings()
+        assert settings.NESTED["child"].VALUE == "value"

@@ -28,7 +28,7 @@ from dl_api_connector.form_config.models.common import (
 import dl_api_connector.form_config.models.rows as C
 from dl_api_connector.form_config.models.rows.base import TDisplayConditions
 from dl_api_connector.form_config.models.shortcuts.rows import RowConstructor
-from dl_configs.connectors_settings import DeprecatedConnectorSettingsBase
+from dl_core.connectors.settings.base import ConnectorSettings
 from dl_i18n.localizer_base import Localizer
 
 from dl_connector_promql.api.connection_info import PromQLConnectionInfoProvider
@@ -155,21 +155,29 @@ class PromQLConnectionFormFactory(ConnectionFormFactory):
 
     def _get_edit_api_schema(
         self,
-        connector_settings: DeprecatedConnectorSettingsBase | None,
+        connector_settings: ConnectorSettings | None,
     ) -> FormActionApiSchema:
+        form_params = self._get_form_params()
+        is_invalidation_cache_enabled = form_params.feature_flags.is_invalidation_cache_enabled
+
         return FormActionApiSchema(
-            items=[
-                *self._get_common_schema_items(),
-                FormFieldApiSchema(name=CommonFieldName.cache_ttl_sec, nullable=True),
-                FormFieldApiSchema(name=CommonFieldName.secure, type="boolean"),
-                FormFieldApiSchema(name=CommonFieldName.data_export_forbidden),
-            ],
+            items=self._filter_nulls(
+                [
+                    *self._get_common_schema_items(),
+                    FormFieldApiSchema(name=CommonFieldName.cache_ttl_sec, nullable=True),
+                    FormFieldApiSchema(name=CommonFieldName.cache_invalidation_throttling_interval_sec, nullable=True)
+                    if is_invalidation_cache_enabled
+                    else None,
+                    FormFieldApiSchema(name=CommonFieldName.secure, type="boolean"),
+                    FormFieldApiSchema(name=CommonFieldName.data_export_forbidden),
+                ]
+            ),
             conditions=self._get_schema_conditions(),
         )
 
     def _get_create_api_schema(
         self,
-        connector_settings: DeprecatedConnectorSettingsBase | None,
+        connector_settings: ConnectorSettings | None,
         edit_api_schema: FormActionApiSchema,
     ) -> FormActionApiSchema:
         return FormActionApiSchema(
@@ -182,7 +190,7 @@ class PromQLConnectionFormFactory(ConnectionFormFactory):
 
     def _get_check_api_schema(
         self,
-        connector_settings: DeprecatedConnectorSettingsBase | None,
+        connector_settings: ConnectorSettings | None,
     ) -> FormActionApiSchema:
         return FormActionApiSchema(
             items=[
@@ -195,7 +203,7 @@ class PromQLConnectionFormFactory(ConnectionFormFactory):
 
     def get_form_config(
         self,
-        connector_settings: Optional[DeprecatedConnectorSettingsBase],
+        connector_settings: Optional[ConnectorSettings],
         tenant: Optional[TenantDef],
     ) -> ConnectionForm:
         rc = PromQLRowConstructor(localizer=self._localizer)
@@ -205,6 +213,7 @@ class PromQLConnectionFormFactory(ConnectionFormFactory):
         check_api_schema = self._get_check_api_schema(connector_settings)
 
         form_params = self._get_form_params()
+        is_invalidation_cache_enabled = form_params.feature_flags.is_invalidation_cache_enabled
 
         return ConnectionForm(
             title=PromQLConnectionInfoProvider.get_title(self._localizer),
@@ -221,12 +230,13 @@ class PromQLConnectionFormFactory(ConnectionFormFactory):
                     rc.auth_header_row(
                         self.mode, display_conditions={PromQLFormFieldName.auth_type: PromQLAuthType.header.value}
                     ),
-                    C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec),
+                    C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec) if not is_invalidation_cache_enabled else None,
                     C.CustomizableRow(
                         items=[
                             C.CheckboxRowItem(name=CommonFieldName.secure, text="HTTPS", default_value=True),
                         ]
                     ),
+                    *(rc.cache_rows() if is_invalidation_cache_enabled else []),
                     rc.collapse_advanced_settings_row(),
                     rc.data_export_forbidden_row(
                         conn_id=form_params.conn_id,

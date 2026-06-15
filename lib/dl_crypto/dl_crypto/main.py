@@ -1,0 +1,73 @@
+from typing import (
+    Protocol,
+    TypedDict,
+)
+
+import attr
+from cryptography import fernet
+from typing_extensions import Self
+
+
+class EncryptedData(TypedDict):
+    key_id: str
+    key_kind: str
+    cypher_text: str
+
+
+class CryptoKeysProtocol(Protocol):
+    @property
+    def map_id_key(self) -> dict[str, str]:
+        ...
+
+    @property
+    def actual_key_id(self) -> str:
+        ...
+
+
+@attr.define
+class CryptoController:
+    key_kind = "local_fernet"
+
+    _key_config: CryptoKeysProtocol = attr.field()
+    _map_key_id_fernet_instance: dict[str, fernet.Fernet] = attr.field(init=False)
+
+    def __attrs_post_init__(self) -> None:
+        self._map_key_id_fernet_instance = {
+            key_id: fernet.Fernet(key_val) for key_id, key_val in self._key_config.map_id_key.items()
+        }
+
+    def copy(self) -> Self:
+        return attr.evolve(self)
+
+    def encrypt(self, key_id: str, plain_text: str | None) -> EncryptedData | None:
+        if plain_text is None:
+            return None
+
+        encoded_plain_text = plain_text.encode()
+        cypher_text = self._map_key_id_fernet_instance[key_id].encrypt(encoded_plain_text).decode()
+        return dict(
+            key_id=key_id,
+            key_kind=self.key_kind,
+            cypher_text=cypher_text,
+        )
+
+    def decrypt(self, encrypted_data: EncryptedData | None) -> str | None:
+        if encrypted_data is None:
+            return None
+
+        assert encrypted_data["key_kind"] == self.key_kind
+        encoded_cypher_text = encrypted_data["cypher_text"].encode()
+        key_id = encrypted_data["key_id"]
+        plain_text = self._map_key_id_fernet_instance[key_id].decrypt(encoded_cypher_text).decode()
+        return plain_text
+
+    def encrypt_with_actual_key(self, plain_text: str | None) -> EncryptedData | None:
+        return self.encrypt(key_id=self._key_config.actual_key_id, plain_text=plain_text)
+
+    @property
+    def actual_key_id(self) -> str:
+        return self._key_config.actual_key_id
+
+
+def generate_fernet_key() -> str:
+    return fernet.Fernet.generate_key().decode("ascii")

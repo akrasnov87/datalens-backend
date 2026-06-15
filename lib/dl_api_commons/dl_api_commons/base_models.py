@@ -10,6 +10,8 @@ from typing_extensions import Self
 
 import dl_auth
 import dl_constants
+from dl_obfuscator.engine import ObfuscationEngine
+from dl_obfuscator.secret_keeper import SecretKeeper
 
 
 @attr.s()
@@ -44,6 +46,8 @@ class RequestContextInfo:
     _plain_headers: CIMultiDict = attr.ib(factory=CIMultiDict)
     _secret_headers: CIMultiDict = attr.ib(repr=False, factory=CIMultiDict)
     auth_data: dl_auth.AuthData | None = attr.ib(repr=False, default=None)
+    secret_keeper: SecretKeeper = attr.ib(factory=SecretKeeper, repr=False)
+    obfuscation_engine: ObfuscationEngine | None = attr.ib(default=None, repr=False)
 
     @property
     def x_dl_context(self) -> dict[str, str]:
@@ -58,8 +62,12 @@ class RequestContextInfo:
         return CIMultiDictProxy(self._secret_headers)
 
     @property
-    def forwarder_for(self) -> str | None:
+    def forwarded_for(self) -> str | None:
         return self.plain_headers.get(dl_constants.DLHeadersCommon.FORWARDED_FOR.value)
+
+    @property
+    def real_ip(self) -> str | None:
+        return self.plain_headers.get(dl_constants.DLHeadersCommon.REAL_IP.value)
 
     @property
     def workbook_id(self) -> str | None:
@@ -83,8 +91,12 @@ class RequestContextInfo:
 
     @property
     def client_ip(self) -> str | None:
-        if self.forwarder_for is not None:
-            ip_list = [ip.strip() for ip in self.forwarder_for.split(",")]
+        real_ip = self.real_ip
+        if real_ip is not None:
+            return real_ip
+        forwarded_for = self.forwarded_for
+        if forwarded_for is not None:
+            ip_list = [ip.strip() for ip in forwarded_for.split(",")]
             if len(ip_list) > 1:
                 return ip_list[-2]
             else:
@@ -127,6 +139,8 @@ class RequestContextInfo:
         plain_headers: CIMultiDict | dict | None,
         secret_headers: CIMultiDict | dict | None,
         auth_data: dl_auth.AuthData | None = None,
+        secret_keeper: SecretKeeper | None = None,
+        obfuscation_engine: ObfuscationEngine | None = None,
     ) -> Self:
         return cls(
             request_id=request_id,
@@ -139,6 +153,8 @@ class RequestContextInfo:
             plain_headers=cls.normalize_headers_dict(plain_headers),
             secret_headers=cls.normalize_headers_dict(secret_headers),
             auth_data=auth_data,
+            secret_keeper=secret_keeper or SecretKeeper(),
+            obfuscation_engine=obfuscation_engine,
         )
 
     def clone(self, **kwargs: Any) -> Self:
@@ -167,7 +183,15 @@ class TenantCommon(TenantDef):
 
 
 @attr.s(frozen=True)
+class FeatureFlags:
+    """Temporary feature flags."""
+
+    is_invalidation_cache_enabled: bool = attr.ib(default=False)
+
+
+@attr.s(frozen=True)
 class FormConfigParams:
     conn_id: str | None = attr.ib(default=None)
     exports_history_url_path: str | None = attr.ib(default=None)
     user_id: str | None = attr.ib(default=None)
+    feature_flags: FeatureFlags = attr.ib(factory=FeatureFlags)

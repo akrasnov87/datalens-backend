@@ -1,40 +1,28 @@
 import http
 import logging
-import typing
 from typing import Literal
 
 import aiohttp.web as aiohttp_web
 import attr
 
 import dl_app_api_base.handlers as handlers
+from dl_app_api_base.health import (
+    ReadinessService,
+    SubsystemStatusSchema,
+)
 
 
 logger = logging.getLogger(__name__)
 
 
 @attr.define(frozen=True, kw_only=True)
-class SubsystemReadinessAsyncCallback:
-    name: str
-    is_ready: typing.Callable[[], typing.Awaitable[bool]]
-
-
-@attr.define(frozen=True, kw_only=True)
-class SubsystemReadinessSyncCallback:
-    name: str
-    is_ready: typing.Callable[[], bool]
-
-
-SubsystemReadinessCallback = SubsystemReadinessAsyncCallback | SubsystemReadinessSyncCallback
-
-
-@attr.define(frozen=True, kw_only=True)
 class ReadinessProbeHandler(handlers.BaseHandler):
-    OPENAPI_TAGS = ["health"]
+    OPENAPI_TAGS = ["system"]
     OPENAPI_DESCRIPTION = "Readiness probe, checks if the system is ready to serve requests"
 
     class ResponseSchema(handlers.BaseResponseSchema):
         status: Literal["healthy", "unhealthy"]
-        subsystems_status: dict[str, bool]
+        subsystems_status: dict[str, SubsystemStatusSchema]
 
     @property
     def _response_schemas(self) -> dict[http.HTTPStatus, type[handlers.BaseResponseSchema]]:
@@ -43,36 +31,28 @@ class ReadinessProbeHandler(handlers.BaseHandler):
             http.HTTPStatus.INTERNAL_SERVER_ERROR: self.ResponseSchema,
         }
 
-    subsystems: typing.Sequence[SubsystemReadinessCallback]
-
-    async def _check_subsystem_readiness(self, subsystem: SubsystemReadinessCallback) -> bool:
-        if isinstance(subsystem, SubsystemReadinessAsyncCallback):
-            return await subsystem.is_ready()
-        elif isinstance(subsystem, SubsystemReadinessSyncCallback):
-            return subsystem.is_ready()
-        else:
-            raise ValueError(f"Unknown subsystem type: {type(subsystem)}")
+    readiness_service: ReadinessService
 
     async def process(self, request: aiohttp_web.Request) -> aiohttp_web.Response:
-        subsystems_status: dict[str, bool] = {
-            subsystem.name: await self._check_subsystem_readiness(subsystem) for subsystem in self.subsystems
+        subsystem_statuses = await self.readiness_service.get_all_statuses()
+        status_values = {
+            name: SubsystemStatusSchema.from_dataclass(s) for name, s in subsystem_statuses.statuses.items()
         }
 
-        if all(subsystems_status.values()):
+        if subsystem_statuses.is_critical_ready():
             return handlers.Response.with_model(
-                schema=self.ResponseSchema(status="healthy", subsystems_status=subsystems_status),
+                schema=self.ResponseSchema(status="healthy", subsystems_status=status_values),
                 status=http.HTTPStatus.OK,
             )
 
-        logger.error("Not all subsystems are healthy, status: %s", subsystems_status)
+        logger.error("Critical subsystems are unhealthy, status: %s", status_values)
 
         return handlers.Response.with_model(
-            schema=self.ResponseSchema(status="unhealthy", subsystems_status=subsystems_status),
+            schema=self.ResponseSchema(status="unhealthy", subsystems_status=status_values),
             status=http.HTTPStatus.INTERNAL_SERVER_ERROR,
         )
 
 
 __all__ = [
     "ReadinessProbeHandler",
-    "SubsystemReadinessAsyncCallback",
 ]

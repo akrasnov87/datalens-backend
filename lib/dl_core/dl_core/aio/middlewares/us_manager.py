@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 from typing import (
+    Any,
     AsyncGenerator,
     Optional,
 )
@@ -92,7 +93,7 @@ def usm_tenant_resolver_middleware(
             sr = DummyServiceRegistry(rci=rci)
         assert sr is not None
 
-        usm = usm_factory.get_async_usm(rci=rci, services_registry=sr, us_api_type=us_api_type)
+        usm = await usm_factory.get_async_usm(rci=rci, services_registry=sr, us_api_type=us_api_type)
         try:
             try:
                 # TODO: context_name not passed due to target type unknown
@@ -146,12 +147,12 @@ def us_manager_middleware(
             return await handler(dl_request.request)
 
         if embed:
-            usm = usm_factory.get_embed_async_usm(
+            usm = await usm_factory.get_embed_async_usm(
                 rci=dl_request.rci,
                 services_registry=dl_request.services_registry,
             )
         else:
-            usm = usm_factory.get_regular_async_usm(
+            usm = await usm_factory.get_regular_async_usm(
                 rci=dl_request.rci,
                 services_registry=dl_request.services_registry,
             )
@@ -191,7 +192,7 @@ def public_us_manager_middleware(
         if aiohttp_wrappers.RequiredResourceCommon.US_MANAGER not in dl_request.required_resources:
             return await handler(dl_request.request)
 
-        usm = usm_factory.get_public_async_usm(
+        usm = await usm_factory.get_public_async_usm(
             rci=dl_request.rci,
             services_registry=dl_request.services_registry,
         )
@@ -203,19 +204,23 @@ def public_us_manager_middleware(
 
 
 def service_us_manager_middleware(
+    us_manager_factory_class: type[USMFactory],
     us_base_url: str,
     us_master_token: str,
     crypto_keys_config: CryptoKeysConfig,
     ca_data: bytes,
     retry_policy_factory: dl_retrier.BaseRetryPolicyFactory,
     as_user_usm: bool = False,
+    env_specific_kwargs: dict[str, Any] | None = None,
 ) -> Middleware:
-    usm_factory = USMFactory(
+    env_specific_kwargs = env_specific_kwargs or {}
+    usm_factory = us_manager_factory_class(
         us_base_url=us_base_url,
         crypto_keys_config=crypto_keys_config,
         us_master_token=us_master_token,
         ca_data=ca_data,
         retry_policy_factory=retry_policy_factory,
+        **env_specific_kwargs,
     )
 
     @web.middleware
@@ -232,7 +237,7 @@ def service_us_manager_middleware(
         if target_resource not in dl_request.required_resources:
             return await handler(dl_request.request)
 
-        usm = usm_factory.get_master_async_usm(
+        usm = await usm_factory.get_master_async_usm(
             rci=dl_request.rci,
             services_registry=dl_request.services_registry,
         )

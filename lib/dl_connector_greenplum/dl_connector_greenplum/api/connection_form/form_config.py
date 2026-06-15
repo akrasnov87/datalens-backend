@@ -20,11 +20,11 @@ from dl_api_connector.form_config.models.common import CommonFieldName
 import dl_api_connector.form_config.models.rows as C
 from dl_api_connector.form_config.models.rows.base import FormRow
 from dl_api_connector.form_config.models.shortcuts.rows import RowConstructor
-from dl_configs.connectors_settings import DeprecatedConnectorSettingsBase
 from dl_constants.enums import RawSQLLevel
+from dl_core.connectors.settings.base import ConnectorSettings
 
 from dl_connector_greenplum.api.connection_info import GreenplumConnectionInfoProvider
-from dl_connector_greenplum.core.settings import DeprecatedGreenplumConnectorSettings
+from dl_connector_greenplum.core.settings import GreenplumConnectorSettings
 from dl_connector_postgresql.api.connection_form.form_config import (
     PostgreSQLFieldName,
     PostgresRowConstructor,
@@ -33,21 +33,29 @@ from dl_connector_postgresql.api.connection_form.form_config import (
 
 class GreenplumConnectionFormFactory(ConnectionFormFactory):
     def _get_base_edit_api_schema(self) -> FormActionApiSchema:
+        form_params = self._get_form_params()
+        is_invalidation_cache_enabled = form_params.feature_flags.is_invalidation_cache_enabled
+
         return FormActionApiSchema(
-            items=[
-                FormFieldApiSchema(name=CommonFieldName.host, required=True),
-                FormFieldApiSchema(name=CommonFieldName.port, required=True),
-                FormFieldApiSchema(name=CommonFieldName.username, required=True),
-                FormFieldApiSchema(name=CommonFieldName.db_name, required=True),
-                FormFieldApiSchema(
-                    name=CommonFieldName.password,
-                    required=self.mode == ConnectionFormMode.create,
-                ),
-                FormFieldApiSchema(name=CommonFieldName.cache_ttl_sec, nullable=True),
-                FormFieldApiSchema(name=CommonFieldName.raw_sql_level),
-                FormFieldApiSchema(name=PostgreSQLFieldName.enforce_collate),
-                FormFieldApiSchema(name=CommonFieldName.data_export_forbidden),
-            ],
+            items=self._filter_nulls(
+                [
+                    FormFieldApiSchema(name=CommonFieldName.host, required=True),
+                    FormFieldApiSchema(name=CommonFieldName.port, required=True),
+                    FormFieldApiSchema(name=CommonFieldName.username, required=True),
+                    FormFieldApiSchema(name=CommonFieldName.db_name, required=True),
+                    FormFieldApiSchema(
+                        name=CommonFieldName.password,
+                        required=self.mode == ConnectionFormMode.create,
+                    ),
+                    FormFieldApiSchema(name=CommonFieldName.cache_ttl_sec, nullable=True),
+                    FormFieldApiSchema(name=CommonFieldName.cache_invalidation_throttling_interval_sec, nullable=True)
+                    if is_invalidation_cache_enabled
+                    else None,
+                    FormFieldApiSchema(name=CommonFieldName.raw_sql_level),
+                    FormFieldApiSchema(name=PostgreSQLFieldName.enforce_collate),
+                    FormFieldApiSchema(name=CommonFieldName.data_export_forbidden),
+                ]
+            ),
         )
 
     def _get_base_create_api_schema(self, edit_api_schema: FormActionApiSchema) -> FormActionApiSchema:
@@ -76,7 +84,7 @@ class GreenplumConnectionFormFactory(ConnectionFormFactory):
 
     def _get_base_form_config(
         self,
-        connector_settings: Optional[DeprecatedConnectorSettingsBase],
+        connector_settings: Optional[ConnectorSettings],
         host_section: Sequence[FormRow],
         username_section: Sequence[FormRow],
         db_name_section: Sequence[FormRow],
@@ -86,13 +94,14 @@ class GreenplumConnectionFormFactory(ConnectionFormFactory):
         rc: RowConstructor,
         postgres_rc: PostgresRowConstructor,
     ) -> ConnectionForm:
-        assert connector_settings is not None and isinstance(connector_settings, DeprecatedGreenplumConnectorSettings)
+        assert connector_settings is not None and isinstance(connector_settings, GreenplumConnectorSettings)
 
         raw_sql_levels = [RawSQLLevel.subselect, RawSQLLevel.dashsql]
         if connector_settings.ENABLE_DATASOURCE_TEMPLATE:
             raw_sql_levels.append(RawSQLLevel.template)
 
         form_params = self._get_form_params()
+        is_invalidation_cache_enabled = form_params.feature_flags.is_invalidation_cache_enabled
 
         return ConnectionForm(
             title=GreenplumConnectionInfoProvider.get_title(self._localizer),
@@ -103,8 +112,9 @@ class GreenplumConnectionFormFactory(ConnectionFormFactory):
                     *db_name_section,
                     *username_section,
                     rc.password_row(mode=self.mode),
-                    C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec),
+                    C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec) if not is_invalidation_cache_enabled else None,
                     rc.raw_sql_level_row_v2(raw_sql_levels=raw_sql_levels),
+                    *(rc.cache_rows() if is_invalidation_cache_enabled else []),
                     rc.collapse_advanced_settings_row(),
                     postgres_rc.enforce_collate_row(),
                     rc.data_export_forbidden_row(
@@ -123,7 +133,7 @@ class GreenplumConnectionFormFactory(ConnectionFormFactory):
 
     def get_form_config(
         self,
-        connector_settings: Optional[DeprecatedConnectorSettingsBase],
+        connector_settings: Optional[ConnectorSettings],
         tenant: Optional[TenantDef],
     ) -> ConnectionForm:
         rc = RowConstructor(localizer=self._localizer)

@@ -17,10 +17,11 @@ class TestRLS(DefaultApiTestBase):
             ("dl_api_lib_group_config", True, "1"),
             ("dl_api_lib_test_config", False, "2"),
             ("dl_api_lib_group_config", True, "2"),
+            ("dl_api_lib_group_config_resolved", True, "2"),
         ],
     )
     def dataset_with_rls(self, request, monkeypatch, control_api, saved_dataset):
-        def get_groups_by_subject_mock(self, rci):
+        def get_groups_by_subject_mock(self, rci, by_id=False):
             raise RuntimeError("Shouldn't be invoked without groups in config")
 
         ds = saved_dataset

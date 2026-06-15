@@ -639,6 +639,9 @@ class ClickHouseTypeCompiler(compiler.GenericTypeCompiler):
     def visit_numeric(self, type_, **kw):
         return 'Decimal(%s, %s)' % (type_.precision, type_.scale)
 
+    def visit_decimal(self, type_, **kw):
+        return 'Decimal(%s, %s)' % (type_.precision, type_.scale)
+
     def visit_nested(self, nested, **kwargs):
         ddl_compiler = self.dialect.ddl_compiler(self.dialect, None)
         cols_create = [
@@ -995,7 +998,9 @@ class ClickHouseDialect(default.DefaultDialect):
             version = self._query_server_version_string(connection)
             assert version
 
-        return tuple(int(part) for part in version.split('.'))
+        # strip the suffix on versions like 25.8.18.1-yc.1 
+        # it's an MDB suffix and it doesn't affect anything in sqlalchemy
+        return tuple(int(part) for part in version.split('-')[0].split('.'))
 
     def _query_server_version_string(self, connection):
         raise NotImplementedError

@@ -19,13 +19,14 @@ from dl_i18n.localizer_base import Localizer
 from dl_connector_mysql.core.constants import (
     SOURCE_TYPE_MYSQL_SUBSELECT,
     SOURCE_TYPE_MYSQL_TABLE,
+    MySQLEnforceCollateMode,
 )
 from dl_connector_mysql.core.dto import MySQLConnDTO
-from dl_connector_mysql.core.settings import DeprecatedMySQLConnectorSettings
+from dl_connector_mysql.core.settings import MySQLConnectorSettings
 
 
 class ConnectionMySQL(
-    ConnectionSettingsMixin[DeprecatedMySQLConnectorSettings],
+    ConnectionSettingsMixin[MySQLConnectorSettings],
     ClassicConnectionSQL,
 ):
     source_type = SOURCE_TYPE_MYSQL_TABLE
@@ -33,10 +34,11 @@ class ConnectionMySQL(
     allow_dashsql: ClassVar[bool] = True
     allow_cache: ClassVar[bool] = True
     is_always_user_source: ClassVar[bool] = True
-    settings_type = DeprecatedMySQLConnectorSettings
+    settings_type = MySQLConnectorSettings
 
     @attr.s(kw_only=True)
     class DataModel(ClassicConnectionSQL.DataModel):
+        enforce_collate: MySQLEnforceCollateMode = attr.ib(default=MySQLEnforceCollateMode.off)
         ssl_enable: bool = attr.ib(kw_only=True, default=False)
         ssl_ca: Optional[str] = attr.ib(kw_only=True, default=None)
 
@@ -49,6 +51,7 @@ class ConnectionMySQL(
             db_name=self.data.db_name,
             username=self.data.username,
             password=self.password,  # type: ignore  # 2024-01-24 # TODO: Argument "password" to "MySQLConnDTO" has incompatible type "str | None"; expected "str"  [arg-type]
+            enforce_collate=self.data.enforce_collate,
             ssl_enable=self.data.ssl_enable,
             ssl_ca=self.data.ssl_ca,
         )

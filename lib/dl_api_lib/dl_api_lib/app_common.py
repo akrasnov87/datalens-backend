@@ -12,6 +12,7 @@ from typing import (
 
 import attr
 
+from dl_api_commons.base_models import FeatureFlags
 from dl_api_lib.app_common_settings import ConnOptionsMutatorsFactory
 from dl_api_lib.app_settings import AppSettings
 from dl_api_lib.connector_availability.base import ConnectorAvailabilityConfig
@@ -22,9 +23,8 @@ from dl_api_lib.i18n.registry import (
 from dl_api_lib.service_registry.sr_factory import DefaultApiSRFactory
 from dl_api_lib.service_registry.supported_functions_manager import SupportedFunctionsManager
 from dl_cache_engine.primitives import CacheTTLConfig
-from dl_configs.connectors_settings import DeprecatedConnectorSettingsBase
 from dl_configs.enums import RequiredService
-from dl_constants.enums import ConnectionType
+from dl_core.connectors.settings.base import ConnectorSettings
 from dl_core.services_registry.entity_checker import EntityUsageChecker
 from dl_core.services_registry.file_uploader_client_factory import FileUploaderSettings
 from dl_core.services_registry.inst_specific_sr import (
@@ -111,6 +111,9 @@ class SRFactoryBuilder(Generic[TSettings], abc.ABC):
     def _get_connector_availability(self, settings: TSettings) -> Optional[ConnectorAvailabilityConfig]:
         raise NotImplementedError
 
+    def _get_feature_flags(self, settings: TSettings) -> FeatureFlags:
+        return FeatureFlags()
+
     @property
     def _extra_translation_configs(self) -> set[TranslationConfig]:
         return set()
@@ -120,7 +123,7 @@ class SRFactoryBuilder(Generic[TSettings], abc.ABC):
         self,
         settings: TSettings,
         conn_opts_factory: ConnOptionsMutatorsFactory,
-        connectors_settings: dict[ConnectionType, DeprecatedConnectorSettingsBase],
+        connectors_settings: dict[str, ConnectorSettings],
         ca_data: bytes,
     ) -> DefaultApiSRFactory:
         supported_functions_manager = SupportedFunctionsManager(supported_tags=settings.FORMULA_SUPPORTED_FUNC_TAGS)
@@ -180,5 +183,6 @@ class SRFactoryBuilder(Generic[TSettings], abc.ABC):
             ca_data=ca_data,
             pivot_transformer_factory=pivot_transformer_factory,
             exports_history_url_path=settings.EXPORTS_HISTORY_URL_PATH,
+            feature_flags=self._get_feature_flags(settings),
         )
         return sr_factory

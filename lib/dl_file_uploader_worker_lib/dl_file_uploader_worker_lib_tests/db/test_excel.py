@@ -239,6 +239,9 @@ async def test_parse_excel_non_string_header(
     assert preview.preview_data[0] == ["1", "2", "3"]
 
 
+@pytest.mark.xfail(
+    reason="the issue with invalid_excel.xlsx got fixed in datalens-backend#1509, so we don't have an invalid file at the moment to use in this test"
+)
 @pytest.mark.asyncio
 async def test_parse_invalid_excel(
     task_processor_client,
@@ -268,3 +271,104 @@ async def test_parse_invalid_excel(
     for src in df.sources:
         assert src.status == FileProcessingStatus.failed
     assert df.error.code == ["FILE", "PARSE_FAILED", "INVALID_EXCEL"]
+
+
+@pytest.mark.asyncio
+async def test_parse_excel_empty_sheets(
+    task_processor_client,
+    task_state,
+    s3_client,
+    redis_model_manager,
+    uploaded_excel_empty_sheets_id,
+    reader_app,
+):
+    rmm = redis_model_manager
+    df = await DataFile.get(manager=rmm, obj_id=uploaded_excel_empty_sheets_id)
+    assert df.status == FileProcessingStatus.in_progress
+
+    task = await task_processor_client.schedule(
+        ProcessExcelTask(
+            file_id=uploaded_excel_empty_sheets_id,
+            tenant_id="common",
+        )
+    )
+    result = await wait_task(task, task_state)
+
+    await sleep(60)
+    assert result[-1] == "success"
+
+    df = await DataFile.get(manager=rmm, obj_id=uploaded_excel_empty_sheets_id)
+    assert df.id == uploaded_excel_empty_sheets_id
+    assert df.status == FileProcessingStatus.ready
+
+    assert df.sources[0].is_applicable
+    assert not df.sources[1].is_applicable  # this sheet is empty
+
+
+@pytest.mark.asyncio
+async def test_excel_type_detection(
+    task_processor_client,
+    task_state,
+    s3_client,
+    s3_model_manager,
+    redis_model_manager,
+    uploaded_types_test_excel_id,
+    reader_app,
+    default_async_usm_per_test,
+):
+    rmm = redis_model_manager
+
+    task = await task_processor_client.schedule(
+        ProcessExcelTask(
+            file_id=uploaded_types_test_excel_id,
+            tenant_id="common",
+        )
+    )
+    result = await wait_task(task, task_state)
+    await sleep(60)
+
+    assert result[-1] == "success"
+
+    df = await DataFile.get(manager=rmm, obj_id=uploaded_types_test_excel_id)
+    assert df.id == uploaded_types_test_excel_id
+    assert df.status == FileProcessingStatus.ready
+
+    assert len(df.sources) == 1
+    dsrc = df.sources[0]
+    assert dsrc.status == FileProcessingStatus.ready
+    assert dsrc.title == "excel_types.xlsx – TypeTestSheet"
+    assert [sch.user_type for sch in dsrc.raw_schema] == [
+        UserDataType.integer,
+        UserDataType.float,
+        UserDataType.string,
+        UserDataType.genericdatetime,  # This is date column, but openpyxl detects it as datetime
+        UserDataType.genericdatetime,
+        UserDataType.boolean,
+    ]
+    assert [sch.name for sch in dsrc.raw_schema] == [
+        "integer_column",
+        "float_column",
+        "string_column",
+        "date_column",
+        "datetime_column",
+        "boolean_column",
+    ]
+    assert [sch.title for sch in dsrc.raw_schema] == [
+        "Integer Column",
+        "Float Column",
+        "String Column",
+        "Date Column",
+        "DateTime Column",
+        "Boolean Column",
+    ]
+
+    preview = await S3DataSourcePreview.get(manager=s3_model_manager, obj_id=dsrc.preview_id)
+    assert preview.id == dsrc.preview_id
+    assert preview.preview_data[0] == [
+        "1",
+        "1.1",
+        "text1",
+        "2023-01-01 00:00:00",
+        "2023-01-01 10:00:00",
+        "True",
+    ]

@@ -40,6 +40,10 @@ CONNECTOR_AVAILABILITY:
       availability: free
     - conn_type: appmetrica_api
       availability: free
+    - conn_type: promql
+      availability: free
+    - conn_type: starrocks
+      availability: hidden
   visible_connectors: []
 CORS_ALLOWED_HEADERS:
 - Content-Type

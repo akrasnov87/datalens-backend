@@ -13,30 +13,36 @@ from .exc import (
     AuthError,
     AuthFailureError,
     NoApplicableAuthCheckersError,
+    UserAuthProviderFactoryError,
 )
 from .middleware import AuthMiddleware
 from .models import RouteMatcher
 from .request_context import (
     AuthRequestContextDependenciesMixin,
     AuthRequestContextMixin,
+    DirectUserAuthProviderFactory,
+    UserAuthProviderFactory,
 )
 
 
 __all__ = [
-    "BaseRequestAuthChecker",
-    "RequestAuthCheckerProtocol",
-    "BaseRequestAuthResult",
     "AlwaysAllowAuthChecker",
     "AlwaysAllowAuthResult",
     "AlwaysDenyAuthChecker",
+    "AuthError",
+    "AuthFailureError",
+    "AuthMiddleware",
+    "AuthRequestContextDependenciesMixin",
+    "AuthRequestContextMixin",
+    "BaseRequestAuthChecker",
+    "BaseRequestAuthResult",
+    "DirectUserAuthProviderFactory",
+    "NoApplicableAuthCheckersError",
     "OAuthChecker",
     "OAuthCheckerSettings",
     "OAuthResult",
-    "AuthRequestContextDependenciesMixin",
-    "AuthRequestContextMixin",
-    "AuthError",
-    "NoApplicableAuthCheckersError",
-    "AuthFailureError",
-    "AuthMiddleware",
+    "RequestAuthCheckerProtocol",
     "RouteMatcher",
+    "UserAuthProviderFactory",
+    "UserAuthProviderFactoryError",
 ]

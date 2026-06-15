@@ -24,7 +24,6 @@ from dl_cache_engine.primitives import (
     DataKeyPart,
     LocalKeyRepresentation,
 )
-from dl_configs.connectors_settings import DeprecatedConnectorSettingsBase
 from dl_constants.enums import (
     ConnectionType,
     DashSQLQueryType,
@@ -56,6 +55,7 @@ from dl_core.connection_models import (
     PageIdent,
     SchemaIdent,
 )
+from dl_core.connectors.settings.base import ConnectorSettings
 from dl_core.exc import InvalidRequestError
 from dl_core.i18n.localizer import Translatable
 from dl_core.us_entry import (
@@ -388,6 +388,20 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
 
     @property
     def is_typed_query_raw_allowed(self) -> bool:
+        return False
+
+    @property
+    def experimental_features_enabled(self) -> bool:
+        return False
+
+    @property
+    def is_cache_invalidation_enabled(self) -> bool:
+        """
+        Check if cache invalidation is enabled for this connection.
+        cache_invalidation_throttling_interval_sec = None means disabled.
+        """
+        if isinstance(self.data, ConnCacheableDataModelMixin):
+            return self.data.cache_invalidation_throttling_interval_sec is not None
         return False
 
     def as_dict(self, short=False):  # type: ignore  # TODO: fix
@@ -839,7 +853,7 @@ class ClassicConnectionSQL(ConnectionSQL):
         return parse_comma_separated_hosts(self.data.host)
 
 
-CONNECTOR_SETTINGS_TV = TypeVar("CONNECTOR_SETTINGS_TV", bound=DeprecatedConnectorSettingsBase)
+CONNECTOR_SETTINGS_TV = TypeVar("CONNECTOR_SETTINGS_TV", bound=ConnectorSettings)
 
 
 def _get_connector_settings(

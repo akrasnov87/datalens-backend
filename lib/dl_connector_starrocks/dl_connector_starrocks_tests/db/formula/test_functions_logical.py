@@ -1,0 +1,7 @@
+from dl_formula_testing.testcases.functions_logical import DefaultLogicalFunctionFormulaConnectorTestSuite
+
+from dl_connector_starrocks_tests.db.formula.base import StarRocksTestBase
+
+
+class TestLogicalFunctionStarRocks(StarRocksTestBase, DefaultLogicalFunctionFormulaConnectorTestSuite):
+    supports_iif = True

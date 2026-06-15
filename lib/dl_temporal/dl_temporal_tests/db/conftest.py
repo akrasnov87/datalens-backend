@@ -4,6 +4,8 @@ from typing import AsyncGenerator
 
 import pytest
 import pytest_asyncio
+import temporalio.api
+import temporalio.api.enums.v1
 
 import dl_temporal
 import dl_testing
@@ -12,21 +14,7 @@ import dl_utils
 
 @pytest.fixture(name="temporal_hostport")
 def fixture_temporal_hostport() -> dl_testing.HostPort:
-    hostport = dl_testing.get_test_container_hostport("temporal")
-    dl_testing.wait_for_port(
-        host=hostport.host,
-        port=hostport.port,
-        timeout_seconds=30,
-    )
-
-    return hostport
-
-
-@pytest.fixture(name="temporal_ui_hostport")
-def fixture_temporal_ui_hostport() -> dl_testing.HostPort:
-    hostport = dl_testing.get_test_container_hostport(service_key="temporal-ui", dc_filename="docker-compose-dev.yml")
-
-    return hostport
+    return dl_testing.get_test_container_hostport("temporal")
 
 
 @pytest.fixture(name="temporal_namespace")
@@ -45,7 +33,7 @@ async def fixture_temporal_client(
             port=temporal_hostport.port,
             namespace=temporal_namespace,
             tls=False,
-            lazy=False,
+            lazy=True,
         )
     )
 
@@ -75,3 +63,16 @@ async def fixture_register_namespace(
         )
     except dl_temporal.AlreadyExists:
         pass
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def fixture_add_search_attributes(
+    temporal_client: dl_temporal.TemporalClient,
+    register_namespace: None,
+) -> None:
+    await temporal_client.add_search_attributes(
+        search_attributes={
+            dl_temporal.base.SearchAttribute.RESULT_TYPE.value: temporalio.api.enums.v1.IndexedValueType.INDEXED_VALUE_TYPE_KEYWORD,
+            dl_temporal.base.SearchAttribute.RESULT_CODE.value: temporalio.api.enums.v1.IndexedValueType.INDEXED_VALUE_TYPE_KEYWORD,
+        },
+    )

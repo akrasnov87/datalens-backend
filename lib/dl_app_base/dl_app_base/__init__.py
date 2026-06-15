@@ -2,6 +2,7 @@ from .base import (
     BaseApp,
     BaseAppFactory,
     BaseAppSettings,
+    RuntimeStatus,
 )
 from .exceptions import (
     ApplicationError,
@@ -26,21 +27,22 @@ from .singleton import (
 
 
 __all__ = [
-    "BaseApp",
-    "BaseAppSettings",
-    "BaseAppFactory",
-    "Callback",
     "ApplicationError",
-    "StartupError",
-    "ShutdownError",
-    "RunError",
-    "UnexpectedFinishError",
-    "LockedAndUnsetError",
-    "singleton_function_result",
-    "singleton_class_method_result",
-    "CertificatesAppSettingsMixin",
-    "CertificatesAppMixin",
+    "BaseApp",
+    "BaseAppFactory",
+    "BaseAppSettings",
+    "Callback",
     "CertificatesAppFactoryMixin",
+    "CertificatesAppMixin",
+    "CertificatesAppSettingsMixin",
     "CertificatesSettings",
+    "LockedAndUnsetError",
+    "RunError",
+    "RuntimeStatus",
+    "ShutdownError",
+    "StartupError",
+    "UnexpectedFinishError",
     "run_async_app",
+    "singleton_class_method_result",
+    "singleton_function_result",
 ]

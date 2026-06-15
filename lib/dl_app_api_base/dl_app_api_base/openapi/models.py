@@ -23,6 +23,7 @@ class OpenApiSpec:
     info: Info | None = None
     tags: list[Tag] = attrs.field(factory=list)
     routes: Sequence[OpenApiRouteProtocol] = attrs.field(factory=list)
+    external_route_prefix: str = ""
 
     @property
     def raw(self) -> dict:
@@ -50,6 +51,8 @@ class OpenApiSpec:
                 path_type = request_schema.model_fields["path"].annotation
                 assert path_type is not None and issubclass(path_type, dl_pydantic.BaseModel)
                 path_schema = path_type.model_json_schema()
+                for key, value in path_schema.get("$defs", {}).items():
+                    defs[key] = value
                 for property_name, property_schema in path_schema.get("properties", {}).items():
                     parameters.append(
                         {
@@ -64,6 +67,8 @@ class OpenApiSpec:
                 query_type = request_schema.model_fields["query"].annotation
                 assert query_type is not None and issubclass(query_type, dl_pydantic.BaseModel)
                 query_schema = query_type.model_json_schema()
+                for key, value in query_schema.get("$defs", {}).items():
+                    defs[key] = value
                 for property_name, property_schema in query_schema.get("properties", {}).items():
                     parameters.append(
                         {
@@ -78,6 +83,8 @@ class OpenApiSpec:
                 body_type = request_schema.model_fields["body"].annotation
                 assert body_type is not None and issubclass(body_type, dl_pydantic.BaseModel)
                 body_schema = body_type.model_json_schema()
+                for key, value in body_schema.get("$defs", {}).items():
+                    defs[key] = value
                 if len(body_schema.get("properties", {})) > 0:
                     parameters.append(
                         {
@@ -99,7 +106,7 @@ class OpenApiSpec:
                         "application/json": {"schema": response_schema.model_json_schema()},
                     },
                 }
-            paths[route.path][route.method.lower()] = {
+            paths[f"{self.external_route_prefix}{route.path}"][route.method.lower()] = {
                 "tags": route.handler.OPENAPI_TAGS,
                 "summary": route.handler.OPENAPI_DESCRIPTION,
                 "parameters": parameters,

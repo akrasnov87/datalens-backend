@@ -2,10 +2,14 @@ import deepdiff
 import pydantic
 from typing_extensions import Self
 
+import dl_json
+
 
 class BaseModel(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(
         populate_by_name=True,
+        # Comment for debugging purposes
+        hide_input_in_errors=True,
     )
 
     def model_deepdiff(
@@ -28,6 +32,24 @@ class BaseModel(pydantic.BaseModel):
         )
 
 
+class BaseSchema(BaseModel):
+    def model_dump_jsonable(
+        self,
+        *,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+    ) -> dl_json.JsonSerializableMapping:
+        return self.model_dump(
+            mode="json",
+            by_alias=True,
+            exclude_none=exclude_none,
+            exclude_unset=exclude_unset,
+            exclude_defaults=exclude_defaults,
+        )
+
+
 __all__ = [
     "BaseModel",
+    "BaseSchema",
 ]

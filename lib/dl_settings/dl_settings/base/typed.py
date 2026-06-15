@@ -12,8 +12,10 @@ import dl_settings.base.settings as base_settings
 
 
 class TypedBaseSettings(base_settings.BaseSettings, dl_pydantic.TypedBaseModel):
+    type: str = pydantic.Field(alias="TYPE")
+
     @classmethod
-    def _get_class_name(cls, data: dict[str, Any]) -> str | None:
+    def _get_class_name(cls, data: dict[str, Any]) -> str:
         type_key = cls.type_key()
         type_lower = None
         for key, value in data.items():
@@ -28,7 +30,7 @@ class TypedBaseSettings(base_settings.BaseSettings, dl_pydantic.TypedBaseModel):
             if registered_type.lower() == type_lower:
                 return registered_type
 
-        return None
+        raise dl_pydantic.UnknownTypeException(f"Unknown type: {type_lower}")
 
     @classmethod
     def _prepare_data(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -85,9 +87,9 @@ else:
 
 
 __all__ = [
-    "TypedBaseSettings",
     "TypedAnnotation",
-    "TypedListAnnotation",
+    "TypedBaseSettings",
     "TypedDictAnnotation",
     "TypedDictWithTypeKeyAnnotation",
+    "TypedListAnnotation",
 ]

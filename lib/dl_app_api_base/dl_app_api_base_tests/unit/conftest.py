@@ -1,3 +1,4 @@
+import enum
 import http
 import logging
 import os
@@ -15,6 +16,7 @@ from typing_extensions import override
 
 import dl_app_api_base
 import dl_app_base
+import dl_pydantic
 
 
 DIR_PATH = os.path.dirname(__file__)
@@ -37,6 +39,11 @@ def fixture_readiness_resource() -> ReadinessResource:
     return ReadinessResource()
 
 
+@pytest.fixture(name="non_critical_readiness_resource")
+def fixture_non_critical_readiness_resource() -> ReadinessResource:
+    return ReadinessResource()
+
+
 @attr.define(kw_only=True, slots=False)
 class Counter:
     value: int = attr.ib(default=0)
@@ -56,6 +63,7 @@ class HttpServerSettings(dl_app_api_base.HttpServerSettings):
 
 class AppSettings(dl_app_api_base.HttpServerAppSettingsMixin):
     readiness_resource: ReadinessResource
+    non_critical_readiness_resource: ReadinessResource
     HTTP_SERVER: HttpServerSettings = NotImplemented
 
 
@@ -113,14 +121,14 @@ RequestContextManager = dl_app_api_base.BaseRequestContextManager[
 
 @attr.define(kw_only=True, slots=False)
 class CounterHandler(dl_app_api_base.BaseHandler):
-    request_context_manager: RequestContextManager
+    request_context_provider: dl_app_api_base.RequestContextProviderProtocol[RequestContext]
 
     class ResponseSchema(dl_app_api_base.BaseResponseSchema):
         counter_value: int
         value: int
 
     async def process(self, request: aiohttp.web.Request) -> aiohttp.web.Response:
-        request_context = self.request_context_manager.get()
+        request_context = self.request_context_provider.get()
 
         return dl_app_api_base.Response.with_model(
             schema=self.ResponseSchema(
@@ -149,8 +157,25 @@ class HeadersHandler(dl_app_api_base.BaseHandler):
 
     request_context_provider: dl_app_api_base.RequestContextProviderProtocol[dl_app_api_base.HeadersRequestContextMixin]
 
+    class RequestSchema(dl_app_api_base.BaseRequestSchema):
+        class Path(dl_pydantic.BaseSchema):
+            path_param: str
+
+        class Query(dl_pydantic.BaseSchema):
+            query_param: str
+
+        path: Path
+        query: Query
+
     class ResponseSchema(dl_app_api_base.BaseResponseSchema):
+        method: str
+        path: str
+        raw_path: str
+        path_pattern: str
+        host: str
+
         request_id: str
+        trace_id: str
         user_ip: str
 
     async def process(self, request: aiohttp.web.Request) -> aiohttp.web.Response:
@@ -158,11 +183,73 @@ class HeadersHandler(dl_app_api_base.BaseHandler):
 
         return dl_app_api_base.Response.with_model(
             schema=self.ResponseSchema(
+                method=request_context.method,
+                path=request_context.path,
+                raw_path=request_context.raw_path,
+                path_pattern=request_context.path_pattern,
+                host=request_context.host,
                 request_id=request_context.get_request_id(),
+                trace_id=request_context.get_trace_id(),
                 user_ip=request_context.get_user_ip(),
             ),
             status=http.HTTPStatus.OK,
         )
+
+
+class SpecTestHandler(dl_app_api_base.BaseHandler):
+    OPENAPI_TAGS = ["spec-test"]
+
+    class RequestSchema(dl_app_api_base.BaseRequestSchema):
+        class Path(dl_pydantic.BaseSchema):
+            class PathEnum(str, enum.Enum):
+                FOO = "foo"
+                BAR = "bar"
+
+            class PathNested(dl_pydantic.BaseSchema):
+                value: int
+
+            path_enum: PathEnum
+            path_nested: PathNested
+
+        class Query(dl_pydantic.BaseSchema):
+            class QueryEnum(str, enum.Enum):
+                FOO = "foo"
+                BAR = "bar"
+
+            class QueryNested(dl_pydantic.BaseSchema):
+                value: int
+
+            enum: QueryEnum
+            query_nested: QueryNested
+
+        class Body(dl_pydantic.BaseSchema):
+            class BodyEnum(str, enum.Enum):
+                FOO = "foo"
+                BAR = "bar"
+
+            class BodyNested(dl_pydantic.BaseSchema):
+                value: int
+
+            body_enum: BodyEnum
+            body_nested: BodyNested
+
+        path: Path
+        query: Query
+        body: Body
+
+    class ResponseSchema(dl_app_api_base.BaseResponseSchema):
+        class ResponseEnum(str, enum.Enum):
+            FOO = "foo"
+            BAR = "bar"
+
+        class ResponseNested(dl_pydantic.BaseSchema):
+            value: int
+
+        response_enum: ResponseEnum
+        response_nested: ResponseNested
+
+    async def process(self, request: aiohttp.web.Request) -> aiohttp.web.Response:
+        raise NotImplementedError
 
 
 @attr.define(kw_only=True, slots=False)
@@ -187,6 +274,11 @@ class AppFactory(dl_app_api_base.HttpServerAppFactoryMixin):
                 name="readiness_resource.is_ready",
                 is_ready=self.settings.readiness_resource.is_ready,
             ),
+            dl_app_api_base.SubsystemReadinessSyncCallback(
+                name="non_critical_readiness_resource.is_ready",
+                is_ready=self.settings.non_critical_readiness_resource.is_ready,
+                critical=False,
+            ),
         ]
 
     @override
@@ -194,8 +286,7 @@ class AppFactory(dl_app_api_base.HttpServerAppFactoryMixin):
     async def _get_request_auth_checkers(
         self,
     ) -> list[dl_app_api_base.RequestAuthCheckerProtocol]:
-        base_checkers = await super()._get_request_auth_checkers()
-
+        context_provider = await self._get_request_context_provider()
         return [
             dl_app_api_base.AlwaysAllowAuthChecker(
                 route_matchers=[
@@ -204,6 +295,7 @@ class AppFactory(dl_app_api_base.HttpServerAppFactoryMixin):
                         methods=frozenset(["GET"]),
                     ),
                 ],
+                context_provider=context_provider,
             ),
             dl_app_api_base.AlwaysAllowAuthChecker(
                 route_matchers=[
@@ -212,6 +304,7 @@ class AppFactory(dl_app_api_base.HttpServerAppFactoryMixin):
                         methods=frozenset(["GET"]),
                     ),
                 ],
+                context_provider=context_provider,
             ),
             dl_app_api_base.OAuthChecker.from_settings(
                 settings=self.settings.HTTP_SERVER.OAUTH_CHECKER,
@@ -221,6 +314,7 @@ class AppFactory(dl_app_api_base.HttpServerAppFactoryMixin):
                         methods=frozenset(["GET"]),
                     )
                 ],
+                context_provider=context_provider,
             ),
             dl_app_api_base.AlwaysAllowAuthChecker(
                 route_matchers=[
@@ -229,6 +323,16 @@ class AppFactory(dl_app_api_base.HttpServerAppFactoryMixin):
                         methods=frozenset(["GET"]),
                     ),
                 ],
+                context_provider=context_provider,
+            ),
+            dl_app_api_base.AlwaysAllowAuthChecker(
+                route_matchers=[
+                    dl_app_api_base.RouteMatcher(
+                        path_regex=re.compile(r"^/api/v1/spec-test"),
+                        methods=frozenset(["GET"]),
+                    ),
+                ],
+                context_provider=context_provider,
             ),
             dl_app_api_base.AlwaysDenyAuthChecker(
                 route_matchers=[
@@ -237,15 +341,24 @@ class AppFactory(dl_app_api_base.HttpServerAppFactoryMixin):
                         methods=frozenset(["GET"]),
                     ),
                 ],
+                context_provider=context_provider,
             ),
-            *base_checkers,
+            *await super()._get_request_auth_checkers(),
         ]
+
+    @override
+    @dl_app_base.singleton_class_method_result
+    async def _get_request_context_provider(
+        self,
+    ) -> dl_app_api_base.RequestContextProvider[RequestContext]:
+        return dl_app_api_base.RequestContextProvider()
 
     @override
     @dl_app_base.singleton_class_method_result
     async def _get_request_context_manager(  # type: ignore[override]
         self,
     ) -> RequestContextManager:
+        request_context_provider = await self._get_request_context_provider()
         return RequestContextManager(
             context_factory=RequestContext.factory,
             dependencies=RequestContextDependencies(
@@ -253,6 +366,7 @@ class AppFactory(dl_app_api_base.HttpServerAppFactoryMixin):
                 value=42,
                 request_auth_checkers=await self._get_request_auth_checkers(),
             ),
+            context_var=request_context_provider.context_var,
         )
 
     @override
@@ -266,12 +380,12 @@ class AppFactory(dl_app_api_base.HttpServerAppFactoryMixin):
                 dl_app_api_base.Route(
                     method="GET",
                     path="/api/v1/counter",
-                    handler=CounterHandler(request_context_manager=await self._get_request_context_manager()),
+                    handler=CounterHandler(request_context_provider=await self._get_request_context_provider()),
                 ),
                 dl_app_api_base.Route(
                     method="GET",
-                    path="/api/v1/headers",
-                    handler=HeadersHandler(request_context_provider=await self._get_request_context_manager()),
+                    path="/api/v1/headers/{path_param}",
+                    handler=HeadersHandler(request_context_provider=await self._get_request_context_provider()),
                 ),
                 dl_app_api_base.Route(
                     method="GET",
@@ -288,9 +402,38 @@ class AppFactory(dl_app_api_base.HttpServerAppFactoryMixin):
                     path="/api/v1/always_deny/ping",
                     handler=PingHandler(),
                 ),
+                dl_app_api_base.Route(
+                    method="GET",
+                    path="/api/v1/spec-test",
+                    handler=SpecTestHandler(),
+                ),
             ]
         )
         return routes
+
+    @override
+    @dl_app_base.singleton_class_method_result
+    async def _get_request_openapi_auth_checkers(
+        self,
+    ) -> list[dl_app_api_base.RequestAuthCheckerProtocol]:
+        return [
+            dl_app_api_base.AlwaysAllowAuthChecker(
+                route_matchers=await self._get_request_openapi_auth_checkers_route_matchers(),
+                context_provider=await self._get_request_context_provider(),
+            ),
+        ]
+
+    @override
+    @dl_app_base.singleton_class_method_result
+    async def _get_request_admin_auth_checkers(
+        self,
+    ) -> list[dl_app_api_base.RequestAuthCheckerProtocol]:
+        return [
+            dl_app_api_base.AlwaysAllowAuthChecker(
+                route_matchers=await self._get_request_admin_auth_checkers_route_matchers(),
+                context_provider=await self._get_request_context_provider(),
+            ),
+        ]
 
 
 @pytest.fixture(name="oauth_user1_token")
@@ -307,6 +450,7 @@ def fixture_oauth_user2_token() -> str:
 def fixture_app_settings(
     monkeypatch: pytest.MonkeyPatch,
     readiness_resource: ReadinessResource,
+    non_critical_readiness_resource: ReadinessResource,
     oauth_user1_token: str,
     oauth_user2_token: str,
 ) -> AppSettings:
@@ -315,7 +459,10 @@ def fixture_app_settings(
     monkeypatch.setenv("HTTP_SERVER__OAUTH_CHECKER__USERS__USER1__TOKEN", oauth_user1_token)
     monkeypatch.setenv("HTTP_SERVER__OAUTH_CHECKER__USERS__USER2__TOKEN", oauth_user2_token)
 
-    return AppSettings(readiness_resource=readiness_resource)
+    return AppSettings(
+        readiness_resource=readiness_resource,
+        non_critical_readiness_resource=non_critical_readiness_resource,
+    )
 
 
 @pytest_asyncio.fixture(name="app", autouse=True)
@@ -335,5 +482,6 @@ async def fixture_app_client(
 ) -> AsyncGenerator[aiohttp.ClientSession, None]:
     async with aiohttp.ClientSession(
         base_url=f"http://{app_settings.HTTP_SERVER.HOST}:{app_settings.HTTP_SERVER.PORT}",
+        timeout=aiohttp.ClientTimeout(total=1),
     ) as session:
         yield session

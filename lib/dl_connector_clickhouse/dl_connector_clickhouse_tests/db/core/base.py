@@ -8,6 +8,7 @@ import pytest
 import dl_configs.utils as bi_configs_utils
 from dl_core_testing.testcases.connection import BaseConnectionTestClass
 
+from dl_connector_clickhouse.core.clickhouse.settings import ClickHouseConnectorSettings
 from dl_connector_clickhouse.core.clickhouse.us_connection import ConnectionClickhouse
 from dl_connector_clickhouse.core.clickhouse_base.constants import CONNECTION_TYPE_CLICKHOUSE
 from dl_connector_clickhouse.db_testing.engine_wrapper import ClickhouseDbEngineConfig
@@ -43,6 +44,23 @@ class BaseClickHouseTestClass(BaseConnectionTestClass[ConnectionClickhouse]):
             port=test_config.CoreConnectionSettings.PORT,
             username=test_config.CoreConnectionSettings.USERNAME,
             password=test_config.CoreConnectionSettings.PASSWORD,
+            **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
+        )
+
+
+class BaseClickHouseCH26TestClass(BaseClickHouseTestClass):
+    @pytest.fixture(scope="class")
+    def db_url(self) -> str:
+        return test_config.DB_CORE_URL_CH26
+
+    @pytest.fixture(scope="function")
+    def connection_creation_params(self) -> dict:
+        return dict(
+            db_name=test_config.CoreConnectionSettingsCH26.DB_NAME,
+            host=test_config.CoreConnectionSettingsCH26.HOST,
+            port=test_config.CoreConnectionSettingsCH26.PORT,
+            username=test_config.CoreConnectionSettingsCH26.USERNAME,
+            password=test_config.CoreConnectionSettingsCH26.PASSWORD,
             **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
         )
 
@@ -105,4 +123,21 @@ class BaseSslClickHouseTestClass(BaseClickHouseTestClass):
             **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
             secure=True,
             ssl_ca=test_config.get_clickhouse_ssl_ca(),
+        )
+
+
+class BaseSslNoVerifyClickHouseTestClass(BaseSslClickHouseTestClass):
+    connection_settings = ClickHouseConnectorSettings(ALLOW_SSL_CA_VERIFY_OPTION=True)
+
+    @pytest.fixture(scope="function")
+    def connection_creation_params(self) -> dict:
+        return dict(
+            db_name=test_config.CoreSslConnectionSettings.DB_NAME,
+            host=test_config.CoreSslConnectionSettings.HOST,
+            port=test_config.CoreSslConnectionSettings.PORT,
+            username=test_config.CoreSslConnectionSettings.USERNAME,
+            password=test_config.CoreSslConnectionSettings.PASSWORD,
+            **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
+            secure=True,
+            ssl_ca_verify=False,
         )

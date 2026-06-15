@@ -1,5 +1,6 @@
 import abc
 import dataclasses
+import enum
 import functools
 import logging
 from typing import (
@@ -10,12 +11,12 @@ from typing import (
     Generic,
     Protocol,
     TypeVar,
-    cast,
 )
 
 import pydantic
 import temporalio.activity
-import temporalio.api.common.v1
+import temporalio.common
+import temporalio.contrib.pydantic
 import temporalio.converter
 import temporalio.workflow
 
@@ -30,16 +31,44 @@ with temporalio.workflow.unsafe.imports_passed_through():
 LOGGER = logging.getLogger(__name__)
 
 
+class SearchAttribute(str, enum.Enum):
+    RESULT_TYPE = "ResultType"
+    RESULT_CODE = "ResultCode"
+
+    @property
+    def keyword(self) -> temporalio.common.SearchAttributeKey[str]:
+        return temporalio.common.SearchAttributeKey.for_keyword(self.value)
+
+
+class ResultType(str, enum.Enum):
+    SUCCESS = "Success"
+    ERROR = "Error"
+
+
 def _generate_workflow_id() -> str:
     return str(temporalio.workflow.uuid4())
 
 
 class BaseModel(dl_pydantic.BaseModel):
-    __pydantic_is_temporal_model__: ClassVar[bool] = True
-
     def model_dump_for_logging(self) -> str:
         data = self.model_dump(mode="json")
         return dl_json.dumps_str(data)
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def _coerce_model_instance(cls, data: Any) -> Any:
+        if isinstance(data, dl_pydantic.BaseModel) and not isinstance(data, cls):
+            # Temporal's workflow sandbox may produce different class objects for the same model,
+            # so we need to coerce the instance to a dict to avoid type errors.
+            return data.model_dump()
+
+        return data
+
+
+class ParentContext(BaseModel):
+    request_id: str | None = pydantic.Field(default=None)
+    user_ip: str | None = pydantic.Field(default=None)
+    trace_id: str | None = pydantic.Field(default=None)
 
 
 class _UnsetStr(str):
@@ -63,46 +92,11 @@ class BaseResultModel(BaseModel):
         return data
 
 
-class JSONPlainPayloadConverter(temporalio.converter.JSONPlainPayloadConverter):
-    def _is_pydantic_model(self, value: Any) -> bool:
-        # can't just use isinstance(value, BaseModel), because it fails for ActivityParams
-        return hasattr(value, "__pydantic_is_temporal_model__") and value.__pydantic_is_temporal_model__
-
-    def _is_pydantic_model_hint(self, type_hint: type[Any] | None) -> bool:
-        # can't just use issubclass(type_hint, BaseModel), because it fails for ActivityParams
-        return (
-            type_hint is not None
-            and hasattr(type_hint, "__pydantic_is_temporal_model__")
-            and type_hint.__pydantic_is_temporal_model__
-        )
-
-    def to_payload(self, value: Any) -> temporalio.api.common.v1.Payload | None:
-        if self._is_pydantic_model(value):
-            value = cast(BaseModel, value).model_dump(mode="json")
-
-        return super().to_payload(value)
-
-    def from_payload(self, payload: temporalio.api.common.v1.Payload, type_hint: type[Any] | None = None) -> Any:
-        if self._is_pydantic_model_hint(type_hint):
-            return cast(BaseModel, type_hint).model_validate_json(payload.data)
-
-        return super().from_payload(payload, type_hint)
-
-
-class PayloadConverter(temporalio.converter.CompositePayloadConverter):
-    default_encoding_payload_converters: tuple[temporalio.converter.EncodingPayloadConverter, ...] = (
-        *temporalio.converter.DefaultPayloadConverter.default_encoding_payload_converters,
-        JSONPlainPayloadConverter(),
-    )
-
-    def __init__(self) -> None:
-        """Create a default payload converter."""
-        super().__init__(*self.default_encoding_payload_converters)
-
-
 @dataclasses.dataclass(frozen=True)
 class DataConverter(temporalio.converter.DataConverter):
-    payload_converter_class: type[temporalio.converter.PayloadConverter] = PayloadConverter
+    payload_converter_class: type[
+        temporalio.converter.PayloadConverter
+    ] = temporalio.contrib.pydantic.PydanticPayloadConverter
 
 
 class BaseActivityParams(BaseModel):
@@ -112,6 +106,7 @@ class BaseActivityParams(BaseModel):
     schedule_to_close_timeout: dl_pydantic.JsonableTimedelta = dl_pydantic.JsonableTimedelta(minutes=10)
     # timeout before activity is started
     schedule_to_start_timeout: dl_pydantic.JsonableTimedelta = dl_pydantic.JsonableTimedelta(minutes=10)
+    parent_context: ParentContext = pydantic.Field(default_factory=ParentContext)
 
 
 class BaseActivityResult(BaseResultModel):
@@ -170,8 +165,9 @@ def _activity_logging_middleware(
         logging_context = _activity_info_to_logging_context(
             activity_info=temporalio.activity.info(),
         )
+        logging_context["parent_request_id"] = params.parent_context.request_id
 
-        with dl_logging.LogContext(**logging_context):
+        with dl_logging.LogContext(context=logging_context):
             self.logger.info(
                 "TemporalActivity(name=%s).run: starting with params: %s",
                 self.name,
@@ -217,13 +213,19 @@ class BaseActivity(ActivityProtocol, Generic[ActivityParamsT, ActivityResultT]):
         ...
 
 
+DEFAULT_WORKFLOW_EXECUTION_TIMEOUT = dl_pydantic.JsonableTimedelta(minutes=10)
+
+
 class BaseWorkflowParams(BaseModel):
-    execution_timeout: dl_pydantic.JsonableTimedelta = dl_pydantic.JsonableTimedelta(minutes=10)
+    execution_timeout: dl_pydantic.JsonableTimedelta = DEFAULT_WORKFLOW_EXECUTION_TIMEOUT
     parent_close_policy: temporalio.workflow.ParentClosePolicy = temporalio.workflow.ParentClosePolicy.TERMINATE
+    parent_context: ParentContext = pydantic.Field(default_factory=ParentContext)
 
 
 class BaseWorkflowResult(BaseResultModel):
-    ...
+    @property
+    def search_attributes(self) -> list[temporalio.common.SearchAttributeUpdate]:
+        return []
 
 
 class BaseWorkflowError(BaseWorkflowResult):
@@ -275,8 +277,9 @@ def _workflow_logging_middleware(
         logging_context = _workflow_info_to_logging_context(
             workflow_info=temporalio.workflow.info(),
         )
+        logging_context["parent_request_id"] = params.parent_context.request_id
 
-        with dl_logging.LogContext(**logging_context):
+        with dl_logging.LogContext(context=logging_context):
             self.logger.info(
                 "TemporalWorkflow(name=%s).run: starting with params: %s",
                 self.name,
@@ -316,6 +319,36 @@ def _workflow_logging_middleware(
     return inner
 
 
+def _search_attributes_middleware(
+    func: Callable[[_WorkflowType, WorkflowParamsT], Awaitable[WorkflowResultT]],
+) -> Callable[[_WorkflowType, WorkflowParamsT], Awaitable[WorkflowResultT]]:
+    @functools.wraps(func)
+    async def inner(
+        self: _WorkflowType,
+        params: WorkflowParamsT,
+    ) -> WorkflowResultT:
+        result = await func(self, params)
+        temporalio.workflow.upsert_search_attributes(result.search_attributes)
+        return result
+
+    return inner
+
+
+def _parent_context_middleware(
+    func: Callable[[_WorkflowType, WorkflowParamsT], Awaitable[WorkflowResultT]],
+) -> Callable[[_WorkflowType, WorkflowParamsT], Awaitable[WorkflowResultT]]:
+    @functools.wraps(func)
+    async def inner(
+        self: _WorkflowType,
+        params: WorkflowParamsT,
+    ) -> WorkflowResultT:
+        if params.parent_context.request_id is None:
+            params.parent_context.request_id = temporalio.workflow.info().run_id
+        return await func(self, params)
+
+    return inner
+
+
 class BaseWorkflow(WorkflowProtocol, Generic[SelfType, WorkflowParamsT, WorkflowResultT]):
     name: ClassVar[str]
     logger: ClassVar[logging.Logger]
@@ -331,6 +364,8 @@ class BaseWorkflow(WorkflowProtocol, Generic[SelfType, WorkflowParamsT, Workflow
     # 4. This approach, which is not very elegant, but it works and is type-safe
     def __init_subclass__(cls, **kwargs: Any) -> None:
         cls.run = _workflow_logging_middleware(cls.run)  # type: ignore
+        cls.run = _search_attributes_middleware(cls.run)  # type: ignore
+        cls.run = _parent_context_middleware(cls.run)  # type: ignore
 
     @abc.abstractmethod
     async def run(self, params: WorkflowParamsT) -> WorkflowResultT:

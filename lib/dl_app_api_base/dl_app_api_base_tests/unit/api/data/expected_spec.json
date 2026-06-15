@@ -1,0 +1,950 @@
+{
+  "openapi": "3.0.1",
+  "tags": [],
+  "paths": {
+    "/system/health/liveness": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Liveness probe, checks if the system is alive",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "status": {
+                      "const": "healthy",
+                      "default": "healthy",
+                      "title": "Status",
+                      "type": "string"
+                    }
+                  },
+                  "title": "ResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "default": "Bad request",
+                      "title": "Message",
+                      "type": "string"
+                    },
+                    "code": {
+                      "default": "ERR.API.BAD_REQUEST",
+                      "title": "Code",
+                      "type": "string"
+                    }
+                  },
+                  "title": "BadRequestResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/system/health/readiness": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Readiness probe, checks if the system is ready to serve requests",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$defs": {
+                    "SubsystemStatusSchema": {
+                      "properties": {
+                        "value": {
+                          "title": "Value",
+                          "type": "boolean"
+                        },
+                        "critical": {
+                          "title": "Critical",
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "value",
+                        "critical"
+                      ],
+                      "title": "SubsystemStatusSchema",
+                      "type": "object"
+                    }
+                  },
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "healthy",
+                        "unhealthy"
+                      ],
+                      "title": "Status",
+                      "type": "string"
+                    },
+                    "subsystems_status": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/SubsystemStatusSchema"
+                      },
+                      "title": "Subsystems Status",
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "subsystems_status"
+                  ],
+                  "title": "ResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "default": "Bad request",
+                      "title": "Message",
+                      "type": "string"
+                    },
+                    "code": {
+                      "default": "ERR.API.BAD_REQUEST",
+                      "title": "Code",
+                      "type": "string"
+                    }
+                  },
+                  "title": "BadRequestResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$defs": {
+                    "SubsystemStatusSchema": {
+                      "properties": {
+                        "value": {
+                          "title": "Value",
+                          "type": "boolean"
+                        },
+                        "critical": {
+                          "title": "Critical",
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "value",
+                        "critical"
+                      ],
+                      "title": "SubsystemStatusSchema",
+                      "type": "object"
+                    }
+                  },
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "healthy",
+                        "unhealthy"
+                      ],
+                      "title": "Status",
+                      "type": "string"
+                    },
+                    "subsystems_status": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/SubsystemStatusSchema"
+                      },
+                      "title": "Subsystems Status",
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "subsystems_status"
+                  ],
+                  "title": "ResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/system/health/startup": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Startup probe, checks if all subsystems are ready",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$defs": {
+                    "SubsystemStatusSchema": {
+                      "properties": {
+                        "value": {
+                          "title": "Value",
+                          "type": "boolean"
+                        },
+                        "critical": {
+                          "title": "Critical",
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "value",
+                        "critical"
+                      ],
+                      "title": "SubsystemStatusSchema",
+                      "type": "object"
+                    }
+                  },
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "healthy",
+                        "unhealthy"
+                      ],
+                      "title": "Status",
+                      "type": "string"
+                    },
+                    "subsystems_status": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/SubsystemStatusSchema"
+                      },
+                      "title": "Subsystems Status",
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "subsystems_status"
+                  ],
+                  "title": "ResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "default": "Bad request",
+                      "title": "Message",
+                      "type": "string"
+                    },
+                    "code": {
+                      "default": "ERR.API.BAD_REQUEST",
+                      "title": "Code",
+                      "type": "string"
+                    }
+                  },
+                  "title": "BadRequestResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$defs": {
+                    "SubsystemStatusSchema": {
+                      "properties": {
+                        "value": {
+                          "title": "Value",
+                          "type": "boolean"
+                        },
+                        "critical": {
+                          "title": "Critical",
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "value",
+                        "critical"
+                      ],
+                      "title": "SubsystemStatusSchema",
+                      "type": "object"
+                    }
+                  },
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "healthy",
+                        "unhealthy"
+                      ],
+                      "title": "Status",
+                      "type": "string"
+                    },
+                    "subsystems_status": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/SubsystemStatusSchema"
+                      },
+                      "title": "Subsystems Status",
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "subsystems_status"
+                  ],
+                  "title": "ResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/system/app-info": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Returns application info",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "app_name": {
+                      "title": "App Name",
+                      "type": "string"
+                    },
+                    "version": {
+                      "title": "Version",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "app_name",
+                    "version"
+                  ],
+                  "title": "ResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "default": "Bad request",
+                      "title": "Message",
+                      "type": "string"
+                    },
+                    "code": {
+                      "default": "ERR.API.BAD_REQUEST",
+                      "title": "Code",
+                      "type": "string"
+                    }
+                  },
+                  "title": "BadRequestResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/settings": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Returns the full application settings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {},
+                  "title": "ResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "default": "Bad request",
+                      "title": "Message",
+                      "type": "string"
+                    },
+                    "code": {
+                      "default": "ERR.API.BAD_REQUEST",
+                      "title": "Code",
+                      "type": "string"
+                    }
+                  },
+                  "title": "BadRequestResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/dynconfig": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Returns the current dynamic configuration and its source type",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "source_type": {
+                      "title": "Source Type",
+                      "type": "string"
+                    },
+                    "config": {
+                      "additionalProperties": true,
+                      "title": "Config",
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "source_type",
+                    "config"
+                  ],
+                  "title": "ResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "default": "Bad request",
+                      "title": "Message",
+                      "type": "string"
+                    },
+                    "code": {
+                      "default": "ERR.API.BAD_REQUEST",
+                      "title": "Code",
+                      "type": "string"
+                    }
+                  },
+                  "title": "BadRequestResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/counter": {
+      "get": {
+        "tags": [],
+        "summary": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "counter_value": {
+                      "title": "Counter Value",
+                      "type": "integer"
+                    },
+                    "value": {
+                      "title": "Value",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "counter_value",
+                    "value"
+                  ],
+                  "title": "ResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "default": "Bad request",
+                      "title": "Message",
+                      "type": "string"
+                    },
+                    "code": {
+                      "default": "ERR.API.BAD_REQUEST",
+                      "title": "Code",
+                      "type": "string"
+                    }
+                  },
+                  "title": "BadRequestResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/oauth/ping": {
+      "get": {
+        "tags": [],
+        "summary": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "title": "Message",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ],
+                  "title": "ResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "default": "Bad request",
+                      "title": "Message",
+                      "type": "string"
+                    },
+                    "code": {
+                      "default": "ERR.API.BAD_REQUEST",
+                      "title": "Code",
+                      "type": "string"
+                    }
+                  },
+                  "title": "BadRequestResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/always_allow/ping": {
+      "get": {
+        "tags": [],
+        "summary": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "title": "Message",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ],
+                  "title": "ResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "default": "Bad request",
+                      "title": "Message",
+                      "type": "string"
+                    },
+                    "code": {
+                      "default": "ERR.API.BAD_REQUEST",
+                      "title": "Code",
+                      "type": "string"
+                    }
+                  },
+                  "title": "BadRequestResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/always_deny/ping": {
+      "get": {
+        "tags": [],
+        "summary": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "title": "Message",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ],
+                  "title": "ResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "default": "Bad request",
+                      "title": "Message",
+                      "type": "string"
+                    },
+                    "code": {
+                      "default": "ERR.API.BAD_REQUEST",
+                      "title": "Code",
+                      "type": "string"
+                    }
+                  },
+                  "title": "BadRequestResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec-test": {
+      "get": {
+        "tags": [
+          "spec-test"
+        ],
+        "summary": "",
+        "parameters": [
+          {
+            "name": "path_enum",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/$defs/PathEnum"
+            }
+          },
+          {
+            "name": "path_nested",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/$defs/PathNested"
+            }
+          },
+          {
+            "name": "enum",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/$defs/QueryEnum"
+            }
+          },
+          {
+            "name": "query_nested",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/$defs/QueryNested"
+            }
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$defs": {
+                "BodyEnum": {
+                  "enum": [
+                    "foo",
+                    "bar"
+                  ],
+                  "title": "BodyEnum",
+                  "type": "string"
+                },
+                "BodyNested": {
+                  "properties": {
+                    "value": {
+                      "title": "Value",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "value"
+                  ],
+                  "title": "BodyNested",
+                  "type": "object"
+                }
+              },
+              "properties": {
+                "body_enum": {
+                  "$ref": "#/$defs/BodyEnum"
+                },
+                "body_nested": {
+                  "$ref": "#/$defs/BodyNested"
+                }
+              },
+              "required": [
+                "body_enum",
+                "body_nested"
+              ],
+              "title": "Body",
+              "type": "object"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$defs": {
+                    "ResponseEnum": {
+                      "enum": [
+                        "foo",
+                        "bar"
+                      ],
+                      "title": "ResponseEnum",
+                      "type": "string"
+                    },
+                    "ResponseNested": {
+                      "properties": {
+                        "value": {
+                          "title": "Value",
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "value"
+                      ],
+                      "title": "ResponseNested",
+                      "type": "object"
+                    }
+                  },
+                  "properties": {
+                    "response_enum": {
+                      "$ref": "#/$defs/ResponseEnum"
+                    },
+                    "response_nested": {
+                      "$ref": "#/$defs/ResponseNested"
+                    }
+                  },
+                  "required": [
+                    "response_enum",
+                    "response_nested"
+                  ],
+                  "title": "ResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "default": "Bad request",
+                      "title": "Message",
+                      "type": "string"
+                    },
+                    "code": {
+                      "default": "ERR.API.BAD_REQUEST",
+                      "title": "Code",
+                      "type": "string"
+                    }
+                  },
+                  "title": "BadRequestResponseSchema",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "SubsystemStatusSchema": {
+      "properties": {
+        "value": {
+          "title": "Value",
+          "type": "boolean"
+        },
+        "critical": {
+          "title": "Critical",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "value",
+        "critical"
+      ],
+      "title": "SubsystemStatusSchema",
+      "type": "object"
+    },
+    "PathEnum": {
+      "enum": [
+        "foo",
+        "bar"
+      ],
+      "title": "PathEnum",
+      "type": "string"
+    },
+    "PathNested": {
+      "properties": {
+        "value": {
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "PathNested",
+      "type": "object"
+    },
+    "QueryEnum": {
+      "enum": [
+        "foo",
+        "bar"
+      ],
+      "title": "QueryEnum",
+      "type": "string"
+    },
+    "QueryNested": {
+      "properties": {
+        "value": {
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "QueryNested",
+      "type": "object"
+    },
+    "BodyEnum": {
+      "enum": [
+        "foo",
+        "bar"
+      ],
+      "title": "BodyEnum",
+      "type": "string"
+    },
+    "BodyNested": {
+      "properties": {
+        "value": {
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "BodyNested",
+      "type": "object"
+    },
+    "ResponseEnum": {
+      "enum": [
+        "foo",
+        "bar"
+      ],
+      "title": "ResponseEnum",
+      "type": "string"
+    },
+    "ResponseNested": {
+      "properties": {
+        "value": {
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "ResponseNested",
+      "type": "object"
+    }
+  }
+}

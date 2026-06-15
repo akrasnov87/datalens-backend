@@ -37,14 +37,14 @@ from dl_api_connector.form_config.models.rows.base import (
     TDisplayConditions,
 )
 from dl_api_connector.form_config.models.shortcuts.rows import RowConstructor
-from dl_configs.connectors_settings import DeprecatedConnectorSettingsBase
 from dl_constants.enums import RawSQLLevel
+from dl_core.connectors.settings.base import ConnectorSettings
 from dl_i18n.localizer_base import Localizer
 
 from dl_connector_ydb.api.ydb.connection_info import YDBConnectionInfoProvider
 from dl_connector_ydb.api.ydb.i18n.localizer import Translatable
 from dl_connector_ydb.core.ydb.constants import YDBAuthTypeMode
-from dl_connector_ydb.core.ydb.settings import DeprecatedYDBConnectorSettings
+from dl_connector_ydb.core.ydb.settings import YDBConnectorSettings
 
 
 class YDBOAuthApplication(OAuthApplication):
@@ -117,9 +117,7 @@ class YDBConnectionFormFactory(ConnectionFormFactory):
             FormFieldApiSchema(name=CommonFieldName.data_export_forbidden),
         ]
 
-    def _get_default_db_section(
-        self, rc: RowConstructor, connector_settings: DeprecatedYDBConnectorSettings
-    ) -> list[FormRow]:
+    def _get_default_db_section(self, rc: RowConstructor, connector_settings: YDBConnectorSettings) -> list[FormRow]:
         oauth_row = (
             C.OAuthTokenRow(
                 name=CommonFieldName.token,
@@ -154,11 +152,19 @@ class YDBConnectionFormFactory(ConnectionFormFactory):
         ]
 
     def _get_base_edit_api_schema(self) -> FormActionApiSchema:
+        form_params = self._get_form_params()
+        is_invalidation_cache_enabled = form_params.feature_flags.is_invalidation_cache_enabled
+
         return FormActionApiSchema(
-            items=[
-                FormFieldApiSchema(name=CommonFieldName.cache_ttl_sec, nullable=True),
-                FormFieldApiSchema(name=CommonFieldName.raw_sql_level),
-            ]
+            items=self._filter_nulls(
+                [
+                    FormFieldApiSchema(name=CommonFieldName.cache_ttl_sec, nullable=True),
+                    FormFieldApiSchema(name=CommonFieldName.cache_invalidation_throttling_interval_sec, nullable=True)
+                    if is_invalidation_cache_enabled
+                    else None,
+                    FormFieldApiSchema(name=CommonFieldName.raw_sql_level),
+                ]
+            )
         )
 
     def _get_base_create_api_schema(self, edit_api_schema: FormActionApiSchema) -> FormActionApiSchema:
@@ -185,15 +191,16 @@ class YDBConnectionFormFactory(ConnectionFormFactory):
         check_api_schema: FormActionApiSchema,
         rc: RowConstructor,
         ydb_rc: YDBRowConstructor,
-        connector_settings: Optional[DeprecatedConnectorSettingsBase],
+        connector_settings: Optional[ConnectorSettings],
     ) -> ConnectionForm:
-        assert connector_settings is not None and isinstance(connector_settings, DeprecatedYDBConnectorSettings)
+        assert connector_settings is not None and isinstance(connector_settings, YDBConnectorSettings)
 
         raw_sql_levels = [RawSQLLevel.subselect, RawSQLLevel.dashsql]
         if connector_settings.ENABLE_DATASOURCE_TEMPLATE:
             raw_sql_levels.append(RawSQLLevel.template)
 
         form_params = self._get_form_params()
+        is_invalidation_cache_enabled = form_params.feature_flags.is_invalidation_cache_enabled
 
         if connector_settings.ENABLE_AUTH_TYPE_PICKER:
             rows = [
@@ -205,8 +212,9 @@ class YDBConnectionFormFactory(ConnectionFormFactory):
                 ydb_rc.password_row(
                     display_conditions={YDBFieldName.auth_type: YDBAuthTypeMode.password.value}, mode=self.mode
                 ),
-                C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec),
+                C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec) if not is_invalidation_cache_enabled else None,
                 rc.raw_sql_level_row_v2(raw_sql_levels=raw_sql_levels),
+                *(rc.cache_rows() if is_invalidation_cache_enabled else []),
                 rc.collapse_advanced_settings_row(),
                 *rc.ssl_rows(
                     enabled_name=CommonFieldName.ssl_enable,
@@ -222,8 +230,9 @@ class YDBConnectionFormFactory(ConnectionFormFactory):
         else:
             rows = [
                 *db_section_rows,
-                C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec),
+                C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec) if not is_invalidation_cache_enabled else None,
                 rc.raw_sql_level_row_v2(raw_sql_levels=raw_sql_levels),
+                *(rc.cache_rows() if is_invalidation_cache_enabled else []),
                 rc.collapse_advanced_settings_row(),
                 *rc.ssl_rows(
                     enabled_name=CommonFieldName.ssl_enable,
@@ -238,7 +247,7 @@ class YDBConnectionFormFactory(ConnectionFormFactory):
             ]
         return ConnectionForm(
             title=YDBConnectionInfoProvider.get_title(self._localizer),
-            rows=rows,
+            rows=self._filter_nulls(rows),
             api_schema=FormApiSchema(
                 create=create_api_schema if self.mode == ConnectionFormMode.create else None,
                 edit=edit_api_schema if self.mode == ConnectionFormMode.edit else None,
@@ -283,10 +292,10 @@ class YDBConnectionFormFactory(ConnectionFormFactory):
 
     def get_form_config(
         self,
-        connector_settings: Optional[DeprecatedConnectorSettingsBase],
+        connector_settings: Optional[ConnectorSettings],
         tenant: Optional[TenantDef],
     ) -> ConnectionForm:
-        assert connector_settings is not None and isinstance(connector_settings, DeprecatedYDBConnectorSettings)
+        assert connector_settings is not None and isinstance(connector_settings, YDBConnectorSettings)
         rc = RowConstructor(localizer=self._localizer)
         ydb_rc = YDBRowConstructor(localizer=self._localizer)
 

@@ -74,6 +74,7 @@ class TemporalWorkerAppFactoryMixin(
                 port=self.settings.TEMPORAL_CLIENT.PORT,
                 tls=self.settings.TEMPORAL_CLIENT.TLS,
                 lazy=False,  # Can't create worker with lazy client
+                initial_connect_timeout=self.settings.TEMPORAL_CLIENT.initial_connect_timeout,
                 metadata_provider=await self._get_temporal_client_metadata_provider(),
             ),
         )
@@ -89,19 +90,17 @@ class TemporalWorkerAppFactoryMixin(
             activities=await self._get_temporal_activities(),
         )
 
-    @abc.abstractmethod
     @dl_app_base.singleton_class_method_result
     async def _get_temporal_workflows(
         self,
     ) -> list[type[base.WorkflowProtocol]]:
-        ...
+        return []
 
-    @abc.abstractmethod
     @dl_app_base.singleton_class_method_result
     async def _get_temporal_activities(
         self,
     ) -> list[base.ActivityProtocol]:
-        ...
+        return []
 
     @abc.abstractmethod
     @dl_app_base.singleton_class_method_result

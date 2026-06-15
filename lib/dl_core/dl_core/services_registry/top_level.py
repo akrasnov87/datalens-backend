@@ -26,6 +26,10 @@ from dl_core.services_registry.conn_executor_factory_base import ConnExecutorFac
 from dl_core.services_registry.data_processor_factory import DefaultDataProcessorFactory
 from dl_core.services_registry.data_processor_factory_base import BaseClosableDataProcessorFactory
 from dl_core.services_registry.inst_specific_sr import InstallationSpecificServiceRegistry
+from dl_core.services_registry.invalidation_cache_engine_factory import (
+    CacheInvalidationEngineFactory,
+    DefaultCacheInvalidationEngineFactory,
+)
 from dl_core.services_registry.rqe_caches import RQECachesSetting
 from dl_core.us_manager.mutation_cache.engine_factory import (
     DefaultMutationCacheEngineFactory,
@@ -38,9 +42,9 @@ from dl_task_processor.processor import TaskProcessorFactory
 
 
 if TYPE_CHECKING:
-    from dl_configs.connectors_settings import DeprecatedConnectorSettingsBase
     from dl_constants.enums import ConnectionType
     from dl_core.aio.web_app_services.data_processing.data_processor import DataProcessorService
+    from dl_core.connectors.settings.base import ConnectorSettings
     from dl_core.services_registry.compute_executor import ComputeExecutor
     from dl_core.services_registry.file_uploader_client_factory import FileUploaderClientFactory
     from dl_core.us_manager.local_cache import USEntryBuffer
@@ -73,6 +77,14 @@ class ServicesRegistry(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def get_caches_redis_client(self, allow_slave: bool = False) -> Optional[redis.asyncio.Redis]:
+        pass
+
+    @abc.abstractmethod
+    def get_cache_invalidations_redis_client(self, allow_slave: bool = False) -> redis.asyncio.Redis | None:
+        """Return a dedicated Redis client for the invalidation cache.
+
+        Returns ``None`` when the invalidation caches Redis is not configured.
+        """
         pass
 
     @abc.abstractmethod
@@ -116,7 +128,11 @@ class ServicesRegistry(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def get_connectors_settings(self, conn_type: ConnectionType) -> Optional[DeprecatedConnectorSettingsBase]:
+    def get_cache_invalidation_engine_factory(self) -> CacheInvalidationEngineFactory:
+        pass
+
+    @abc.abstractmethod
+    def get_connectors_settings(self, conn_type: ConnectionType) -> Optional[ConnectorSettings]:
         pass
 
     @abc.abstractmethod
@@ -153,12 +169,16 @@ class DefaultServicesRegistry(ServicesRegistry):
     _default_cache_ttl_config: Optional[CacheTTLConfig] = attr.ib(default=None)
     _conn_exec_factory: Optional[ConnExecutorFactory] = attr.ib(default=None)
     _caches_redis_client_factory: Optional[Callable[[bool], Optional[redis.asyncio.Redis]]] = attr.ib(default=None)
+    _cache_invalidations_redis_client_factory: Callable[[bool], redis.asyncio.Redis | None] | None = attr.ib(
+        default=None
+    )
     _compute_executor: ComputeExecutor = attr.ib()
     _cache_engine_factory: CacheEngineFactory = attr.ib()
+    _cache_invalidation_engine_factory: CacheInvalidationEngineFactory = attr.ib()
     _mutation_cache_engine_factory: MutationCacheEngineFactory = attr.ib(default=None)
     _data_processor_service_factory: Optional[Callable[[ProcessorType], DataProcessorService]] = attr.ib(default=None)
     _data_processor_factory: BaseClosableDataProcessorFactory = attr.ib()
-    _connectors_settings: dict[ConnectionType, DeprecatedConnectorSettingsBase] = attr.ib(default=None)
+    _connectors_settings: dict[str, ConnectorSettings] = attr.ib(default=None)
     _file_uploader_client_factory: Optional[FileUploaderClientFactory] = attr.ib(default=None)
     _task_processor_factory: Optional[TaskProcessorFactory] = attr.ib(default=None)
     _rqe_caches_settings: Optional[RQECachesSetting] = attr.ib(default=None)
@@ -173,6 +193,10 @@ class DefaultServicesRegistry(ServicesRegistry):
     @_cache_engine_factory.default  # noqa
     def _default_cache_engine_factory(self) -> CacheEngineFactory:
         return DefaultCacheEngineFactory(services_registry_ref=FutureRef.fulfilled(self))
+
+    @_cache_invalidation_engine_factory.default  # noqa
+    def _default_cache_invalidation_engine_factory(self) -> CacheInvalidationEngineFactory:
+        return DefaultCacheInvalidationEngineFactory(services_registry_ref=FutureRef.fulfilled(self))
 
     @_data_processor_factory.default  # noqa
     def _default_data_processor_factory(self) -> BaseClosableDataProcessorFactory:
@@ -200,6 +224,11 @@ class DefaultServicesRegistry(ServicesRegistry):
             return self._caches_redis_client_factory(allow_slave)
         return None
 
+    def get_cache_invalidations_redis_client(self, allow_slave: bool = False) -> redis.asyncio.Redis | None:
+        if self._cache_invalidations_redis_client_factory is not None:
+            return self._cache_invalidations_redis_client_factory(allow_slave)
+        return None
+
     def get_mutations_redis_client(self, allow_slave: bool = False) -> Optional[redis.asyncio.Redis]:
         if self._mutations_redis_client_factory is not None:
             return self._mutations_redis_client_factory(allow_slave)
@@ -213,6 +242,9 @@ class DefaultServicesRegistry(ServicesRegistry):
 
     def get_cache_engine_factory(self) -> Optional[CacheEngineFactory]:  # type: ignore  # TODO: fix
         return self._cache_engine_factory
+
+    def get_cache_invalidation_engine_factory(self) -> CacheInvalidationEngineFactory:
+        return self._cache_invalidation_engine_factory
 
     def get_mutation_cache_factory(self) -> Optional[USEntryMutationCacheFactory]:
         return self._mutations_cache_factory
@@ -233,8 +265,8 @@ class DefaultServicesRegistry(ServicesRegistry):
     def get_required_services(self) -> set[RequiredService]:
         return self._required_services
 
-    def get_connectors_settings(self, conn_type: ConnectionType) -> Optional[DeprecatedConnectorSettingsBase]:
-        return self._connectors_settings.get(conn_type)
+    def get_connectors_settings(self, conn_type: ConnectionType) -> Optional[ConnectorSettings]:
+        return self._connectors_settings.get(conn_type.value)
 
     def get_data_source_collection_factory(self, us_entry_buffer: USEntryBuffer) -> DataSourceCollectionFactory:
         return DataSourceCollectionFactory(us_entry_buffer=us_entry_buffer)
@@ -305,6 +337,9 @@ class DummyServiceRegistry(ServicesRegistry):
     def get_caches_redis_client(self) -> Optional[redis.asyncio.Redis]:  # type: ignore  # TODO: fix
         raise NotImplementedError(self.NOT_IMPLEMENTED_MSG)
 
+    def get_cache_invalidations_redis_client(self, allow_slave: bool = False) -> redis.asyncio.Redis | None:
+        raise NotImplementedError(self.NOT_IMPLEMENTED_MSG)
+
     def get_mutations_redis_client(self) -> Optional[redis.asyncio.Redis]:  # type: ignore  # TODO: fix
         raise NotImplementedError(self.NOT_IMPLEMENTED_MSG)
 
@@ -323,13 +358,16 @@ class DummyServiceRegistry(ServicesRegistry):
     def get_mutation_cache_engine_factory(self, cache_type: type[GenericCacheEngine]) -> MutationCacheEngineFactory:
         raise NotImplementedError(self.NOT_IMPLEMENTED_MSG)
 
+    def get_cache_invalidation_engine_factory(self) -> CacheInvalidationEngineFactory:
+        raise NotImplementedError(self.NOT_IMPLEMENTED_MSG)
+
     def get_data_processor_service_factory(self) -> Optional[Callable[[ProcessorType], DataProcessorService]]:
         raise NotImplementedError(self.NOT_IMPLEMENTED_MSG)
 
     def get_data_processor_factory(self) -> BaseClosableDataProcessorFactory:
         raise NotImplementedError(self.NOT_IMPLEMENTED_MSG)
 
-    def get_connectors_settings(self, conn_type: ConnectionType) -> Optional[DeprecatedConnectorSettingsBase]:
+    def get_connectors_settings(self, conn_type: ConnectionType) -> Optional[ConnectorSettings]:
         raise NotImplementedError(self.NOT_IMPLEMENTED_MSG)
 
     def get_data_source_collection_factory(self, us_entry_buffer: USEntryBuffer) -> DataSourceCollectionFactory:

@@ -30,7 +30,6 @@ from dl_configs.settings_submodels import (
     CsrfSettings,
     GoogleAppSettings,
     RedisSettings,
-    S3Settings,
 )
 from dl_constants.api_constants import DLHeadersCommon
 from dl_core.loader import (
@@ -60,12 +59,12 @@ from dl_file_uploader_lib.redis_model.base import RedisModelManager
 from dl_file_uploader_task_interface.context import FileUploaderTaskContext
 from dl_file_uploader_worker_lib.settings import (
     DeprecatedFileUploaderWorkerSettings,
-    FileUploaderConnectorsSettings,
     FileUploaderWorkerSettings,
     SecureReader,
 )
 from dl_file_uploader_worker_lib.testing.task_processor_client import get_task_processor_client
 import dl_retrier
+from dl_s3.s3_service import S3ClientSettings
 from dl_task_processor.processor import TaskProcessor
 from dl_task_processor.state import (
     BITaskStateImpl,
@@ -85,7 +84,11 @@ from dl_testing.utils import (
     get_root_certificates,
 )
 
-from dl_connector_bundle_chs3.chs3_base.core.settings import DeprecatedFileS3ConnectorSettings
+from dl_connector_bundle_chs3.chs3_base.core.settings import (
+    FileS3ConnectorSettingsBase,
+    _RootSettings,
+)
+from dl_connector_bundle_chs3.file.core.constants import CONNECTION_TYPE_FILE
 
 
 if TYPE_CHECKING:
@@ -135,8 +138,8 @@ def redis_arq_settings(redis_app_settings):
 
 
 @pytest.fixture(scope="session")
-def s3_settings() -> S3Settings:
-    return S3Settings(
+def s3_settings() -> S3ClientSettings:
+    return S3ClientSettings(
         ENDPOINT_URL=f'http://{get_test_container_hostport("s3-storage").as_pair()}',
         ACCESS_KEY_ID="accessKey1",
         SECRET_ACCESS_KEY="verySecretKey1",
@@ -162,8 +165,13 @@ def crypto_keys_config() -> CryptoKeysConfig:
 
 
 @pytest.fixture(scope="function")
-def app_settings(monkeypatch, redis_app_settings, redis_arq_settings, s3_settings, crypto_keys_config):
+def app_settings(monkeypatch, redis_app_settings, redis_arq_settings, s3_settings, crypto_keys_config, us_config):
     monkeypatch.setenv("EXT_QUERY_EXECUTER_SECRET_KEY", "dummy")
+    monkeypatch.setenv("US_ENTRIES_CLIENT__USER_AUTH_PROVIDER__TYPE", "NONE")
+    monkeypatch.setenv("US_ENTRIES_CLIENT__BASE_URL", us_config.base_url)
+    monkeypatch.setenv("S3__ENDPOINT_URL", s3_settings.ENDPOINT_URL)
+    monkeypatch.setenv("S3__ACCESS_KEY_ID", s3_settings.ACCESS_KEY_ID)
+    monkeypatch.setenv("S3__SECRET_ACCESS_KEY", s3_settings.SECRET_ACCESS_KEY)
 
     deprecated_settings = DeprecatedFileUploaderAPISettings(
         REDIS_APP=redis_app_settings,
@@ -178,11 +186,6 @@ def app_settings(monkeypatch, redis_app_settings, redis_arq_settings, s3_setting
             HEADER_NAME="x-csrf-token",
             TIME_LIMIT=3600 * 12,
             SECRET="123321",
-        ),
-        S3=S3Settings(
-            ENDPOINT_URL=s3_settings.ENDPOINT_URL,
-            ACCESS_KEY_ID=s3_settings.ACCESS_KEY_ID,
-            SECRET_ACCESS_KEY=s3_settings.SECRET_ACCESS_KEY,
         ),
         S3_TMP_BUCKET_NAME="bi-file-uploader-tmp",
         S3_PERSISTENT_BUCKET_NAME="bi-file-uploader",
@@ -290,8 +293,8 @@ def tenant_id_header() -> dict[DLHeadersCommon, str]:
 
 @pytest.fixture(scope="session")
 def connectors_settings(s3_settings):
-    return FileUploaderConnectorsSettings(
-        FILE=DeprecatedFileS3ConnectorSettings(
+    return {
+        CONNECTION_TYPE_FILE.value: FileS3ConnectorSettingsBase(
             SECURE=False,
             HOST=get_test_container_hostport("db-clickhouse", original_port=8123).host,
             PORT=get_test_container_hostport("db-clickhouse", original_port=8123).port,
@@ -299,10 +302,12 @@ def connectors_settings(s3_settings):
             PASSWORD="qwerty",
             ACCESS_KEY_ID=s3_settings.ACCESS_KEY_ID,
             SECRET_ACCESS_KEY=s3_settings.SECRET_ACCESS_KEY,
-            BUCKET="bi-file-uploader",
-            S3_ENDPOINT="http://s3-storage:8000",
-        ),
-    )
+            root=_RootSettings(
+                S3_ENDPOINT_URL="http://s3-storage:8000",
+                FILE_UPLOADER_S3_PERSISTENT_BUCKET_NAME="bi-file-uploader",
+            ),
+        )
+    }
 
 
 @pytest.fixture(scope="function")
@@ -314,21 +319,20 @@ def file_uploader_worker_settings(
     us_config,
     crypto_keys_config,
     secure_reader,
+    monkeypatch,
 ):
+    monkeypatch.setenv("S3__ENDPOINT_URL", s3_settings.ENDPOINT_URL)
+    monkeypatch.setenv("S3__ACCESS_KEY_ID", s3_settings.ACCESS_KEY_ID)
+    monkeypatch.setenv("S3__SECRET_ACCESS_KEY", s3_settings.SECRET_ACCESS_KEY)
+
     deprecated_settings = DeprecatedFileUploaderWorkerSettings(
         REDIS_APP=redis_app_settings,
         REDIS_ARQ=redis_arq_settings,
-        S3=S3Settings(
-            ENDPOINT_URL=s3_settings.ENDPOINT_URL,
-            ACCESS_KEY_ID=s3_settings.ACCESS_KEY_ID,
-            SECRET_ACCESS_KEY=s3_settings.SECRET_ACCESS_KEY,
-        ),
         S3_TMP_BUCKET_NAME="bi-file-uploader-tmp",
         S3_PERSISTENT_BUCKET_NAME="bi-file-uploader",
         SENTRY_DSN=None,
         US_BASE_URL=us_config.base_url,
         US_MASTER_TOKEN=us_config.master_token,
-        CONNECTORS=connectors_settings,
         GSHEETS_APP=GoogleAppSettings(
             API_KEY="dummy",
             CLIENT_ID="dummy",
@@ -337,7 +341,10 @@ def file_uploader_worker_settings(
         CRYPTO_KEYS_CONFIG=crypto_keys_config,
         SECURE_READER=secure_reader,
     )
-    settings = FileUploaderWorkerSettings(fallback=deprecated_settings)
+    settings = FileUploaderWorkerSettings(
+        fallback=deprecated_settings,
+        CONNECTORS=connectors_settings,
+    )
     yield settings
 
 
@@ -388,7 +395,7 @@ async def default_async_usm_per_test(bi_context, prepare_us, us_config, root_cer
     rci = dl_api_commons.RequestContextInfo.create_empty()
     return AsyncUSManager(
         us_base_url=us_config.base_url,
-        us_auth_context=USAuthContextMaster(us_config.master_token),
+        us_auth_context=USAuthContextMaster(us_master_token=us_config.master_token),
         crypto_keys_config=us_config.crypto_keys_config,
         bi_context=bi_context,
         services_registry=DummyServiceRegistry(rci=rci),
@@ -412,8 +419,8 @@ def reader_app(loop, secure_reader: SecureReader, reader_app_settings: FileSecur
 
 
 @pytest.fixture(scope="session")
-def ya_docs_oauth_token(env_param_getter):
-    return env_param_getter.get_str_value("YA_DOCS_API_KEY")
+def ya_docs_oauth_token(settings):
+    return settings.YA_DOCS_API_KEY
 
 
 # Imported fixtures

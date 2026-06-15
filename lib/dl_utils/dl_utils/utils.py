@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from enum import Enum
 import functools
 from itertools import islice
@@ -7,7 +5,6 @@ import operator
 from typing import (
     Any,
     Iterable,
-    Optional,
     TypeVar,
 )
 import uuid
@@ -53,19 +50,111 @@ class AddressableData:
         try:
             self.get(key)
             return True
-        except KeyError:
+        except (KeyError, TypeError):
             return False
 
     def get(self, key: DataKey) -> Any:
         return functools.reduce(operator.getitem, key.parts, self.data)
 
+    def _ensure_objects(self, key: DataKey) -> None:
+        """
+        Create all objects for the given key if they do not exist.
+
+        For example, `self._ensure_objects(DataKey(("a", "b", "c")))` is equivalent to:
+        ```python
+        self.data["a"] = self.data.get("a", {})
+        self.data["a"]["b"] = self.data["a"].get("b", {})
+        ```
+        """
+
+        data = self.data
+        prev_part = None
+        for part in key.parts[:-1]:
+            if not isinstance(data, dict):
+                if prev_part is None:
+                    raise ValueError(
+                        f"Cannot create nested objects for key {key.parts!r}: value is not a dict (got {type(data).__name__})"
+                    )
+                else:
+                    raise ValueError(
+                        f"Cannot create nested objects for key {key.parts!r}: intermediate value at {prev_part!r} is not a dict (got {type(data).__name__})"
+                    )
+
+            data[part] = data.get(part, {})
+            data = data[part]
+            prev_part = part
+
     def set(self, key: DataKey, value: Any) -> None:
+        self._ensure_objects(key)
         key_head = DataKey(parts=key.parts[:-1])
         self.get(key_head)[key.parts[-1]] = value
 
-    def pop(self, key: DataKey) -> Any:
+    @classmethod
+    def _pop_empty(
+        cls: Any,
+        data: Any,
+        key: DataKey,
+    ) -> None:
+        """
+        Pop empty keys from data. Pops only empty dict objects.
+        """
+
+        # Nothing
+        if len(key.parts) == 0:
+            return
+
+        key_part = key.parts[0]
+        current = data.get(key_part, None)
+
+        if isinstance(current, dict):
+            cls._pop_empty(
+                data=current,
+                key=DataKey(parts=key.parts[1:]),
+            )
+
+            if len(current) == 0:
+                data.pop(key_part)
+
+    def pop(
+        self,
+        key: DataKey,
+        *,
+        remove_empty: bool = False,
+    ) -> Any:
+        """
+        Pop key from data.
+
+        `remove_empty` clears empty nested dicts if any left:
+
+        ```python
+        sample = {
+            "a": {
+                "b": {
+                    "c": "value",
+                },
+            },
+            "d": "example",
+        }
+
+        addressable = AddressableData(sample)
+        addressable.pop(DataKey(("a", "b", "c")), remove_empty=True)
+
+        assert sample == { "d": "example" }
+        ```
+
+        :param remove_empty: Automatically remove empty dicts after value pop.
+        """
+
         key_head = DataKey(parts=key.parts[:-1])
-        return self.get(key_head).pop(key.parts[-1])
+        result = self.get(key_head).pop(key.parts[-1])
+
+        if remove_empty:
+            self._pop_empty(
+                data=self.data,
+                key=key,
+            )
+
+        return result
 
 
 T = TypeVar("T")
@@ -99,7 +188,7 @@ def join_in_chunks(pieces: Iterable[str], sep: str, max_len: int) -> Iterable[st
 _ENUM_TV = TypeVar("_ENUM_TV", bound=Enum)
 
 
-def enum_not_none(val: Optional[_ENUM_TV]) -> _ENUM_TV:
+def enum_not_none(val: _ENUM_TV | None) -> _ENUM_TV:
     assert val is not None
     return val
 
@@ -108,7 +197,7 @@ def make_url(
     protocol: str,
     host: str,
     port: int,
-    path: Optional[str] = None,
+    path: str | None = None,
 ) -> str:
     # TODO FIX: Sanitize/use urllib
     if path is None:
@@ -130,8 +219,33 @@ def hide_url_args(url_or_path: str) -> str:
     return f"{path}?{hidden_params}{fragment}"
 
 
-def request_id_generator(prefix: Optional[str] = None) -> str:
+def request_id_generator(prefix: str | None = None) -> str:
     result = uuid.uuid4().hex
     if prefix is not None:
         result = prefix + "." + result
+    return result
+
+
+def append_retry_suffix(request_id: str, attempt_number: int) -> str:
+    if attempt_number <= 1:
+        return request_id
+    return f"{request_id}/{attempt_number}"
+
+
+def make_uuid_from_parts(current: str, parent: str | None = None) -> str:
+    assert current
+
+    if not parent:
+        return current
+
+    uuid_maxlen = 8192
+    uuid_sep = "--"  # need to be a non-word character, to get successfully separated by elasticsearch
+    cutted_replace = "..."
+
+    if len(parent) + len(current) > uuid_maxlen:
+        cutted_half_len = int((uuid_maxlen - len(current) - len(cutted_replace)) / 2)
+        cutted_parent = parent[:cutted_half_len] + cutted_replace + parent[-cutted_half_len:]
+        parent = cutted_parent
+
+    result = parent + uuid_sep + current
     return result

@@ -1,6 +1,10 @@
 from collections import OrderedDict
 import itertools
+import logging
 from typing import Any
+
+
+LOGGER = logging.getLogger(__name__)
 
 import attr
 
@@ -18,6 +22,7 @@ from dl_formula.mutation.mutation import (
 )
 from dl_query_processing.compilation.primitives import CompiledQuery
 from dl_query_processing.enums import QueryPart
+from dl_query_processing.exc import InconsistentSelectAggregation
 from dl_query_processing.multi_query.splitters.mask_based import (
     AddFormulaInfo,
     AliasedFormulaSplitMask,
@@ -72,8 +77,10 @@ class QueryForkInfo:
 
 
 # Some type aliases
-FMask_QFork = tuple[FormulaSplitMask, formula_fork_nodes.QueryFork]
-FMask_QFork_BFB = tuple[FormulaSplitMask, formula_fork_nodes.QueryFork, frozenset[str]]
+FMask_QFork = tuple[FormulaSplitMask, formula_fork_nodes.QueryFork | formula_fork_nodes.SubQueryFork]
+FMask_QFork_BFB = tuple[
+    FormulaSplitMask, formula_fork_nodes.QueryFork | formula_fork_nodes.SubQueryFork, frozenset[str]
+]
 
 
 @attr.s
@@ -96,7 +103,8 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
             formula_idx=0,  # Fake values, but they don't matter
         )
         for _, child_qfork in child_query_forks:
-            child_lod_extracts.add(child_qfork.lod.extract_not_none)
+            if not isinstance(child_qfork, formula_fork_nodes.SubQueryFork):
+                child_lod_extracts.add(child_qfork.lod.extract_not_none)
 
         return frozenset(child_lod_extracts)
 
@@ -106,8 +114,8 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
         index_prefix: NodeHierarchyIndex,
         query_part: QueryPart,
         formula_idx: int,
-    ) -> list[tuple[FormulaSplitMask, formula_fork_nodes.QueryFork]]:
-        result: list[tuple[FormulaSplitMask, formula_fork_nodes.QueryFork]] = []
+    ) -> list[tuple[FormulaSplitMask, formula_fork_nodes.QueryFork | formula_fork_nodes.SubQueryFork]]:
+        result: list[tuple[FormulaSplitMask, formula_fork_nodes.QueryFork | formula_fork_nodes.SubQueryFork]] = []
         if isinstance(node, formula_fork_nodes.QueryFork):
             result.append(
                 (
@@ -116,6 +124,18 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
                         formula_list_idx=formula_idx,
                         outer_node_idx=index_prefix,
                         inner_node_idx=index_prefix + (1,),  # QueryFork.result_expr = Child(1)
+                    ),
+                    node,
+                )
+            )
+        elif isinstance(node, formula_fork_nodes.SubQueryFork):
+            result.append(
+                (
+                    FormulaSplitMask(
+                        query_part=query_part,
+                        formula_list_idx=formula_idx,
+                        outer_node_idx=index_prefix,
+                        inner_node_idx=index_prefix + (0,),  # SubQueryFork.result_expr = Child(0)
                     ),
                     node,
                 )
@@ -274,8 +294,12 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
             if filter_formula.original_field_id is not None
         )
 
-        def _normalize_bfb(qfork_node: formula_fork_nodes.QueryFork) -> frozenset[str]:
-            return frozenset(qfork_node.before_filter_by.field_names) & available_filter_ids
+        def _normalize_bfb(
+            qfork_node: formula_fork_nodes.QueryFork | formula_fork_nodes.SubQueryFork,
+        ) -> frozenset[str]:
+            if isinstance(qfork_node, formula_fork_nodes.QueryFork) and qfork_node.before_filter_by is not None:
+                return frozenset(qfork_node.before_filter_by.field_names) & available_filter_ids
+            return frozenset()
 
         fmask_qfork_bfb_list: list[FMask_QFork_BFB] = []
         for formula_split_mask, qfork_node in fmask_qfork_list:
@@ -286,8 +310,13 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
 
         qforks_by_signature: OrderedDict[SubqueryForkSignature, QueryForkInfo] = OrderedDict()
         for formula_split_mask, qfork_node, normalized_bfb in fmask_qfork_bfb_list:
-            join_type = _JOIN_TYPE_MAP[qfork_node.join_type]
-            lod = qfork_node.lod
+            if isinstance(qfork_node, formula_fork_nodes.QueryFork):
+                join_type = _JOIN_TYPE_MAP[qfork_node.join_type]
+                lod = qfork_node.lod
+            else:
+                join_type = JoinType.inner  # Default join type for SubQueryFork
+                lod = formula_nodes.InheritedLodSpecifier()  # SubQueryFork nodes are treated as having inherited LOD
+
             dim_list: tuple[formula_nodes.FormulaItem, ...]
             if isinstance(lod, formula_nodes.FixedLodSpecifier):
                 dim_list = tuple(lod.dim_list)
@@ -297,16 +326,35 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
             else:
                 raise TypeError(f"Unsupported LodSpecifier type: {type(lod).__name__}")
 
-            joining: formula_fork_nodes.QueryForkJoiningBase = qfork_node.joining
-            if len(dim_list) == 0:
-                # Add a dummy dimension.
-                dummy_dim_node = formula_nodes.LiteralInteger.make(value=1)
-                dim_list += (dummy_dim_node,)
-                joining = formula_fork_nodes.QueryForkJoiningWithList.make(
-                    condition_list=[
-                        formula_fork_nodes.SelfEqualityJoinCondition.make(expr=dummy_dim_node),
-                    ],
-                )
+            if isinstance(qfork_node, formula_fork_nodes.QueryFork):
+                joining: formula_fork_nodes.QueryForkJoiningBase = qfork_node.joining
+                if len(dim_list) == 0:
+                    # Add a dummy dimension.
+                    dummy_dim_node = formula_nodes.LiteralInteger.make(value=1)
+                    dim_list += (dummy_dim_node,)
+                    joining = formula_fork_nodes.QueryForkJoiningWithList.make(
+                        condition_list=[
+                            formula_fork_nodes.SelfEqualityJoinCondition.make(expr=dummy_dim_node),
+                        ],
+                    )
+            else:
+                # For SubQueryFork nodes, create a default joining with self-equality condition
+                # on the first dimension if available, or a dummy dimension
+                if dim_list:
+                    joining = formula_fork_nodes.QueryForkJoiningWithList.make(
+                        condition_list=[
+                            formula_fork_nodes.SelfEqualityJoinCondition.make(expr=dim_list[0]),
+                        ],
+                    )
+                else:
+                    # Add a dummy dimension.
+                    dummy_dim_node = formula_nodes.LiteralInteger.make(value=1)
+                    dim_list += (dummy_dim_node,)
+                    joining = formula_fork_nodes.QueryForkJoiningWithList.make(
+                        condition_list=[
+                            formula_fork_nodes.SelfEqualityJoinCondition.make(expr=dummy_dim_node),
+                        ],
+                    )
 
             # Generate hashable QueryFork "signature"
             # to deduplicate query forks with the same structure in the same query
@@ -357,13 +405,16 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
                             )
 
                 add_formulas = tuple(dim_add_formulas + non_dim_add_formulas)
-                bfb_filter_mutations = tuple(
-                    SimpleReplacementFormulaMutation(
-                        original=mutation.original,
-                        replacement=mutation.replacement,
+                if isinstance(qfork_node, formula_fork_nodes.QueryFork):
+                    bfb_filter_mutations = tuple(
+                        SimpleReplacementFormulaMutation(
+                            original=mutation.original,
+                            replacement=mutation.replacement,
+                        )
+                        for mutation in qfork_node.bfb_filter_mutations.mutations
                     )
-                    for mutation in qfork_node.bfb_filter_mutations.mutations
-                )
+                else:
+                    bfb_filter_mutations = tuple()
 
                 qfork_info = QueryForkInfo(
                     subquery_type=subquery_type,
@@ -519,7 +570,9 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
             # Nothing to do in this case
             return query
 
-        assert len(agg_statuses) == 1, f"Inconsistent aggregation status among SELECT items. Got: {agg_statuses}"
+        if len(agg_statuses) != 1:
+            LOGGER.warning("Inconsistent aggregation status among SELECT items. Got: %s", agg_statuses)
+            raise InconsistentSelectAggregation("Inconsistent aggregation status among SELECT items.")
         agg_status = next(iter(agg_statuses))
         if not agg_status:
             # SELECT items are not aggregated

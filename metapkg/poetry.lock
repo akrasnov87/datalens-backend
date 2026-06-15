@@ -1184,17 +1184,6 @@ filecache = ["filelock (>=3.8.0)"]
 redis = ["redis (>=2.10.5)"]
 
 [[package]]
-name = "cachetools"
-version = "5.3.1"
-description = "Extensible memoizing collections and decorators"
-optional = false
-python-versions = ">=3.7"
-files = [
-    {file = "cachetools-5.3.1-py3-none-any.whl", hash = "sha256:95ef631eeaea14ba2e36f06437f36463aac3a096799e876ee55e5cdccb102590"},
-    {file = "cachetools-5.3.1.tar.gz", hash = "sha256:dce83f2d9b4e1f732a8cd44af8e8fab2dbe46201467fc98b3ef8f269092bf62b"},
-]
-
-[[package]]
 name = "certifi"
 version = "2024.8.30"
 description = "Python package for providing Mozilla's CA Bundle."
@@ -1704,6 +1693,7 @@ attrs = "*"
 dl-auth = {path = "../dl_auth"}
 dl-constants = {path = "../dl_constants"}
 dl-logging = {path = "../dl_logging"}
+dl-obfuscator = {path = "../dl_obfuscator"}
 dl-retrier = {path = "../dl_retrier"}
 dl-utils = {path = "../dl_utils"}
 flask = "*"
@@ -1731,15 +1721,14 @@ develop = true
 [package.dependencies]
 attrs = "*"
 dl-api-commons = {path = "../dl_api_commons"}
-dl-configs = {path = "../dl_configs"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
+dl-dynamic-enum = {path = "../dl_dynamic_enum"}
 dl-formula = {path = "../dl_formula"}
 dl-i18n = {path = "../dl_i18n"}
 dl-model-tools = {path = "../dl_model_tools"}
 dl-query-processing = {path = "../dl_query_processing"}
 dl-type-transformer = {path = "../dl_type_transformer"}
-dynamic-enum = {path = "../dynamic_enum"}
 marshmallow = "*"
 marshmallow-oneofschema = "*"
 
@@ -1769,9 +1758,11 @@ dl-configs = {path = "../dl_configs"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
 dl-dashsql = {path = "../../lib/dl_dashsql"}
+dl-dynamic-enum = {path = "../dl_dynamic_enum"}
 dl-formula = {path = "../dl_formula"}
 dl-i18n = {path = "../dl_i18n"}
 dl-model-tools = {path = "../dl_model_tools"}
+dl-obfuscator = {path = "../dl_obfuscator"}
 dl-pivot = {path = "../dl_pivot"}
 dl-pivot-pandas = {path = "../dl_pivot_pandas"}
 dl-query-processing = {path = "../dl_query_processing"}
@@ -1781,7 +1772,6 @@ dl-settings = {path = "../dl_settings"}
 dl-task-processor = {path = "../dl_task_processor"}
 dl-type-transformer = {path = "../dl_type_transformer"}
 dl-utils = {path = "../dl_utils"}
-dynamic-enum = {path = "../dynamic_enum"}
 flask = "*"
 flask-marshmallow = "*"
 flask-restx = "*"
@@ -1826,9 +1816,11 @@ dl-pivot-pandas = {path = "../dl_pivot_pandas"}
 dl-query-processing = {path = "../dl_query_processing"}
 dl-retrier = {path = "../dl_retrier"}
 dl-rls = {path = "../dl_rls"}
+dl-settings = {path = "../dl_settings"}
 dl-testing = {path = "../dl_testing"}
 dl-utils = {path = "../dl_utils"}
 flask = "*"
+pydantic = "*"
 pytest = "*"
 pytest-mock = "*"
 sqlalchemy = "*"
@@ -1851,16 +1843,43 @@ develop = true
 aiohttp = "*"
 attrs = "*"
 dl-app-base = {path = "../dl_app_base"}
+dl-auth = {path = "../dl_auth"}
+dl-constants = {path = "../dl_constants"}
+dl-dynconfig = {path = "../dl_dynconfig"}
 dl-json = {path = "../dl_json"}
+dl-logging = {path = "../dl_logging"}
 dl-pydantic = {path = "../dl_pydantic"}
 dl-settings = {path = "../dl_settings"}
+dl-utils = {path = "../dl_utils"}
+gunicorn = "*"
 jinja2 = "*"
+opentelemetry-sdk = "*"
 pydantic = "*"
 typing-extensions = "*"
 
 [package.source]
 type = "directory"
 url = "../lib/dl_app_api_base"
+
+[[package]]
+name = "dl-app-api-ext-testing"
+version = "0.0.1"
+description = "Base classes for blackbox ext testing of dl_app_api_base apps"
+optional = false
+python-versions = ">=3.10, <3.13"
+files = []
+develop = true
+
+[package.dependencies]
+aiohttp = "*"
+dl-settings = {path = "../dl_settings"}
+dl-testing = {path = "../dl_testing"}
+pytest = "*"
+pytest-asyncio = "*"
+
+[package.source]
+type = "directory"
+url = "../lib/dl_app_api_ext_testing"
 
 [[package]]
 name = "dl-app-base"
@@ -1911,8 +1930,8 @@ develop = true
 
 [package.dependencies]
 attrs = "*"
+dl-dynamic-enum = {path = "../dl_dynamic_enum"}
 dl-model-tools = {path = "../dl_model_tools"}
-dynamic-enum = {path = "../dynamic_enum"}
 marshmallow = "*"
 marshmallow-oneofschema = "*"
 
@@ -1950,6 +1969,7 @@ develop = true
 [package.dependencies]
 attrs = "*"
 dl-constants = {path = "../dl_constants"}
+dl-dynamic-enum = {path = "../dl_dynamic_enum"}
 dl-settings = {path = "../dl_settings"}
 pydantic = "*"
 typing-extensions = "*"
@@ -1973,9 +1993,11 @@ attrs = "*"
 dl-api-commons = {path = "../dl_api_commons"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
+dl-obfuscator = {path = "../dl_obfuscator"}
 dl-settings = {path = "../dl_settings"}
 marshmallow = "*"
 pydantic = "*"
+pydantic-settings = "*"
 typing-extensions = "*"
 
 [package.source]
@@ -2028,6 +2050,8 @@ dl-constants = {path = "../dl_constants"}
 dl-model-tools = {path = "../dl_model_tools"}
 dl-utils = {path = "../dl_utils"}
 lz4 = "*"
+pydantic = "*"
+redis = "*"
 redis_cache_lock = {path = "../redis-cache-lock"}
 typing-extensions = "*"
 
@@ -2075,8 +2099,8 @@ develop = true
 attrs = "*"
 cryptography = "*"
 dl-constants = {path = "../dl_constants"}
+dl-dynamic-enum = {path = "../dl_dynamic_enum"}
 dl-utils = {path = "../dl_utils"}
-dynamic-enum = {path = "../dynamic_enum"}
 pyyaml = "*"
 typeguard = "*"
 typing-extensions = "*"
@@ -2098,14 +2122,12 @@ develop = true
 attrs = "*"
 dl-api-commons = {path = "../dl_api_commons"}
 dl-api-connector = {path = "../dl_api_connector"}
-dl-configs = {path = "../dl_configs"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
 dl-db-testing = {path = "../dl_db_testing"}
 dl-formula = {path = "../dl_formula"}
 dl-i18n = {path = "../dl_i18n"}
 dl-model-tools = {path = "../dl_model_tools"}
-dl-testing = {path = "../dl_testing"}
 dl-type-transformer = {path = "../dl_type_transformer"}
 dl-utils = {path = "../dl_utils"}
 google-api-core = "*"
@@ -2137,7 +2159,6 @@ dl-api-commons = {path = "../dl_api_commons"}
 dl-api-connector = {path = "../dl_api_connector"}
 dl-app-tools = {path = "../dl_app_tools"}
 dl-cache-engine = {path = "../dl_cache_engine"}
-dl-configs = {path = "../dl_configs"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
 dl-formula = {path = "../dl_formula"}
@@ -2171,7 +2192,6 @@ attrs = "*"
 clickhouse-sqlalchemy = {path = "../clickhouse-sqlalchemy"}
 dl-api-commons = {path = "../dl_api_commons"}
 dl-api-connector = {path = "../dl_api_connector"}
-dl-configs = {path = "../dl_configs"}
 dl-connector-clickhouse = {path = "../dl_connector_clickhouse"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
@@ -2181,6 +2201,7 @@ dl-formula = {path = "../dl_formula"}
 dl-formula-ref = {path = "../dl_formula_ref"}
 dl-i18n = {path = "../dl_i18n"}
 dl-model-tools = {path = "../dl_model_tools"}
+dl-s3 = {path = "../dl_s3"}
 dl-settings = {path = "../dl_settings"}
 dl-task-processor = {path = "../dl_task_processor"}
 dl-testing = {path = "../dl_testing"}
@@ -2209,7 +2230,6 @@ attrs = "*"
 clickhouse-sqlalchemy = {path = "../clickhouse-sqlalchemy"}
 dl-api-commons = {path = "../dl_api_commons"}
 dl-api-connector = {path = "../dl_api_connector"}
-dl-configs = {path = "../dl_configs"}
 dl-connector-clickhouse = {path = "../dl_connector_clickhouse"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
@@ -2244,7 +2264,6 @@ clickhouse-sqlalchemy = {path = "../clickhouse-sqlalchemy"}
 dl-api-commons = {path = "../dl_api_commons"}
 dl-api-connector = {path = "../dl_api_connector"}
 dl-app-tools = {path = "../dl_app_tools"}
-dl-configs = {path = "../dl_configs"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
 dl-core-testing = {path = "../dl_core_testing"}
@@ -2285,7 +2304,6 @@ asyncpg = "*"
 attrs = "*"
 dl-api-commons = {path = "../dl_api_commons"}
 dl-api-connector = {path = "../dl_api_connector"}
-dl-configs = {path = "../dl_configs"}
 dl-connector-postgresql = {path = "../dl_connector_postgresql"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
@@ -2311,7 +2329,6 @@ dl-api-commons = {path = "../dl_api_commons"}
 dl-api-connector = {path = "../dl_api_connector"}
 dl-api-lib = {path = "../dl_api_lib"}
 dl-app-tools = {path = "../dl_app_tools"}
-dl-configs = {path = "../dl_configs"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
 dl-formula = {path = "../dl_formula"}
@@ -2342,7 +2359,6 @@ develop = true
 attrs = "*"
 dl-api-commons = {path = "../dl_api_commons"}
 dl-api-connector = {path = "../dl_api_connector"}
-dl-configs = {path = "../dl_configs"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
 dl-db-testing = {path = "../dl_db_testing"}
@@ -2437,7 +2453,6 @@ attrs = "*"
 dl-api-commons = {path = "../dl_api_commons"}
 dl-api-connector = {path = "../dl_api_connector"}
 dl-app-tools = {path = "../dl_app_tools"}
-dl-configs = {path = "../dl_configs"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
 dl-core-testing = {path = "../dl_core_testing"}
@@ -2473,15 +2488,14 @@ attrs = "*"
 dl-api-commons = {path = "../dl_api_commons"}
 dl-api-connector = {path = "../dl_api_connector"}
 dl-app-tools = {path = "../dl_app_tools"}
-dl-configs = {path = "../dl_configs"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
+dl-dynamic-enum = {path = "../dl_dynamic_enum"}
 dl-i18n = {path = "../dl_i18n"}
 dl-model-tools = {path = "../dl_model_tools"}
 dl-sqlalchemy-promql = {path = "../dl_sqlalchemy_promql"}
 dl-type-transformer = {path = "../dl_type_transformer"}
 dl-utils = {path = "../dl_utils"}
-dynamic-enum = {path = "../dynamic_enum"}
 marshmallow = "*"
 sqlalchemy = "*"
 typing_extensions = "*"
@@ -2510,7 +2524,6 @@ dl-db-testing = {path = "../dl_db_testing"}
 dl-formula = {path = "../dl_formula"}
 dl-i18n = {path = "../dl_i18n"}
 dl-model-tools = {path = "../dl_model_tools"}
-dl-testing = {path = "../dl_testing"}
 dl-type-transformer = {path = "../dl_type_transformer"}
 dl-utils = {path = "../dl_utils"}
 marshmallow = "*"
@@ -2522,6 +2535,41 @@ sqlalchemy = "*"
 [package.source]
 type = "directory"
 url = "../lib/dl_connector_snowflake"
+
+[[package]]
+name = "dl-connector-starrocks"
+version = "0.0.1"
+description = ""
+optional = false
+python-versions = ">=3.10, <3.13"
+files = []
+develop = true
+
+[package.dependencies]
+aiomysql = ">=0.1.1"
+attrs = ">=22.2.0"
+dl-api-commons = {path = "../dl_api_commons"}
+dl-api-connector = {path = "../dl_api_connector"}
+dl-app-tools = {path = "../dl_app_tools"}
+dl-configs = {path = "../dl_configs"}
+dl-connector-mysql = {path = "../dl_connector_mysql"}
+dl-constants = {path = "../dl_constants"}
+dl-core = {path = "../dl_core"}
+dl-db-testing = {path = "../dl_db_testing"}
+dl-dynamic-enum = ">=0.0.1"
+dl-formula = {path = "../dl_formula"}
+dl-i18n = {path = "../dl_i18n"}
+dl-model-tools = {path = "../dl_model_tools"}
+dl-query-processing = {path = "../dl_query_processing"}
+dl-sqlalchemy-starrocks = {path = "../dl_sqlalchemy_starrocks"}
+dl-type-transformer = {path = "../dl_type_transformer"}
+marshmallow = "*"
+pymysql = ">=1.0.2"
+sqlalchemy = ">=1.4.46, <2.0"
+
+[package.source]
+type = "directory"
+url = "../lib/dl_connector_starrocks"
 
 [[package]]
 name = "dl-connector-trino"
@@ -2540,13 +2588,13 @@ dl-configs = {path = "../dl_configs"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
 dl-db-testing = {path = "../dl_db_testing"}
+dl-dynamic-enum = {path = "../dl_dynamic_enum"}
 dl-formula = {path = "../dl_formula"}
 dl-formula-ref = {path = "../dl_formula_ref"}
 dl-i18n = {path = "../dl_i18n"}
 dl-model-tools = {path = "../dl_model_tools"}
 dl-query-processing = {path = "../dl_query_processing"}
 dl-type-transformer = {path = "../dl_type_transformer"}
-dynamic-enum = {path = "../dynamic_enum"}
 marshmallow = "*"
 requests = "*"
 sqlalchemy = "*"
@@ -2604,7 +2652,7 @@ files = []
 develop = true
 
 [package.dependencies]
-dynamic-enum = {path = "../dynamic_enum"}
+dl-dynamic-enum = {path = "../dl_dynamic_enum"}
 typing-extensions = "*"
 
 [package.source]
@@ -2635,6 +2683,8 @@ dl-connector-mssql = {path = "../../lib/dl_connector_mssql"}
 dl-connector-mysql = {path = "../../lib/dl_connector_mysql"}
 dl-connector-oracle = {path = "../../lib/dl_connector_oracle"}
 dl-connector-postgresql = {path = "../../lib/dl_connector_postgresql"}
+dl-connector-promql = {path = "../../lib/dl_connector_promql"}
+dl-connector-starrocks = {path = "../../lib/dl_connector_starrocks"}
 dl-connector-trino = {path = "../../lib/dl_connector_trino"}
 dl-connector-ydb = {path = "../../lib/dl_connector_ydb"}
 dl-constants = {path = "../../lib/dl_constants"}
@@ -2675,11 +2725,13 @@ dl-auth = {path = "../dl_auth"}
 dl-cache-engine = {path = "../dl_cache_engine"}
 dl-configs = {path = "../dl_configs"}
 dl-constants = {path = "../dl_constants"}
+dl-crypto = {path = "../dl_crypto"}
 dl-dashsql = {path = "../../lib/dl_dashsql"}
 dl-i18n = {path = "../dl_i18n"}
 dl-json = {path = "../dl_json"}
 dl-logging = {path = "../dl_logging"}
 dl-model-tools = {path = "../dl_model_tools"}
+dl-obfuscator = {path = "../dl_obfuscator"}
 dl-query-processing = {path = "../dl_query_processing"}
 dl-retrier = {path = "../dl_retrier"}
 dl-rls = {path = "../dl_rls"}
@@ -2753,6 +2805,26 @@ type = "directory"
 url = "../lib/dl_core_testing"
 
 [[package]]
+name = "dl-crypto"
+version = "0.0.1"
+description = ""
+optional = false
+python-versions = ">=3.10, <3.13"
+files = []
+develop = true
+
+[package.dependencies]
+attrs = "*"
+cryptography = "*"
+dl-settings = {path = "../dl_settings"}
+pydantic = "*"
+typing-extensions = "*"
+
+[package.source]
+type = "directory"
+url = "../lib/dl_crypto"
+
+[[package]]
 name = "dl-dashsql"
 version = "0.0.1"
 description = ""
@@ -2799,9 +2871,10 @@ dl-connector-mssql = {path = "../../lib/dl_connector_mssql"}
 dl-connector-mysql = {path = "../../lib/dl_connector_mysql"}
 dl-connector-oracle = {path = "../../lib/dl_connector_oracle"}
 dl-connector-postgresql = {path = "../../lib/dl_connector_postgresql"}
+dl-connector-promql = {path = "../../lib/dl_connector_promql"}
+dl-connector-starrocks = {path = "../../lib/dl_connector_starrocks"}
 dl-connector-trino = {path = "../../lib/dl_connector_trino"}
 dl-connector-ydb = {path = "../../lib/dl_connector_ydb"}
-dl-constants = {path = "../../lib/dl_constants"}
 dl-core = {path = "../../lib/dl_core"}
 dl-logging = {path = "../../lib/dl_logging"}
 dl-model-tools = {path = "../../lib/dl_model_tools"}
@@ -2841,6 +2914,41 @@ type = "directory"
 url = "../lib/dl_db_testing"
 
 [[package]]
+name = "dl-dynamic-enum"
+version = "0.0.1"
+description = ""
+optional = false
+python-versions = ">=3.10, <3.13"
+files = []
+develop = true
+
+[package.source]
+type = "directory"
+url = "../lib/dl_dynamic_enum"
+
+[[package]]
+name = "dl-dynconfig"
+version = "0.0.1"
+description = ""
+optional = false
+python-versions = ">=3.10, <3.13"
+files = []
+develop = true
+
+[package.dependencies]
+aiobotocore = "*"
+attrs = "*"
+dl-pydantic = {path = "../dl_pydantic"}
+dl-settings = {path = "../dl_settings"}
+pydantic = "*"
+pyyaml = "*"
+typing-extensions = "*"
+
+[package.source]
+type = "directory"
+url = "../lib/dl_dynconfig"
+
+[[package]]
 name = "dl-file-secure-reader-lib"
 version = "0.1.0"
 description = ""
@@ -2875,18 +2983,24 @@ aiogoogle = "*"
 aiohttp = "*"
 attrs = "*"
 dl-api-commons = {path = "../dl_api_commons"}
+dl-auth = {path = "../dl_auth"}
 dl-configs = {path = "../dl_configs"}
 dl-connector-bundle-chs3 = {path = "../dl_connector_bundle_chs3"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
 dl-file-uploader-lib = {path = "../dl_file_uploader_lib"}
 dl-file-uploader-task-interface = {path = "../dl_file_uploader_task_interface"}
+dl-httpx = {path = "../dl_httpx"}
+dl-obfuscator = {path = "../dl_obfuscator"}
+dl-retrier = {path = "../dl_retrier"}
 dl-s3 = {path = "../dl_s3"}
 dl-task-processor = {path = "../dl_task_processor"}
 dl-type-transformer = {path = "../dl_type_transformer"}
+dl-us-entries-client = {path = "../dl_us_entries_client"}
 marshmallow = "*"
 marshmallow-oneofschema = "*"
 redis = "*"
+typing_extensions = "*"
 
 [package.source]
 type = "directory"
@@ -2910,6 +3024,7 @@ dl-configs = {path = "../dl_configs"}
 dl-connector-bundle-chs3 = {path = "../dl_connector_bundle_chs3"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
+dl-crypto = {path = "../dl_crypto"}
 dl-s3 = {path = "../dl_s3"}
 dl-settings = {path = "../dl_settings"}
 dl-utils = {path = "../dl_utils"}
@@ -2936,9 +3051,7 @@ arq = "*"
 attrs = "*"
 dl-api-commons = {path = "../dl_api_commons"}
 dl-configs = {path = "../dl_configs"}
-dl-connector-bundle-chs3 = {path = "../dl_connector_bundle_chs3"}
 dl-connector-clickhouse = {path = "../dl_connector_clickhouse"}
-dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
 dl-file-uploader-worker-lib = {path = "../dl_file_uploader_worker_lib"}
 dl-retrier = {path = "../dl_retrier"}
@@ -2967,6 +3080,7 @@ attrs = "*"
 botocore = "*"
 clickhouse-sqlalchemy = {path = "../clickhouse-sqlalchemy"}
 dl-api-commons = {path = "../dl_api_commons"}
+dl-api-lib = {path = "../dl_api_lib"}
 dl-app-tools = {path = "../dl_app_tools"}
 dl-configs = {path = "../dl_configs"}
 dl-connector-bundle-chs3 = {path = "../dl_connector_bundle_chs3"}
@@ -2976,6 +3090,7 @@ dl-core = {path = "../dl_core"}
 dl-file-uploader-lib = {path = "../dl_file_uploader_lib"}
 dl-file-uploader-task-interface = {path = "../dl_file_uploader_task_interface"}
 dl-s3 = {path = "../dl_s3"}
+dl-settings = {path = "../dl_settings"}
 dl-task-processor = {path = "../dl_task_processor"}
 dl-type-transformer = {path = "../dl_type_transformer"}
 dl-utils = {path = "../dl_utils"}
@@ -3001,8 +3116,8 @@ develop = true
 antlr4-python3-runtime = "*"
 attrs = "*"
 ciso8601 = "*"
+dl-dynamic-enum = {path = "../dl_dynamic_enum"}
 dl-utils = {path = "../dl_utils"}
-dynamic-enum = {path = "../dynamic_enum"}
 graphviz = "*"
 pytz = "*"
 sqlalchemy = "*"
@@ -3023,11 +3138,11 @@ develop = true
 [package.dependencies]
 attrs = "*"
 dl-db-testing = {path = "../dl_db_testing"}
+dl-dynamic-enum = {path = "../dl_dynamic_enum"}
 dl-formula = {path = "../dl_formula"}
 dl-formula-testing = {path = "../dl_formula_testing"}
 dl-i18n = {path = "../dl_i18n"}
 dl-utils = {path = "../dl_utils"}
-dynamic-enum = {path = "../dynamic_enum"}
 jinja2 = "*"
 sqlalchemy = "*"
 tabulate = "*"
@@ -3075,8 +3190,11 @@ attrs = "*"
 dl-auth = {path = "../dl_auth"}
 dl-configs = {path = "../dl_configs"}
 dl-constants = {path = "../dl_constants"}
+dl-json = {path = "../dl_json"}
+dl-logging = {path = "../dl_logging"}
 dl-pydantic = {path = "../dl_pydantic"}
 dl-retrier = {path = "../dl_retrier"}
+dl-settings = {path = "../dl_settings"}
 dl-testing = {path = "../dl_testing"}
 dl-utils = {path = "../dl_utils"}
 httpx = "*"
@@ -3129,6 +3247,7 @@ files = []
 develop = true
 
 [package.dependencies]
+dl-obfuscator = {path = "../dl_obfuscator"}
 dl-settings = {path = "../dl_settings"}
 jaeger-client = "*"
 opentracing = "*"
@@ -3183,8 +3302,8 @@ develop = true
 [package.dependencies]
 attrs = "*"
 dl-constants = {path = "../dl_constants"}
+dl-dynamic-enum = {path = "../dl_dynamic_enum"}
 dl-type-transformer = {path = "../dl_type_transformer"}
-dynamic-enum = {path = "../dynamic_enum"}
 marshmallow = "*"
 marshmallow-oneofschema = "*"
 msgpack = "*"
@@ -3260,6 +3379,8 @@ develop = true
 
 [package.dependencies]
 deepdiff = "*"
+dl-dynamic-enum = {path = "../dl_dynamic_enum"}
+dl-json = {path = "../dl_json"}
 pydantic = "*"
 pydantic-core = "*"
 typing-extensions = "*"
@@ -3370,6 +3491,8 @@ attrs = "*"
 boto3 = "*"
 botocore = "*"
 dl-constants = {path = "../dl_constants"}
+dl-settings = {path = "../dl_settings"}
+pydantic = "*"
 typing_extensions = "*"
 ujson = "*"
 
@@ -3573,13 +3696,30 @@ type = "directory"
 url = "../lib/dl_sqlalchemy_promql"
 
 [[package]]
+name = "dl-sqlalchemy-starrocks"
+version = "0.0.1"
+description = ""
+optional = false
+python-versions = ">=3.10, <3.13"
+files = []
+develop = true
+
+[package.dependencies]
+dl-sqlalchemy-mysql = {path = "../dl_sqlalchemy_mysql"}
+sqlalchemy = ">=1.4.46, <2.0"
+
+[package.source]
+type = "directory"
+url = "../lib/dl_sqlalchemy_starrocks"
+
+[[package]]
 name = "dl-sqlalchemy-ydb"
 version = "0.1"
 description = "BI YDB SQLAlchemy Dialect"
 optional = false
 python-versions = ">=3.10, <3.13"
 files = []
-develop = false
+develop = true
 
 [package.dependencies]
 packaging = "*"
@@ -3627,11 +3767,13 @@ develop = true
 attrs = "*"
 dl-app-api-base = {path = "../dl_app_api_base"}
 dl-app-base = {path = "../dl_app_base"}
+dl-dynconfig = {path = "../dl_dynconfig"}
 dl-json = {path = "../dl_json"}
 dl-logging = {path = "../dl_logging"}
 dl-pydantic = {path = "../dl_pydantic"}
 dl-settings = {path = "../dl_settings"}
 dl-utils = {path = "../dl_utils"}
+pydantic = "*"
 temporalio = "*"
 typing-extensions = "*"
 
@@ -3656,9 +3798,9 @@ boto3 = "*"
 botocore = "*"
 dl-api-commons = {path = "../dl_api_commons"}
 dl-configs = {path = "../dl_configs"}
+dl-settings = {path = "../dl_settings"}
 dl-utils = {path = "../dl_utils"}
 pytest = "*"
-python-dotenv = "*"
 pyyaml = "*"
 
 [package.source]
@@ -3704,6 +3846,30 @@ dl-api-commons = {path = "../dl_api_commons"}
 [package.source]
 type = "directory"
 url = "../lib/dl_us_client"
+
+[[package]]
+name = "dl-us-entries-client"
+version = "0.0.1"
+description = ""
+optional = false
+python-versions = ">=3.10, <3.13"
+files = []
+develop = true
+
+[package.dependencies]
+attrs = "*"
+dl-auth = {path = "../dl_auth"}
+dl-httpx = {path = "../dl_httpx"}
+dl-json = {path = "../dl_json"}
+dl-pydantic = {path = "../dl_pydantic"}
+dl-settings = {path = "../dl_settings"}
+httpx = "*"
+pydantic = "*"
+typing-extensions = "*"
+
+[package.source]
+type = "directory"
+url = "../lib/dl_us_entries_client"
 
 [[package]]
 name = "dl-utils"
@@ -3869,19 +4035,6 @@ fastimport = ["fastimport"]
 https = ["urllib3 (>=1.24.1)"]
 paramiko = ["paramiko"]
 pgp = ["gpg"]
-
-[[package]]
-name = "dynamic-enum"
-version = "0.0.1"
-description = ""
-optional = false
-python-versions = ">=3.10, <3.13"
-files = []
-develop = true
-
-[package.source]
-type = "directory"
-url = "../lib/dynamic_enum"
 
 [[package]]
 name = "et-xmlfile"
@@ -4267,28 +4420,30 @@ grpcio-gcp = ["grpcio-gcp (>=0.2.2,<1.0.dev0)"]
 
 [[package]]
 name = "google-auth"
-version = "2.21.0"
+version = "2.49.1"
 description = "Google Authentication Library"
 optional = false
-python-versions = ">=3.6"
+python-versions = ">=3.8"
 files = [
-    {file = "google-auth-2.21.0.tar.gz", hash = "sha256:b28e8048e57727e7cf0e5bd8e7276b212aef476654a09511354aa82753b45c66"},
-    {file = "google_auth-2.21.0-py2.py3-none-any.whl", hash = "sha256:da3f18d074fa0f5a7061d99b9af8cee3aa6189c987af7c1b07d94566b6b11268"},
+    {file = "google_auth-2.49.1-py3-none-any.whl", hash = "sha256:195ebe3dca18eddd1b3db5edc5189b76c13e96f29e73043b923ebcf3f1a860f7"},
+    {file = "google_auth-2.49.1.tar.gz", hash = "sha256:16d40da1c3c5a0533f57d268fe72e0ebb0ae1cc3b567024122651c045d879b64"},
 ]
 
 [package.dependencies]
-cachetools = ">=2.0.0,<6.0"
+cryptography = ">=38.0.3"
 pyasn1-modules = ">=0.2.1"
-rsa = ">=3.1.4,<5"
-six = ">=1.9.0"
-urllib3 = "<2.0"
 
 [package.extras]
-aiohttp = ["aiohttp (>=3.6.2,<4.0.0.dev0)", "requests (>=2.20.0,<3.0.0.dev0)"]
-enterprise-cert = ["cryptography (==36.0.2)", "pyopenssl (==22.0.0)"]
-pyopenssl = ["cryptography (>=38.0.3)", "pyopenssl (>=20.0.0)"]
+aiohttp = ["aiohttp (>=3.6.2,<4.0.0)", "requests (>=2.20.0,<3.0.0)"]
+cryptography = ["cryptography (>=38.0.3)"]
+enterprise-cert = ["pyopenssl"]
+pyjwt = ["pyjwt (>=2.0)"]
+pyopenssl = ["pyopenssl (>=20.0.0)"]
 reauth = ["pyu2f (>=0.1.5)"]
-requests = ["requests (>=2.20.0,<3.0.0.dev0)"]
+requests = ["requests (>=2.20.0,<3.0.0)"]
+rsa = ["rsa (>=3.1.4,<5)"]
+testing = ["aiohttp (<3.10.0)", "aiohttp (>=3.6.2,<4.0.0)", "aioresponses", "flask", "freezegun", "grpcio", "packaging", "pyjwt (>=2.0)", "pyopenssl (<24.3.0)", "pyopenssl (>=20.0.0)", "pytest", "pytest-asyncio", "pytest-cov", "pytest-localserver", "pyu2f (>=0.1.5)", "requests (>=2.20.0,<3.0.0)", "responses", "urllib3"]
+urllib3 = ["packaging", "urllib3"]
 
 [[package]]
 name = "google-cloud-bigquery"
@@ -5662,6 +5817,52 @@ files = [
 
 [package.dependencies]
 et-xmlfile = "*"
+
+[[package]]
+name = "opentelemetry-api"
+version = "1.39.1"
+description = "OpenTelemetry Python API"
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "opentelemetry_api-1.39.1-py3-none-any.whl", hash = "sha256:2edd8463432a7f8443edce90972169b195e7d6a05500cd29e6d13898187c9950"},
+    {file = "opentelemetry_api-1.39.1.tar.gz", hash = "sha256:fbde8c80e1b937a2c61f20347e91c0c18a1940cecf012d62e65a7caf08967c9c"},
+]
+
+[package.dependencies]
+importlib-metadata = ">=6.0,<8.8.0"
+typing-extensions = ">=4.5.0"
+
+[[package]]
+name = "opentelemetry-sdk"
+version = "1.39.1"
+description = "OpenTelemetry Python SDK"
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "opentelemetry_sdk-1.39.1-py3-none-any.whl", hash = "sha256:4d5482c478513ecb0a5d938dcc61394e647066e0cc2676bee9f3af3f3f45f01c"},
+    {file = "opentelemetry_sdk-1.39.1.tar.gz", hash = "sha256:cf4d4563caf7bff906c9f7967e2be22d0d6b349b908be0d90fb21c8e9c995cc6"},
+]
+
+[package.dependencies]
+opentelemetry-api = "1.39.1"
+opentelemetry-semantic-conventions = "0.60b1"
+typing-extensions = ">=4.5.0"
+
+[[package]]
+name = "opentelemetry-semantic-conventions"
+version = "0.60b1"
+description = "OpenTelemetry Semantic Conventions"
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "opentelemetry_semantic_conventions-0.60b1-py3-none-any.whl", hash = "sha256:9fa8c8b0c110da289809292b0591220d3a7b53c1526a23021e977d68597893fb"},
+    {file = "opentelemetry_semantic_conventions-0.60b1.tar.gz", hash = "sha256:87c228b5a0669b748c76d76df6c364c369c28f1c465e50f661e39737e84bc953"},
+]
+
+[package.dependencies]
+opentelemetry-api = "1.39.1"
+typing-extensions = ">=4.5.0"
 
 [[package]]
 name = "opentracing"
@@ -7384,20 +7585,6 @@ files = [
 ]
 
 [[package]]
-name = "rsa"
-version = "4.9"
-description = "Pure-Python RSA implementation"
-optional = false
-python-versions = ">=3.6,<4"
-files = [
-    {file = "rsa-4.9-py3-none-any.whl", hash = "sha256:90260d9058e514786967344d0ef75fa8727eed8a7d2e43ce9f4bcf1b536174f7"},
-    {file = "rsa-4.9.tar.gz", hash = "sha256:e38464a49c6c85d7f1351b0126661487a7e0a14a50f1675ec50eb34d4f20ef21"},
-]
-
-[package.dependencies]
-pyasn1 = ">=0.1.3"
-
-[[package]]
 name = "ruff"
 version = "0.2.1"
 description = "An extremely fast Python linter and code formatter, written in Rust."
@@ -7636,6 +7823,20 @@ development = ["mock", "numpy", "pytest", "pytest-cov", "pytest-rerunfailures", 
 pandas = ["snowflake-connector-python[pandas] (<4.0.0)"]
 
 [[package]]
+name = "sort-all"
+version = "1.3.0"
+description = "Automatically Sort __all__ records alphabetically"
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "sort_all-1.3.0-py3-none-any.whl", hash = "sha256:1e452564993c1084a85b0d4600d00e638492d2fd9db7443c38627e9899f8e06a"},
+    {file = "sort_all-1.3.0.tar.gz", hash = "sha256:41fd883a4dcba38fef30e4dfc2c8ecf75dc6f450baa6c8bb2e6d30c7189fc148"},
+]
+
+[package.dependencies]
+tokenize-rt = ">=3.0.1"
+
+[[package]]
 name = "sortedcontainers"
 version = "2.4.0"
 description = "Sorted Containers -- Sorted List, Sorted Dict, Sorted Set"
@@ -7860,6 +8061,17 @@ six = ">=1.7.2"
 all = ["tornado (>=4.0)", "twisted"]
 tornado = ["tornado (>=4.0)"]
 twisted = ["twisted"]
+
+[[package]]
+name = "tokenize-rt"
+version = "6.2.0"
+description = "A wrapper around the stdlib `tokenize` which roundtrips."
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "tokenize_rt-6.2.0-py2.py3-none-any.whl", hash = "sha256:a152bf4f249c847a66497a4a95f63376ed68ac6abf092a2f7cfb29d044ecff44"},
+    {file = "tokenize_rt-6.2.0.tar.gz", hash = "sha256:8439c042b330c553fdbe1758e4a05c0ed460dbbbb24a606f11f0dee75da4cad6"},
+]
 
 [[package]]
 name = "toml-sort"
@@ -8506,6 +8718,22 @@ files = [
 ]
 
 [[package]]
+name = "types-docker"
+version = "7.1.0.20260109"
+description = "Typing stubs for docker"
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "types_docker-7.1.0.20260109-py3-none-any.whl", hash = "sha256:001a5a377d3fb287b7279cf4265b8ba3857e7d4203a16ab03e6e512f68f2f3d4"},
+    {file = "types_docker-7.1.0.20260109.tar.gz", hash = "sha256:b36ef355ec9ba8bf29bcc4e32cc61dd9138ce4d8352c599c8fbc65f1a3e87b57"},
+]
+
+[package.dependencies]
+types-paramiko = "*"
+types-requests = "*"
+urllib3 = ">=2"
+
+[[package]]
 name = "types-docutils"
 version = "0.21.0.20241005"
 description = "Typing stubs for docutils"
@@ -8931,19 +9159,20 @@ files = [
 
 [[package]]
 name = "urllib3"
-version = "1.26.20"
+version = "2.6.3"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
 optional = false
-python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,>=2.7"
+python-versions = ">=3.9"
 files = [
-    {file = "urllib3-1.26.20-py2.py3-none-any.whl", hash = "sha256:0ed14ccfbf1c30a9072c7ca157e4319b70d65f623e91e7b32fadb2853431016e"},
-    {file = "urllib3-1.26.20.tar.gz", hash = "sha256:40c2dc0c681e47eb8f90e7e27bf6ff7df2e677421fd46756da1161c39ca70d32"},
+    {file = "urllib3-2.6.3-py3-none-any.whl", hash = "sha256:bf272323e553dfb2e87d9bfd225ca7b0f467b919d7bbd355436d3fd37cb0acd4"},
+    {file = "urllib3-2.6.3.tar.gz", hash = "sha256:1b62b6884944a57dbe321509ab94fd4d3b307075e0c2eae991ac71ee15ad38ed"},
 ]
 
 [package.extras]
-brotli = ["brotli (==1.0.9)", "brotli (>=1.0.9)", "brotlicffi (>=0.8.0)", "brotlipy (>=0.6.0)"]
-secure = ["certifi", "cryptography (>=1.3.4)", "idna (>=2.0.0)", "ipaddress", "pyOpenSSL (>=0.14)", "urllib3-secure-extra"]
-socks = ["PySocks (>=1.5.6,!=1.5.7,<2.0)"]
+brotli = ["brotli (>=1.2.0)", "brotlicffi (>=1.2.0.0)"]
+h2 = ["h2 (>=4,<5)"]
+socks = ["pysocks (>=1.5.6,!=1.5.7,<2.0)"]
+zstd = ["backports-zstd (>=1.0.0)"]
 
 [[package]]
 name = "uwsgi"
@@ -9376,20 +9605,20 @@ propcache = ">=0.2.0"
 
 [[package]]
 name = "ydb"
-version = "3.22.3"
+version = "3.26.4"
 description = "YDB Python SDK"
 optional = false
 python-versions = "*"
 files = [
-    {file = "ydb-3.22.3-py2.py3-none-any.whl", hash = "sha256:bb0eddd9eeb91d74916d2ccd2cded9d1610ada2c0d1b7cfd5d0a82892c9495a0"},
-    {file = "ydb-3.22.3.tar.gz", hash = "sha256:99e93051a4af34c4d18734600baa4e20c5d5c77d81ba00a5afe4d528780973f5"},
+    {file = "ydb-3.26.4-py2.py3-none-any.whl", hash = "sha256:ae94a5d36acacd095a01c81bc009f3532b4cfbafbede7d73c1b8795d4bdead71"},
+    {file = "ydb-3.26.4.tar.gz", hash = "sha256:159afd2548b17c05c459f07df27fb0ffd06f29cdd227d794bca239c026f97630"},
 ]
 
 [package.dependencies]
 aiohttp = "<4"
 grpcio = ">=1.42.0"
 packaging = "*"
-protobuf = ">=3.13.0,<6.0.0"
+protobuf = ">=3.13.0,<7.0.0"
 
 [package.extras]
 yc = ["yandexcloud"]
@@ -9449,4 +9678,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10, <3.13"
-content-hash = "379d98053d4342918efd85477401cea76257171bd03531d80d53185f71a42c44"
+content-hash = "dbec15b512db31458e7ce7717c467fd43e8e725f92e81a99149d6af33fb63951"

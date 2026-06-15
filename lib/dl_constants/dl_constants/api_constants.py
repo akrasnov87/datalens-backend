@@ -56,11 +56,17 @@ class DLHeadersCommon(DLHeaders):
 
     EMBED_TOKEN = "X-DL-Embed-Token"
     DATASET_ID = "X-DL-DatasetId"
+    AUDIT_MODE = "X-DL-Audit-Mode"
 
     # TODO: BI-4918 drop after all usages moved to bi_api_commons_ya_cloud.constants.DLHeadersYC
     IAM_TOKEN = "X-YaCloud-SubjectToken"
     FOLDER_ID = "X-YaCloud-FolderId"
     ORG_ID = "X-YaCloud-OrgId"
+
+
+class DLAuthorizationHeaderPrefix(DLHeaders):
+    BEARER = "Bearer "
+    OAUTH = "OAuth "
 
 
 class DLCookiesCommon(DLCookies):

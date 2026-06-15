@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-import attr
-
 from dl_constants.enums import DashSQLQueryType
 from dl_core.us_connection_base import (
     ConnectionSettingsMixin,
@@ -20,12 +18,12 @@ from dl_connector_clickhouse.core.clickhouse.constants import (
     SOURCE_TYPE_CH_TABLE,
 )
 from dl_connector_clickhouse.core.clickhouse.dto import DLClickHouseConnDTO
-from dl_connector_clickhouse.core.clickhouse.settings import DeprecatedClickHouseConnectorSettings
+from dl_connector_clickhouse.core.clickhouse.settings import ClickHouseConnectorSettings
 from dl_connector_clickhouse.core.clickhouse_base.us_connection import ConnectionClickhouseBase
 
 
 class ConnectionClickhouse(
-    ConnectionSettingsMixin[DeprecatedClickHouseConnectorSettings],
+    ConnectionSettingsMixin[ClickHouseConnectorSettings],
     ConnectionClickhouseBase,
 ):
     """
@@ -33,16 +31,17 @@ class ConnectionClickhouse(
     Should not be used for internal clickhouses.
     """
 
-    class DataModel(ConnectionClickhouseBase.DataModel):
-        readonly: int = attr.ib(kw_only=True, default=2)
-
     source_type = SOURCE_TYPE_CH_TABLE
     allowed_source_types = frozenset((SOURCE_TYPE_CH_TABLE, SOURCE_TYPE_CH_SUBSELECT))
-    settings_type = DeprecatedClickHouseConnectorSettings
+    settings_type = ClickHouseConnectorSettings
 
     allow_dashsql: ClassVar[bool] = True
     allow_cache: ClassVar[bool] = True
     is_always_user_source: ClassVar[bool] = False  # TODO: should be `True`, but need some cleanup for that.
+
+    @property
+    def experimental_features_enabled(self) -> bool:
+        return self.data.experimental_features
 
     def get_data_source_template_templates(self, localizer: Localizer) -> list[DataSourceTemplate]:
         result: list[DataSourceTemplate] = []
@@ -86,6 +85,7 @@ class ConnectionClickhouse(
             password=base_dto.password or "",
             secure=self.data.secure,
             ssl_ca=self.data.ssl_ca,
+            ssl_ca_verify=self.data.ssl_ca_verify if self._connector_settings.ALLOW_SSL_CA_VERIFY_OPTION else True,
             readonly=self.data.readonly,
         )
 

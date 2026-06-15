@@ -5,6 +5,7 @@ from typing import (
     ClassVar,
 )
 
+import aiohttp
 import attr
 import pytest
 import pytest_asyncio
@@ -38,13 +39,19 @@ class Factory(dl_temporal.app.BaseTemporalWorkerAppFactory[App]):
     async def _get_temporal_workflows(
         self,
     ) -> list[type[dl_temporal.WorkflowProtocol]]:
-        return [workflows.Workflow]
+        return [
+            *await super()._get_temporal_workflows(),
+            workflows.Workflow,
+        ]
 
     @override
     async def _get_temporal_activities(
         self,
     ) -> list[dl_temporal.ActivityProtocol]:
-        return [activities.Activity()]
+        return [
+            *await super()._get_temporal_activities(),
+            activities.Activity(),
+        ]
 
     @override
     async def _get_temporal_client_metadata_provider(
@@ -85,3 +92,14 @@ async def fixture_app(
 
     async with app.run_in_task_context() as app:
         yield app
+
+
+@pytest_asyncio.fixture(name="app_client")
+async def fixture_app_client(
+    app_settings: Settings,
+) -> AsyncGenerator[aiohttp.ClientSession, None]:
+    async with aiohttp.ClientSession(
+        base_url=f"http://{app_settings.HTTP_SERVER.HOST}:{app_settings.HTTP_SERVER.PORT}",
+        timeout=aiohttp.ClientTimeout(total=1),
+    ) as session:
+        yield session

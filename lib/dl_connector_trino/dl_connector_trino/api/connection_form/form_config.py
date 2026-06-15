@@ -25,8 +25,8 @@ from dl_api_connector.form_config.models.common import (
 import dl_api_connector.form_config.models.rows as C
 from dl_api_connector.form_config.models.rows.base import TDisplayConditions
 from dl_api_connector.form_config.models.shortcuts.rows import RowConstructor
-from dl_configs.connectors_settings import DeprecatedConnectorSettingsBase
 from dl_constants.enums import RawSQLLevel
+from dl_core.connectors.settings.base import ConnectorSettings
 from dl_i18n.localizer_base import Localizer
 
 from dl_connector_trino.api.connection_info import TrinoConnectionInfoProvider
@@ -124,9 +124,6 @@ class TrinoRowConstructor(RowConstructor):
             ]
         )
 
-    def cache_ttl_row(self) -> C.CacheTTLRow:
-        return C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec)
-
     def trino_ssl_rows(
         self,
         display_conditions: TDisplayConditions | None = None,
@@ -174,28 +171,36 @@ class TrinoConnectionFormFactory(ConnectionFormFactory):
         return set()
 
     def _get_schema_items(self) -> list[FormFieldApiSchema]:
-        return [
-            FormFieldApiSchema(name=TrinoFormFieldName.auth_type, required=True),
-            FormFieldApiSchema(name=CommonFieldName.host, required=True),
-            FormFieldApiSchema(name=CommonFieldName.port, required=True),
-            FormFieldApiSchema(name=CommonFieldName.username, required=True),
-            FormFieldApiSchema(
-                name=CommonFieldName.password,
-                required=self.mode == ConnectionFormMode.create,
-                default_action=FormFieldApiAction.skip,
-            ),
-            FormFieldApiSchema(
-                name=TrinoFormFieldName.jwt,
-                required=self.mode == ConnectionFormMode.create,
-                default_action=FormFieldApiAction.skip,
-            ),
-            FormFieldApiSchema(name=CommonFieldName.cache_ttl_sec, nullable=True),
-            FormFieldApiSchema(name=CommonFieldName.raw_sql_level),
-            FormFieldApiSchema(name=CommonFieldName.data_export_forbidden),
-            FormFieldApiSchema(name=TrinoFormFieldName.listing_sources),
-            FormFieldApiSchema(name=CommonFieldName.ssl_enable),
-            FormFieldApiSchema(name=CommonFieldName.ssl_ca),
-        ]
+        form_params = self._get_form_params()
+        is_invalidation_cache_enabled = form_params.feature_flags.is_invalidation_cache_enabled
+
+        return self._filter_nulls(
+            [
+                FormFieldApiSchema(name=TrinoFormFieldName.auth_type, required=True),
+                FormFieldApiSchema(name=CommonFieldName.host, required=True),
+                FormFieldApiSchema(name=CommonFieldName.port, required=True),
+                FormFieldApiSchema(name=CommonFieldName.username, required=True),
+                FormFieldApiSchema(
+                    name=CommonFieldName.password,
+                    required=self.mode == ConnectionFormMode.create,
+                    default_action=FormFieldApiAction.skip,
+                ),
+                FormFieldApiSchema(
+                    name=TrinoFormFieldName.jwt,
+                    required=self.mode == ConnectionFormMode.create,
+                    default_action=FormFieldApiAction.skip,
+                ),
+                FormFieldApiSchema(name=CommonFieldName.cache_ttl_sec, nullable=True),
+                FormFieldApiSchema(name=CommonFieldName.cache_invalidation_throttling_interval_sec, nullable=True)
+                if is_invalidation_cache_enabled
+                else None,
+                FormFieldApiSchema(name=CommonFieldName.raw_sql_level),
+                FormFieldApiSchema(name=CommonFieldName.data_export_forbidden),
+                FormFieldApiSchema(name=TrinoFormFieldName.listing_sources),
+                FormFieldApiSchema(name=CommonFieldName.ssl_enable),
+                FormFieldApiSchema(name=CommonFieldName.ssl_ca),
+            ]
+        )
 
     def _get_schema_conditions(self) -> list[FormFieldApiActionCondition]:
         return [
@@ -223,7 +228,7 @@ class TrinoConnectionFormFactory(ConnectionFormFactory):
 
     def _get_edit_api_schema(
         self,
-        connector_settings: DeprecatedConnectorSettingsBase | None,
+        connector_settings: ConnectorSettings | None,
     ) -> FormActionApiSchema:
         return FormActionApiSchema(
             items=self._get_schema_items(),
@@ -232,7 +237,7 @@ class TrinoConnectionFormFactory(ConnectionFormFactory):
 
     def _get_create_api_schema(
         self,
-        connector_settings: DeprecatedConnectorSettingsBase | None,
+        connector_settings: ConnectorSettings | None,
         edit_api_schema: FormActionApiSchema,
     ) -> FormActionApiSchema:
         return FormActionApiSchema(
@@ -245,7 +250,7 @@ class TrinoConnectionFormFactory(ConnectionFormFactory):
 
     def _get_check_api_schema(
         self,
-        connector_settings: DeprecatedConnectorSettingsBase | None,
+        connector_settings: ConnectorSettings | None,
     ) -> FormActionApiSchema:
         return FormActionApiSchema(
             items=[
@@ -257,7 +262,7 @@ class TrinoConnectionFormFactory(ConnectionFormFactory):
 
     def get_form_config(
         self,
-        connector_settings: DeprecatedConnectorSettingsBase | None,
+        connector_settings: ConnectorSettings | None,
         tenant: TenantDef | None,
     ) -> ConnectionForm:
         rc = TrinoRowConstructor(localizer=self._localizer)
@@ -267,6 +272,7 @@ class TrinoConnectionFormFactory(ConnectionFormFactory):
         check_api_schema = self._get_check_api_schema(connector_settings)
 
         form_params = self._get_form_params()
+        is_invalidation_cache_enabled = form_params.feature_flags.is_invalidation_cache_enabled
 
         return ConnectionForm(
             title=TrinoConnectionInfoProvider.get_title(self._localizer),
@@ -282,8 +288,9 @@ class TrinoConnectionFormFactory(ConnectionFormFactory):
                     rc.jwt_row(
                         mode=self.mode, display_conditions={TrinoFormFieldName.auth_type: TrinoAuthType.jwt.value}
                     ),
-                    rc.cache_ttl_row(),
+                    C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec) if not is_invalidation_cache_enabled else None,
                     rc.raw_sql_level_row_v2(raw_sql_levels=[RawSQLLevel.subselect, RawSQLLevel.dashsql]),
+                    *(rc.cache_rows() if is_invalidation_cache_enabled else []),
                     rc.collapse_advanced_settings_row(),
                     *rc.trino_ssl_rows(),
                     rc.data_export_forbidden_row(
