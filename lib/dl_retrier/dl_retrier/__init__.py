@@ -3,12 +3,14 @@ from .exc import (
     RetrierTimeoutError,
     RetrierUnretryableError,
 )
-from .policy import (
+from .factory import (
     BaseRetryPolicyFactory,
     DefaultRetryPolicyFactory,
+    RetryPolicyFactory,
+)
+from .policy import (
     Retry,
     RetryPolicy,
-    RetryPolicyFactory,
 )
 from .settings import (
     RetryPolicyFactorySettings,
@@ -17,14 +19,14 @@ from .settings import (
 
 
 __all__ = [
+    "BaseRetryPolicyFactory",
+    "DefaultRetryPolicyFactory",
     "RetrierError",
     "RetrierTimeoutError",
     "RetrierUnretryableError",
     "Retry",
     "RetryPolicy",
-    "BaseRetryPolicyFactory",
     "RetryPolicyFactory",
-    "DefaultRetryPolicyFactory",
-    "RetryPolicySettings",
     "RetryPolicyFactorySettings",
+    "RetryPolicySettings",
 ]

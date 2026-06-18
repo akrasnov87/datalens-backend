@@ -1,0 +1,12 @@
+**/.venv
+**/.tools_venv
+**/__pycache__
+**/.mypy_cache
+**/.pytest_cache
+**/.ruff_cache
+**/*.egg-info
+**/.tox
+**/build
+**/ci_artifacts
+**/artifacts
+**/.task

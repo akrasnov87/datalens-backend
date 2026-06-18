@@ -23,6 +23,10 @@ from dl_api_commons.retrier.aiohttp import AiohttpPolicyRetrier
 from dl_api_commons.tracing import get_current_tracing_headers
 from dl_app_tools.profiling_base import GenericProfiler
 from dl_core.base_models import EntryLocation
+from dl_core.enums import (
+    USEntryBranch,
+    USEntryMode,
+)
 from dl_core.exc import (
     USLockUnacquiredException,
     USReqException,
@@ -119,6 +123,7 @@ class UStorageClientAIO(UStorageClientBase):
         retry_policy_factory: dl_retrier.BaseRetryPolicyFactory,
         context_request_id: Optional[str] = None,
         context_forwarded_for: Optional[str] = None,
+        context_real_ip: Optional[str] = None,
         context_workbook_id: Optional[str] = None,
         context_rpc_authorization_id: Optional[str] = None
     ):
@@ -129,6 +134,7 @@ class UStorageClientAIO(UStorageClientBase):
             retry_policy_factory=retry_policy_factory,
             context_request_id=context_request_id,
             context_forwarded_for=context_forwarded_for,
+            context_real_ip=context_real_ip,
             context_workbook_id=context_workbook_id,
             context_rpc_authorization_id=context_rpc_authorization_id
         )
@@ -145,11 +151,14 @@ class UStorageClientAIO(UStorageClientBase):
         self,
         request_data: UStorageClientBase.RequestData,
         retry_policy_name: Optional[str] = None,
+        context_name: Optional[str] = None,
     ) -> dict:
         self._raise_for_disabled_interactions()
         self._log_request_start(request_data)
         tracing_headers = get_current_tracing_headers()
         start = time.monotonic()
+
+        context_headers = self._named_contexts.get(context_name, {}) if context_name else {}
 
         with GenericProfiler("us-client-request"):
             retry_policy = self._retry_policy_factory.get_policy(retry_policy_name)
@@ -161,6 +170,7 @@ class UStorageClientAIO(UStorageClientBase):
                 headers={
                     **self._extra_headers,
                     **tracing_headers,
+                    **context_headers,
                 },
                 retrier=AiohttpPolicyRetrier(
                     retry_policy=retry_policy,
@@ -185,6 +195,8 @@ class UStorageClientAIO(UStorageClientBase):
         include_permissions: bool = True,
         include_links: bool = True,
         include_favorite: bool = False,
+        context_name: Optional[str] = None,
+        branch: USEntryBranch = USEntryBranch.published,
     ) -> dict:
         return await self._request(
             self._req_data_get_entry(
@@ -193,8 +205,10 @@ class UStorageClientAIO(UStorageClientBase):
                 include_permissions=include_permissions,
                 include_links=include_links,
                 include_favorite=include_favorite,
+                branch=branch,
             ),
             retry_policy_name="get_entry",
+            context_name=context_name,
         )
 
     async def create_entry(
@@ -208,6 +222,7 @@ class UStorageClientAIO(UStorageClientBase):
         type_: Optional[str] = None,
         hidden: Optional[bool] = None,
         links: Optional[dict[str, Any]] = None,
+        mode: USEntryMode = USEntryMode.publish,
         **kwargs: Any,
     ) -> dict[str, Any]:
         rq_data = self._req_data_create_entry(
@@ -220,6 +235,7 @@ class UStorageClientAIO(UStorageClientBase):
             type_=type_,
             hidden=hidden,
             links=links,
+            mode=mode,
             **kwargs,
         )
         return await self._request(
@@ -238,6 +254,7 @@ class UStorageClientAIO(UStorageClientBase):
         hidden: Optional[bool] = None,
         links: Optional[dict[str, Any]] = None,
         update_revision: Optional[bool] = None,
+        mode: USEntryMode = USEntryMode.publish,
     ) -> dict[str, Any]:
         return await self._request(
             self._req_data_update_entry(
@@ -250,6 +267,7 @@ class UStorageClientAIO(UStorageClientBase):
                 hidden=hidden,
                 links=links,
                 update_revision=update_revision,
+                mode=mode,
             ),
             retry_policy_name="update_entry",
         )

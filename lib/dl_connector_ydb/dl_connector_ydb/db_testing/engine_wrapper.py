@@ -13,8 +13,10 @@ import shortuuid
 import sqlalchemy as sa
 from sqlalchemy.types import TypeEngine
 import ydb
+import ydb_sqlalchemy.sqlalchemy as ydb_sa
 
 from dl_db_testing.database.engine_wrapper import EngineWrapperBase
+import dl_sqlalchemy_ydb.dialect as ydb_dialect
 
 
 class YdbTypeSpec(NamedTuple):
@@ -22,20 +24,62 @@ class YdbTypeSpec(NamedTuple):
     to_sql_str: Callable[[Any], str]
 
 
+_DATETIME_TYPE_SPEC = YdbTypeSpec(
+    ydb.PrimitiveType.Datetime,
+    to_sql_str=lambda x: f'DateTime::MakeDatetime($datetime_parse("{x}"))',
+)
+
+
+_TIMESTAMP_TYPE_SPEC = YdbTypeSpec(
+    ydb.PrimitiveType.Timestamp,
+    to_sql_str=lambda x: f'DateTime::MakeTimestamp($datetime_parse("{x}"))',
+)
+
+
 SA_TYPE_TO_YDB_TYPE: dict[type[TypeEngine], YdbTypeSpec] = {
+    ydb_sa.types.Int8: YdbTypeSpec(type=ydb.PrimitiveType.Int8, to_sql_str=str),
+    ydb_sa.types.Int16: YdbTypeSpec(type=ydb.PrimitiveType.Int16, to_sql_str=str),
+    ydb_sa.types.Int32: YdbTypeSpec(type=ydb.PrimitiveType.Int32, to_sql_str=str),
+    ydb_sa.types.Int64: YdbTypeSpec(type=ydb.PrimitiveType.Int64, to_sql_str=str),
+    ydb_sa.types.UInt8: YdbTypeSpec(type=ydb.PrimitiveType.Uint8, to_sql_str=str),
+    ydb_sa.types.UInt16: YdbTypeSpec(type=ydb.PrimitiveType.Uint16, to_sql_str=str),
+    ydb_sa.types.UInt32: YdbTypeSpec(type=ydb.PrimitiveType.Uint32, to_sql_str=str),
+    ydb_sa.types.UInt64: YdbTypeSpec(type=ydb.PrimitiveType.Uint64, to_sql_str=str),
     sa.SmallInteger: YdbTypeSpec(type=ydb.PrimitiveType.Uint8, to_sql_str=str),
     sa.Integer: YdbTypeSpec(type=ydb.PrimitiveType.Int32, to_sql_str=str),
     sa.BigInteger: YdbTypeSpec(type=ydb.PrimitiveType.Int64, to_sql_str=str),
     sa.Float: YdbTypeSpec(type=ydb.PrimitiveType.Double, to_sql_str=str),
     sa.Boolean: YdbTypeSpec(type=ydb.PrimitiveType.Bool, to_sql_str=lambda x: str(bool(x))),
     sa.String: YdbTypeSpec(type=ydb.PrimitiveType.String, to_sql_str=lambda x: f'"{x}"'),
+    sa.BINARY: YdbTypeSpec(type=ydb.PrimitiveType.String, to_sql_str=lambda x: f'"{x}"'),
+    sa.Text: YdbTypeSpec(type=ydb.PrimitiveType.String, to_sql_str=lambda x: f'"{x}"'),
     sa.Unicode: YdbTypeSpec(type=ydb.PrimitiveType.Utf8, to_sql_str=lambda x: f'"{x}"'),
+    ydb_dialect.YqlFloat: YdbTypeSpec(type=ydb.PrimitiveType.Float, to_sql_str=str),
+    ydb_dialect.YqlDouble: YdbTypeSpec(type=ydb.PrimitiveType.Double, to_sql_str=str),
+    ydb_dialect.YqlString: YdbTypeSpec(type=ydb.PrimitiveType.String, to_sql_str=lambda x: f'"{x}"'),
+    ydb_dialect.YqlUtf8: YdbTypeSpec(type=ydb.PrimitiveType.Utf8, to_sql_str=lambda x: f'"{x}"'),
+    ydb_dialect.YqlUuid: YdbTypeSpec(type=ydb.PrimitiveType.UUID, to_sql_str=lambda x: f'UUID("{x}")'),
+    # Date
     sa.Date: YdbTypeSpec(type=ydb.PrimitiveType.Date, to_sql_str=lambda x: f'DateTime::MakeDate($date_parse("{x}"))'),
-    sa.DateTime: YdbTypeSpec(
-        ydb.PrimitiveType.Datetime, to_sql_str=lambda x: f'DateTime::MakeDatetime($datetime_parse("{x}"))'
+    ydb_dialect.YqlDate: YdbTypeSpec(
+        type=ydb.PrimitiveType.Date, to_sql_str=lambda x: f'DateTime::MakeDate($date_parse("{x}"))'
     ),
-    sa.TIMESTAMP: YdbTypeSpec(
-        ydb.PrimitiveType.Timestamp, to_sql_str=lambda x: f'DateTime::MakeTimestamp($datetime_parse("{x}"))'
+    # Datetime
+    # TODO: 2025.01.29: Not adding Datetime64 because YDB Datetime::Parse64 does not work
+    ydb_sa.types.YqlDateTime: _DATETIME_TYPE_SPEC,
+    ydb_dialect.YqlDateTime: _DATETIME_TYPE_SPEC,
+    sa.DateTime: _DATETIME_TYPE_SPEC,
+    sa.DATETIME: _DATETIME_TYPE_SPEC,
+    # Timestamp
+    # TODO: 2025.01.29: Not adding Timestamp64 because YDB Datetime::Parse64 does not work
+    ydb_sa.types.YqlTimestamp: _TIMESTAMP_TYPE_SPEC,
+    ydb_dialect.YqlTimestamp: _TIMESTAMP_TYPE_SPEC,
+    sa.TIMESTAMP: _TIMESTAMP_TYPE_SPEC,
+    # Interval
+    ydb_dialect.YqlInterval: YdbTypeSpec(ydb.PrimitiveType.Interval, to_sql_str=lambda x: f"CAST({x} as Interval)"),
+    # Interval64
+    ydb_dialect.YqlInterval64: YdbTypeSpec(
+        ydb.PrimitiveType.Interval64, to_sql_str=lambda x: f"CAST({x} as Interval64)"
     ),
 }
 

@@ -1,0 +1,13 @@
+HTTP_SERVER:
+  HOST: "0.0.0.0"
+  PORT: 54010
+  OAUTH_CHECKER:
+    USERS:
+      USER1:
+        CLIENT_ID: "user1"
+      USER2:
+        CLIENT_ID: "user2"
+
+APP_INFO:
+  NAME: "test_app"
+  VERSION: "test_app:1.0.0"

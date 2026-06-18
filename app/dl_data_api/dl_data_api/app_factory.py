@@ -22,15 +22,14 @@ from dl_api_lib.app_settings import (
 )
 from dl_api_lib.connector_availability.base import ConnectorAvailabilityConfig
 from dl_cache_engine.primitives import CacheTTLConfig
-from dl_configs.connectors_settings import ConnectorSettingsBase
 from dl_configs.enums import RequiredService
 from dl_configs.utils import get_multiple_root_certificates
-from dl_constants.enums import ConnectionType
 from dl_core.aio.middlewares.services_registry import services_registry_middleware
 from dl_core.aio.middlewares.us_manager import (
     service_us_manager_middleware,
     us_manager_middleware,
 )
+from dl_core.connectors.settings.base import ConnectorSettings
 from dl_core.services_registry.entity_checker import EntityUsageChecker
 from dl_core.services_registry.env_manager_factory import InsecureEnvManagerFactory
 from dl_core.services_registry.env_manager_factory_base import EnvManagerFactory
@@ -90,7 +89,7 @@ class StandaloneDataApiAppFactory(
 
     def set_up_environment(
         self,
-        connectors_settings: dict[ConnectionType, ConnectorSettingsBase],
+        connectors_settings: dict[str, ConnectorSettings],
     ) -> EnvSetupResult:
         sr_middleware_list: list[Middleware]
         usm_middleware_list: list[Middleware]
@@ -116,6 +115,7 @@ class StandaloneDataApiAppFactory(
             services_registry_middleware(
                 services_registry_factory=sr_factory,
                 use_query_cache=self._settings.CACHES_ON,
+                use_cache_invalidation=self._settings.CACHE_INVALIDATION.ENABLED,
                 use_mutation_cache=self._settings.MUTATIONS_CACHES_ON,
                 mutation_cache_default_ttl=self._settings.MUTATIONS_CACHES_DEFAULT_TTL,
             ),
@@ -126,16 +126,18 @@ class StandaloneDataApiAppFactory(
             us_base_url=self._settings.US_BASE_URL,
             crypto_keys_config=self._settings.CRYPTO_KEYS_CONFIG,
             ca_data=ca_data,
-            retry_policy_factory=dl_retrier.RetryPolicyFactory(self._settings.US_CLIENT.RETRY_POLICY),
+            retry_policy_factory=dl_retrier.RetryPolicyFactory.from_settings(self._settings.US_CLIENT.RETRY_POLICY),
         )
 
         if self._settings.AUTH is not None and self._settings.AUTH == "NONE":
             usm_middleware_list = [
                 service_us_manager_middleware(
+                    us_manager_factory_class=self.private_us_manager_factory_class,
                     us_master_token=self._settings.US_MASTER_TOKEN,
                     **common_us_kw,
                 ),
                 service_us_manager_middleware(
+                    us_manager_factory_class=self.private_us_manager_factory_class,
                     us_master_token=self._settings.US_MASTER_TOKEN,
                     as_user_usm=True,
                     **common_us_kw,
@@ -145,6 +147,7 @@ class StandaloneDataApiAppFactory(
             usm_middleware_list = [
                 us_manager_middleware(**common_us_kw),
                 service_us_manager_middleware(
+                    us_manager_factory_class=self.private_us_manager_factory_class,
                     us_master_token=self._settings.US_MASTER_TOKEN,
                     **common_us_kw,
                 ),

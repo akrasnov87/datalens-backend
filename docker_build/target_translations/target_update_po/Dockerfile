@@ -10,7 +10,6 @@ COPY --from=src . .
 COPY --from=src_terrarium . .
 
 # Install repmanager to access metadata in pyproject.toml
-RUN ls -l terrarium
 RUN pip install terrarium/dl_repmanager
 
 # Prepare a config file for babel. It's always the same, no ponit in storing in in packages
@@ -30,6 +29,9 @@ RUN for domain_pair in $(dl-package --package-path=. list-i18n-domains) ; do \
     msgmerge $PACKAGE_NAME/locales/$locale/LC_MESSAGES/$DOMAIN_NAME.po $DOMAIN_NAME.po > $LOCALES_DIR/$locale/LC_MESSAGES/$DOMAIN_NAME.po; \
     # Now replace the date with a fixed one so that it doesn't get updated every time
     sed -i -r "s/POT-Creation-Date: [0-9]+-[0-9]+-[0-9]+ [0-9]+:[0-9]+\\+[0-9]+/POT-Creation-Date: 2023-09-22 08:16+0000/g" $LOCALES_DIR/$locale/LC_MESSAGES/$DOMAIN_NAME.po; \
+    # Remove all lines starting with "#," and "#~"
+    sed -i '/^#,/d' $LOCALES_DIR/$locale/LC_MESSAGES/$DOMAIN_NAME.po; \
+    sed -i '/^#~/d' $LOCALES_DIR/$locale/LC_MESSAGES/$DOMAIN_NAME.po; \
     done; \
     done
 

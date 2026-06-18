@@ -32,6 +32,7 @@ class DLHeadersCommon(DLHeaders):
     COLLECTION_ID = "X-DL-CollectionId"
     WORKBOOK_ID = "X-DL-WorkbookId"
     PROJECT_ID = "X-DC-ProjectId"
+    REAL_IP = "X-Real-Ip"  # Source IP address of the client initiated HTTP request.
     FORWARDED_FOR = "X-Forwarded-For"
     CSRF_TOKEN = "X-CSRF-Token"
     CONTENT_TYPE = "Content-Type"
@@ -55,11 +56,17 @@ class DLHeadersCommon(DLHeaders):
 
     EMBED_TOKEN = "X-DL-Embed-Token"
     DATASET_ID = "X-DL-DatasetId"
+    AUDIT_MODE = "X-DL-Audit-Mode"
 
     # TODO: BI-4918 drop after all usages moved to bi_api_commons_ya_cloud.constants.DLHeadersYC
     IAM_TOKEN = "X-YaCloud-SubjectToken"
     FOLDER_ID = "X-YaCloud-FolderId"
     ORG_ID = "X-YaCloud-OrgId"
+
+
+class DLAuthorizationHeaderPrefix(DLHeaders):
+    BEARER = "Bearer "
+    OAUTH = "OAuth "
 
 
 class DLCookiesCommon(DLCookies):

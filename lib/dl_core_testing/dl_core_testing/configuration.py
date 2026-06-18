@@ -26,7 +26,6 @@ class UnitedStorageConfiguration:
     us_master_token: str = attr.ib(kw_only=True)
     us_pg_dsn: str = attr.ib(kw_only=True)
     force: bool = attr.ib(kw_only=True, default=True)
-    migrations: Optional[list[list[str]]] = attr.ib(kw_only=True, default=None)
 
 
 @attr.s(frozen=True)
@@ -38,6 +37,7 @@ class RedisSettingMaker:
     redis_db_cache: int = attr.ib(default=1)
     redis_db_mutation: int = attr.ib(default=2)
     redis_db_arq: int = attr.ib(default=11)
+    redis_db_cache_invalidation: int = attr.ib(default=3)
 
     def get_redis_settings(self, db: int) -> RedisSettings:
         return RedisSettings(  # type: ignore  # TODO: fix compatibility of models using `s_attrib` with mypy
@@ -60,6 +60,9 @@ class RedisSettingMaker:
 
     def get_redis_settings_arq(self) -> RedisSettings:
         return self.get_redis_settings(self.redis_db_arq)
+
+    def get_redis_settings_cache_invalidation(self) -> RedisSettings:
+        return self.get_redis_settings(self.redis_db_cache_invalidation)
 
 
 # These are used only for creation of local environments in tests, not actual external ones
@@ -84,6 +87,7 @@ class CoreTestEnvironmentConfiguration:
     redis_db_cache: int = attr.ib(default=1)
     redis_db_mutation: int = attr.ib(default=2)
     redis_db_arq: int = attr.ib(default=11)
+    redis_db_cache_invalidation: int = attr.ib(default=3)
 
     compeng_url: str = attr.ib(default="")
 
@@ -106,6 +110,7 @@ class CoreTestEnvironmentConfiguration:
             redis_db_cache=self.redis_db_cache,
             redis_db_mutation=self.redis_db_mutation,
             redis_db_arq=self.redis_db_arq,
+            redis_db_cache_invalidation=self.redis_db_cache_invalidation,
         )
 
     def get_core_library_config(self) -> CoreLibraryConfig:

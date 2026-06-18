@@ -1,4 +1,6 @@
 import abc
+import logging
+import ssl
 from typing import (
     Generic,
     TypeVar,
@@ -12,6 +14,8 @@ from dl_api_commons.aio.middlewares.commit_rci import commit_rci_middleware
 from dl_api_commons.aio.middlewares.cors import cors_middleware
 from dl_api_commons.aio.middlewares.csrf import CSRFMiddleware
 from dl_api_commons.aio.middlewares.master_key import master_key_middleware
+from dl_api_commons.aio.middlewares.obfuscation_context import obfuscation_context_middleware
+from dl_api_commons.aio.middlewares.rci_headers import rci_headers_middleware
 from dl_api_commons.aio.middlewares.request_bootstrap import RequestBootstrap
 from dl_api_commons.aio.middlewares.request_id import RequestId
 from dl_api_commons.aio.middlewares.tracing import TracingService
@@ -19,6 +23,7 @@ from dl_api_commons.sentry_config import (
     SentryConfig,
     configure_sentry_for_aiohttp,
 )
+from dl_configs.utils import get_multiple_root_certificates
 from dl_constants.api_constants import DLHeadersCommon
 from dl_core.aio.metrics_view import MetricsView
 from dl_core.aio.ping_view import PingView
@@ -29,15 +34,27 @@ from dl_core.loader import (
 from dl_file_uploader_api_lib.aiohttp_services.crypto import CryptoService
 from dl_file_uploader_api_lib.aiohttp_services.error_handler import FileUploaderErrorHandler
 from dl_file_uploader_api_lib.aiohttp_services.s3_service import InternalS3Service
+from dl_file_uploader_api_lib.aiohttp_services.us_client import USEntriesClientService
 from dl_file_uploader_api_lib.dl_request import FileUploaderDLRequest
 from dl_file_uploader_api_lib.settings import FileUploaderAPISettings
 from dl_file_uploader_api_lib.views import files as files_views
 from dl_file_uploader_api_lib.views import misc as misc_views
 from dl_file_uploader_api_lib.views import sources as sources_views
 from dl_file_uploader_lib.settings_utils import init_redis_service
+import dl_httpx
+from dl_obfuscator import (
+    OBFUSCATION_BASE_OBFUSCATORS_KEY,
+    SecretKeeper,
+    create_base_obfuscators,
+)
+import dl_retrier
 from dl_s3.s3_service import S3Service
 from dl_task_processor.arq_redis import ArqRedisService
 from dl_task_processor.arq_wrapper import create_arq_redis_settings
+import dl_us_entries_client
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 _TSettings = TypeVar("_TSettings", bound=FileUploaderAPISettings)
@@ -53,6 +70,9 @@ class FileUploaderApiAppFactory(Generic[_TSettings], abc.ABC):
     def get_auth_middlewares(self) -> list[Middleware]:
         raise NotImplementedError()
 
+    def _get_extra_regex_patterns(self) -> tuple[str, ...] | None:
+        return None
+
     def set_up_sentry(self, secret_sentry_dsn: str, release: str) -> None:
         configure_sentry_for_aiohttp(
             SentryConfig(
@@ -67,6 +87,11 @@ class FileUploaderApiAppFactory(Generic[_TSettings], abc.ABC):
 
         if (secret_sentry_dsn := self._settings.SENTRY_DSN) is not None:
             self.set_up_sentry(secret_sentry_dsn, app_version)
+
+        ca_data = get_multiple_root_certificates(
+            self._settings.CA_FILE_PATH,
+            *self._settings.EXTRA_CA_FILE_PATHS,
+        )
 
         req_id_service = RequestId(
             append_own_req_id=True,
@@ -95,7 +120,9 @@ class FileUploaderApiAppFactory(Generic[_TSettings], abc.ABC):
                 master_key=self._settings.FILE_UPLOADER_MASTER_TOKEN,
                 header=DLHeadersCommon.FILE_UPLOADER_MASTER_TOKEN,
             ),
+            rci_headers_middleware(),
             *self.get_auth_middlewares(),
+            obfuscation_context_middleware(),
             commit_rci_middleware(),
             self.CSRF_MIDDLEWARE_CLS(
                 csrf_header_name=self._settings.CSRF.HEADER_NAME,
@@ -110,39 +137,74 @@ class FileUploaderApiAppFactory(Generic[_TSettings], abc.ABC):
         app = web.Application(
             middlewares=middleware_list,
         )
+
+        if self._settings.OBFUSCATION_ENABLED:
+            global_keeper = SecretKeeper()
+            if self._settings.FILE_UPLOADER_MASTER_TOKEN:
+                global_keeper.add_secret(self._settings.FILE_UPLOADER_MASTER_TOKEN, "file_uploader_master_token")
+            app[OBFUSCATION_BASE_OBFUSCATORS_KEY] = create_base_obfuscators(
+                global_keeper=global_keeper,
+                extra_regex_patterns=self._get_extra_regex_patterns(),
+            )
+
         app.on_response_prepare.append(req_id_service.on_response_prepare)
 
         redis_service = init_redis_service(self._settings)
         app.on_startup.append(redis_service.init_hook)
         app.on_shutdown.append(redis_service.tear_down_hook)
 
-        s3_service_for_uploads = S3Service(
+        s3_service_internal = InternalS3Service(
             access_key_id=self._settings.S3.ACCESS_KEY_ID,
             secret_access_key=self._settings.S3.SECRET_ACCESS_KEY,
             endpoint_url=self._settings.S3.ENDPOINT_URL,
             use_virtual_host_addressing=self._settings.S3.USE_VIRTUAL_HOST_ADDRESSING,
+            ca_data=ca_data,
+            tmp_bucket_name=self._settings.S3_TMP_BUCKET_NAME,
+            persistent_bucket_name=self._settings.S3_PERSISTENT_BUCKET_NAME,
+        )
+        app.on_startup.append(s3_service_internal.init_hook)
+        app.on_shutdown.append(s3_service_internal.tear_down_hook)
+
+        if self._settings.S3_UPLOADS is None:
+            LOGGER.debug("S3_UPLOADS settings are not set, using same S3 as internal")
+            s3_settings_for_uploads = self._settings.S3
+        else:
+            s3_settings_for_uploads = self._settings.S3_UPLOADS
+        s3_service_for_uploads = S3Service(
+            access_key_id=s3_settings_for_uploads.ACCESS_KEY_ID,
+            secret_access_key=s3_settings_for_uploads.SECRET_ACCESS_KEY,
+            endpoint_url=s3_settings_for_uploads.ENDPOINT_URL,
+            use_virtual_host_addressing=s3_settings_for_uploads.USE_VIRTUAL_HOST_ADDRESSING,
+            ca_data=ca_data,
             tmp_bucket_name=self._settings.S3_TMP_BUCKET_NAME,
             persistent_bucket_name=self._settings.S3_PERSISTENT_BUCKET_NAME,
         )
         app.on_startup.append(s3_service_for_uploads.init_hook)
         app.on_shutdown.append(s3_service_for_uploads.tear_down_hook)
 
-        s3_service_internal = InternalS3Service(
-            access_key_id=self._settings.S3.ACCESS_KEY_ID,
-            secret_access_key=self._settings.S3.SECRET_ACCESS_KEY,
-            endpoint_url=self._settings.S3.ENDPOINT_URL,
-            tmp_bucket_name=self._settings.S3_TMP_BUCKET_NAME,
-            persistent_bucket_name=self._settings.S3_PERSISTENT_BUCKET_NAME,
-            # InternalS3Service ignores virtual_host_addressing parameter, so not passing it at all
-        )
-        app.on_startup.append(s3_service_internal.init_hook)
-        app.on_shutdown.append(s3_service_internal.tear_down_hook)
-
         arq_redis_service = ArqRedisService(arq_settings=create_arq_redis_settings(self._settings.REDIS_ARQ))
         app.on_startup.append(arq_redis_service.init_hook)
         app.on_shutdown.append(arq_redis_service.tear_down_hook)
 
         CryptoService(crypto_keys_config=self._settings.CRYPTO_KEYS_CONFIG).bind_to_app(app)
+
+        ssl_context = ssl.create_default_context(cadata=ca_data.decode("ascii"))
+        us_entries_client = dl_us_entries_client.USEntriesAsyncClient.from_dependencies(
+            dependencies=dl_httpx.HttpxClientDependencies(
+                base_url=self._settings.US_ENTRIES_CLIENT.BASE_URL,
+                ssl_context=ssl_context,
+                retry_policy_factory=dl_retrier.RetryPolicyFactory.from_settings(
+                    settings=dl_retrier.RetryPolicyFactorySettings(
+                        DEFAULT_POLICY=dl_retrier.RetryPolicySettings(
+                            TOTAL_TIMEOUT=5,
+                        ),
+                    ),
+                ),
+            )
+        )
+        us_entries_client_service = USEntriesClientService(us_entries_client=us_entries_client)
+        app.on_startup.append(us_entries_client_service.init_hook)
+        app.on_shutdown.append(us_entries_client_service.tear_down_hook)
 
         app.router.add_route("get", "/api/v2/ping", PingView)
         app.router.add_route("get", "/api/v2/metrics", MetricsView)

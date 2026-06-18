@@ -1,4 +1,5 @@
 from .components import (
+    CacheInvalidationRow,
     CacheTTLRow,
     CollapseRow,
     OAuthTokenRow,
@@ -7,8 +8,9 @@ from .components import (
 
 
 __all__ = (
-    "OAuthTokenRow",
+    "CacheInvalidationRow",
     "CacheTTLRow",
     "CollapseRow",
+    "OAuthTokenRow",
     "RawSqlLevelRow",
 )

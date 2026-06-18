@@ -1,4 +1,9 @@
-from typing import Optional
+from typing import (
+    Any,
+    Callable,
+    Coroutine,
+    Optional,
+)
 
 import arq
 import attr
@@ -9,6 +14,7 @@ from dl_configs.crypto_keys import CryptoKeysConfig
 from dl_core.aio.web_app_services.gsheets import GSheetsSettings
 from dl_core.aio.web_app_services.redis import RedisBaseService
 from dl_core.services_registry.top_level import ServicesRegistry
+from dl_core.united_storage_client import USAuthContextPrivateBase
 from dl_core.us_manager.us_manager_async import AsyncUSManager
 from dl_file_uploader_task_interface.utils_service_registry import (
     create_sr_factory_from_env_vars,
@@ -35,6 +41,7 @@ class SecureReaderSettings:
 @attr.s
 class FileUploaderTaskContext(BaseContext):
     settings: FileUploaderWorkerSettings = attr.ib()
+    us_auth_context_factory: Callable[[], Coroutine[Any, Any, USAuthContextPrivateBase]] = attr.ib()
     tpe: ContextVarExecutor = attr.ib()
     redis_service: RedisBaseService = attr.ib()
     s3_service: S3Service = attr.ib()
@@ -56,15 +63,15 @@ class FileUploaderTaskContext(BaseContext):
         ).make_service_registry(rci)
 
     def get_retry_policy_factory(self) -> dl_retrier.BaseRetryPolicyFactory:
-        return dl_retrier.RetryPolicyFactory(self.settings.US_CLIENT.RETRY_POLICY)
+        return dl_retrier.RetryPolicyFactory.from_settings(self.settings.US_CLIENT.RETRY_POLICY)
 
-    def get_async_usm(self, rci: Optional[RequestContextInfo] = None) -> AsyncUSManager:
+    async def get_async_usm(self, rci: Optional[RequestContextInfo] = None) -> AsyncUSManager:
         rci = rci or RequestContextInfo.create_empty()
         services_registry = self.get_service_registry(rci=rci)
         retry_policy_factory = self.get_retry_policy_factory()
-        return get_async_service_us_manager(
+        return await get_async_service_us_manager(
             us_host=self.settings.US_BASE_URL,
-            us_master_token=self.settings.US_MASTER_TOKEN,
+            us_auth_context_factory=self.us_auth_context_factory,
             services_registry=services_registry,
             bi_context=rci,
             crypto_keys_config=self.crypto_keys_config,

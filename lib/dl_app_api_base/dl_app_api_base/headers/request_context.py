@@ -1,0 +1,65 @@
+import attr
+import attrs
+import opentelemetry.sdk.trace
+
+import dl_app_api_base.handlers as handlers
+import dl_app_api_base.request_context as request_context
+import dl_app_api_base.utils as utils
+import dl_app_base
+import dl_constants
+import dl_utils
+
+
+class UserIpNotFoundErrorResponseSchema(handlers.BadRequestResponseSchema):
+    message: str = "User IP is not found"
+    code: str = "ERR.API.BAD_REQUEST.USER_IP_NOT_FOUND"
+
+
+@attrs.define(frozen=True, kw_only=True)
+class ParentContext:
+    request_id: str
+    user_ip: str
+    trace_id: str
+
+
+@attr.define(kw_only=True, slots=False)
+class HeadersRequestContextMixin(request_context.BaseRequestContext):
+    _user_ip_forwarded_for_proxies_count: int = 1
+
+    @dl_app_base.singleton_class_method_result
+    def get_request_id(self) -> str:
+        return (
+            self._aiohttp_request.headers.get(dl_constants.DLHeadersCommon.REQUEST_ID.value)
+            or dl_utils.request_id_generator()
+        )
+
+    @dl_app_base.singleton_class_method_result
+    def get_user_ip(self) -> str:
+        user_ip = utils.extract_user_ip(
+            self._aiohttp_request,
+            self._user_ip_forwarded_for_proxies_count,
+        )
+
+        if user_ip is None:
+            raise UserIpNotFoundErrorResponseSchema().as_exception()
+
+        return user_ip
+
+    @dl_app_base.singleton_class_method_result
+    def get_trace_id(self) -> str:
+        uber_trace_id = self._aiohttp_request.headers.get(dl_constants.DLHeadersCommon.UBER_TRACE_ID.value)
+
+        if uber_trace_id:
+            return uber_trace_id.split(":")[0]
+
+        trace_id_generator = opentelemetry.sdk.trace.RandomIdGenerator()
+        trace_id = trace_id_generator.generate_trace_id()
+        return f"{trace_id:032x}"
+
+    @dl_app_base.singleton_class_method_result
+    def get_client_parent_context(self) -> ParentContext:
+        return ParentContext(
+            request_id=self.get_request_id(),
+            user_ip=self.get_user_ip(),
+            trace_id=self.get_trace_id(),
+        )

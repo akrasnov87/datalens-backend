@@ -1,0 +1,487 @@
+import enum
+import http
+import logging
+import os
+import re
+from typing import (
+    AsyncGenerator,
+    ClassVar,
+)
+
+import aiohttp.web
+import attr
+import pytest
+import pytest_asyncio
+from typing_extensions import override
+
+import dl_app_api_base
+import dl_app_base
+import dl_pydantic
+
+
+DIR_PATH = os.path.dirname(__file__)
+LOGGER = logging.getLogger(__name__)
+
+
+@attr.define(kw_only=True)
+class ReadinessResource:
+    ready: bool = attr.ib(default=True)
+
+    def is_ready(self) -> bool:
+        return self.ready
+
+    def set_readiness(self, ready: bool) -> None:
+        self.ready = ready
+
+
+@pytest.fixture(name="readiness_resource")
+def fixture_readiness_resource() -> ReadinessResource:
+    return ReadinessResource()
+
+
+@pytest.fixture(name="non_critical_readiness_resource")
+def fixture_non_critical_readiness_resource() -> ReadinessResource:
+    return ReadinessResource()
+
+
+@attr.define(kw_only=True, slots=False)
+class Counter:
+    value: int = attr.ib(default=0)
+
+    def increment(self) -> int:
+        self.value += 1
+        return self.value
+
+
+class App(dl_app_api_base.HttpServerAppMixin):
+    ...
+
+
+class HttpServerSettings(dl_app_api_base.HttpServerSettings):
+    OAUTH_CHECKER: dl_app_api_base.OAuthCheckerSettings = NotImplemented
+
+
+class AppSettings(dl_app_api_base.HttpServerAppSettingsMixin):
+    readiness_resource: ReadinessResource
+    non_critical_readiness_resource: ReadinessResource
+    HTTP_SERVER: HttpServerSettings = NotImplemented
+
+
+@attr.define(kw_only=True, slots=False)
+class CounterRequestContextDependenciesMixin(dl_app_api_base.BaseRequestContextDependencies):
+    counter: Counter
+
+
+@attr.define(kw_only=True, slots=False)
+class CounterRequestContextMixin(dl_app_api_base.BaseRequestContext):
+    _dependencies: CounterRequestContextDependenciesMixin
+
+    @dl_app_base.singleton_class_method_result
+    def get_counter_value(self) -> int:
+        return self._dependencies.counter.increment()
+
+
+@attr.define(kw_only=True, slots=False)
+class ValueRequestContextDependenciesMixin(dl_app_api_base.BaseRequestContextDependencies):
+    value: int
+
+
+@attr.define(kw_only=True, slots=False)
+class ValueRequestContextMixin(dl_app_api_base.BaseRequestContext):
+    _dependencies: ValueRequestContextDependenciesMixin
+
+    @dl_app_base.singleton_class_method_result
+    def get_value(self) -> int:
+        return self._dependencies.value
+
+
+@attr.define(kw_only=True, slots=False)
+class RequestContextDependencies(
+    CounterRequestContextDependenciesMixin,
+    ValueRequestContextDependenciesMixin,
+    dl_app_api_base.HttpServerRequestContextDependencies,
+):
+    ...
+
+
+@attr.define(kw_only=True, slots=False)
+class RequestContext(
+    CounterRequestContextMixin,
+    ValueRequestContextMixin,
+    dl_app_api_base.HttpServerRequestContext,
+):
+    _dependencies: RequestContextDependencies
+
+
+RequestContextManager = dl_app_api_base.BaseRequestContextManager[
+    RequestContextDependencies,
+    RequestContext,
+]
+
+
+@attr.define(kw_only=True, slots=False)
+class CounterHandler(dl_app_api_base.BaseHandler):
+    request_context_provider: dl_app_api_base.RequestContextProviderProtocol[RequestContext]
+
+    class ResponseSchema(dl_app_api_base.BaseResponseSchema):
+        counter_value: int
+        value: int
+
+    async def process(self, request: aiohttp.web.Request) -> aiohttp.web.Response:
+        request_context = self.request_context_provider.get()
+
+        return dl_app_api_base.Response.with_model(
+            schema=self.ResponseSchema(
+                counter_value=request_context.get_counter_value(),
+                value=request_context.get_value(),
+            ),
+            status=http.HTTPStatus.OK,
+        )
+
+
+@attr.define(kw_only=True, slots=False)
+class PingHandler(dl_app_api_base.BaseHandler):
+    class ResponseSchema(dl_app_api_base.BaseResponseSchema):
+        message: str
+
+    async def process(self, request: aiohttp.web.Request) -> aiohttp.web.Response:
+        return dl_app_api_base.Response.with_model(
+            schema=self.ResponseSchema(message="pong"),
+            status=http.HTTPStatus.OK,
+        )
+
+
+@attr.define(kw_only=True, slots=False)
+class HeadersHandler(dl_app_api_base.BaseHandler):
+    OPENAPI_INCLUDE = False
+
+    request_context_provider: dl_app_api_base.RequestContextProviderProtocol[dl_app_api_base.HeadersRequestContextMixin]
+
+    class RequestSchema(dl_app_api_base.BaseRequestSchema):
+        class Path(dl_pydantic.BaseSchema):
+            path_param: str
+
+        class Query(dl_pydantic.BaseSchema):
+            query_param: str
+
+        path: Path
+        query: Query
+
+    class ResponseSchema(dl_app_api_base.BaseResponseSchema):
+        method: str
+        path: str
+        raw_path: str
+        path_pattern: str
+        host: str
+
+        request_id: str
+        trace_id: str
+        user_ip: str
+
+    async def process(self, request: aiohttp.web.Request) -> aiohttp.web.Response:
+        request_context = self.request_context_provider.get()
+
+        return dl_app_api_base.Response.with_model(
+            schema=self.ResponseSchema(
+                method=request_context.method,
+                path=request_context.path,
+                raw_path=request_context.raw_path,
+                path_pattern=request_context.path_pattern,
+                host=request_context.host,
+                request_id=request_context.get_request_id(),
+                trace_id=request_context.get_trace_id(),
+                user_ip=request_context.get_user_ip(),
+            ),
+            status=http.HTTPStatus.OK,
+        )
+
+
+class SpecTestHandler(dl_app_api_base.BaseHandler):
+    OPENAPI_TAGS = ["spec-test"]
+
+    class RequestSchema(dl_app_api_base.BaseRequestSchema):
+        class Path(dl_pydantic.BaseSchema):
+            class PathEnum(str, enum.Enum):
+                FOO = "foo"
+                BAR = "bar"
+
+            class PathNested(dl_pydantic.BaseSchema):
+                value: int
+
+            path_enum: PathEnum
+            path_nested: PathNested
+
+        class Query(dl_pydantic.BaseSchema):
+            class QueryEnum(str, enum.Enum):
+                FOO = "foo"
+                BAR = "bar"
+
+            class QueryNested(dl_pydantic.BaseSchema):
+                value: int
+
+            enum: QueryEnum
+            query_nested: QueryNested
+
+        class Body(dl_pydantic.BaseSchema):
+            class BodyEnum(str, enum.Enum):
+                FOO = "foo"
+                BAR = "bar"
+
+            class BodyNested(dl_pydantic.BaseSchema):
+                value: int
+
+            body_enum: BodyEnum
+            body_nested: BodyNested
+
+        path: Path
+        query: Query
+        body: Body
+
+    class ResponseSchema(dl_app_api_base.BaseResponseSchema):
+        class ResponseEnum(str, enum.Enum):
+            FOO = "foo"
+            BAR = "bar"
+
+        class ResponseNested(dl_pydantic.BaseSchema):
+            value: int
+
+        response_enum: ResponseEnum
+        response_nested: ResponseNested
+
+    async def process(self, request: aiohttp.web.Request) -> aiohttp.web.Response:
+        raise NotImplementedError
+
+
+@attr.define(kw_only=True, slots=False)
+class AppFactory(dl_app_api_base.HttpServerAppFactoryMixin):
+    settings: AppSettings
+    app_class: ClassVar[type[App]] = App
+
+    @override
+    @dl_app_base.singleton_class_method_result
+    async def _get_logger(
+        self,
+    ) -> logging.Logger:
+        return LOGGER
+
+    @override
+    @dl_app_base.singleton_class_method_result
+    async def _get_aiohttp_subsystem_readiness_callbacks(
+        self,
+    ) -> list[dl_app_api_base.SubsystemReadinessCallback]:
+        return [
+            dl_app_api_base.SubsystemReadinessSyncCallback(
+                name="readiness_resource.is_ready",
+                is_ready=self.settings.readiness_resource.is_ready,
+            ),
+            dl_app_api_base.SubsystemReadinessSyncCallback(
+                name="non_critical_readiness_resource.is_ready",
+                is_ready=self.settings.non_critical_readiness_resource.is_ready,
+                critical=False,
+            ),
+        ]
+
+    @override
+    @dl_app_base.singleton_class_method_result
+    async def _get_request_auth_checkers(
+        self,
+    ) -> list[dl_app_api_base.RequestAuthCheckerProtocol]:
+        context_provider = await self._get_request_context_provider()
+        return [
+            dl_app_api_base.AlwaysAllowAuthChecker(
+                route_matchers=[
+                    dl_app_api_base.RouteMatcher(
+                        path_regex=re.compile(r"^/api/v1/counter"),
+                        methods=frozenset(["GET"]),
+                    ),
+                ],
+                context_provider=context_provider,
+            ),
+            dl_app_api_base.AlwaysAllowAuthChecker(
+                route_matchers=[
+                    dl_app_api_base.RouteMatcher(
+                        path_regex=re.compile(r"^/api/v1/headers"),
+                        methods=frozenset(["GET"]),
+                    ),
+                ],
+                context_provider=context_provider,
+            ),
+            dl_app_api_base.OAuthChecker.from_settings(
+                settings=self.settings.HTTP_SERVER.OAUTH_CHECKER,
+                route_matchers=[
+                    dl_app_api_base.RouteMatcher(
+                        path_regex=re.compile(r"^/api/v1/oauth/.*"),
+                        methods=frozenset(["GET"]),
+                    )
+                ],
+                context_provider=context_provider,
+            ),
+            dl_app_api_base.AlwaysAllowAuthChecker(
+                route_matchers=[
+                    dl_app_api_base.RouteMatcher(
+                        path_regex=re.compile(r"^/api/v1/always_allow/.*"),
+                        methods=frozenset(["GET"]),
+                    ),
+                ],
+                context_provider=context_provider,
+            ),
+            dl_app_api_base.AlwaysAllowAuthChecker(
+                route_matchers=[
+                    dl_app_api_base.RouteMatcher(
+                        path_regex=re.compile(r"^/api/v1/spec-test"),
+                        methods=frozenset(["GET"]),
+                    ),
+                ],
+                context_provider=context_provider,
+            ),
+            dl_app_api_base.AlwaysDenyAuthChecker(
+                route_matchers=[
+                    dl_app_api_base.RouteMatcher(
+                        path_regex=re.compile(r"^/api/v1/always_deny/.*"),
+                        methods=frozenset(["GET"]),
+                    ),
+                ],
+                context_provider=context_provider,
+            ),
+            *await super()._get_request_auth_checkers(),
+        ]
+
+    @override
+    @dl_app_base.singleton_class_method_result
+    async def _get_request_context_provider(
+        self,
+    ) -> dl_app_api_base.RequestContextProvider[RequestContext]:
+        return dl_app_api_base.RequestContextProvider()
+
+    @override
+    @dl_app_base.singleton_class_method_result
+    async def _get_request_context_manager(  # type: ignore[override]
+        self,
+    ) -> RequestContextManager:
+        request_context_provider = await self._get_request_context_provider()
+        return RequestContextManager(
+            context_factory=RequestContext.factory,
+            dependencies=RequestContextDependencies(
+                counter=Counter(),
+                value=42,
+                request_auth_checkers=await self._get_request_auth_checkers(),
+            ),
+            context_var=request_context_provider.context_var,
+        )
+
+    @override
+    @dl_app_base.singleton_class_method_result
+    async def _get_aiohttp_app_routes(
+        self,
+    ) -> list[dl_app_api_base.Route]:
+        routes = await super()._get_aiohttp_app_routes()
+        routes.extend(
+            [
+                dl_app_api_base.Route(
+                    method="GET",
+                    path="/api/v1/counter",
+                    handler=CounterHandler(request_context_provider=await self._get_request_context_provider()),
+                ),
+                dl_app_api_base.Route(
+                    method="GET",
+                    path="/api/v1/headers/{path_param}",
+                    handler=HeadersHandler(request_context_provider=await self._get_request_context_provider()),
+                ),
+                dl_app_api_base.Route(
+                    method="GET",
+                    path="/api/v1/oauth/ping",
+                    handler=PingHandler(),
+                ),
+                dl_app_api_base.Route(
+                    method="GET",
+                    path="/api/v1/always_allow/ping",
+                    handler=PingHandler(),
+                ),
+                dl_app_api_base.Route(
+                    method="GET",
+                    path="/api/v1/always_deny/ping",
+                    handler=PingHandler(),
+                ),
+                dl_app_api_base.Route(
+                    method="GET",
+                    path="/api/v1/spec-test",
+                    handler=SpecTestHandler(),
+                ),
+            ]
+        )
+        return routes
+
+    @override
+    @dl_app_base.singleton_class_method_result
+    async def _get_request_openapi_auth_checkers(
+        self,
+    ) -> list[dl_app_api_base.RequestAuthCheckerProtocol]:
+        return [
+            dl_app_api_base.AlwaysAllowAuthChecker(
+                route_matchers=await self._get_request_openapi_auth_checkers_route_matchers(),
+                context_provider=await self._get_request_context_provider(),
+            ),
+        ]
+
+    @override
+    @dl_app_base.singleton_class_method_result
+    async def _get_request_admin_auth_checkers(
+        self,
+    ) -> list[dl_app_api_base.RequestAuthCheckerProtocol]:
+        return [
+            dl_app_api_base.AlwaysAllowAuthChecker(
+                route_matchers=await self._get_request_admin_auth_checkers_route_matchers(),
+                context_provider=await self._get_request_context_provider(),
+            ),
+        ]
+
+
+@pytest.fixture(name="oauth_user1_token")
+def fixture_oauth_user1_token() -> str:
+    return "user1_token"
+
+
+@pytest.fixture(name="oauth_user2_token")
+def fixture_oauth_user2_token() -> str:
+    return "user2_token"
+
+
+@pytest.fixture(name="app_settings")
+def fixture_app_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    readiness_resource: ReadinessResource,
+    non_critical_readiness_resource: ReadinessResource,
+    oauth_user1_token: str,
+    oauth_user2_token: str,
+) -> AppSettings:
+    monkeypatch.setenv("CONFIG_PATH", os.path.join(DIR_PATH, "config.yaml"))
+
+    monkeypatch.setenv("HTTP_SERVER__OAUTH_CHECKER__USERS__USER1__TOKEN", oauth_user1_token)
+    monkeypatch.setenv("HTTP_SERVER__OAUTH_CHECKER__USERS__USER2__TOKEN", oauth_user2_token)
+
+    return AppSettings(
+        readiness_resource=readiness_resource,
+        non_critical_readiness_resource=non_critical_readiness_resource,
+    )
+
+
+@pytest_asyncio.fixture(name="app", autouse=True)
+async def fixture_app(
+    app_settings: AppSettings,
+) -> AsyncGenerator[App, None]:
+    factory = AppFactory(settings=app_settings)
+    app = await factory.create_application()
+
+    async with app.run_in_task_context() as app:
+        yield app
+
+
+@pytest_asyncio.fixture(name="app_client")
+async def fixture_app_client(
+    app_settings: AppSettings,
+) -> AsyncGenerator[aiohttp.ClientSession, None]:
+    async with aiohttp.ClientSession(
+        base_url=f"http://{app_settings.HTTP_SERVER.HOST}:{app_settings.HTTP_SERVER.PORT}",
+        timeout=aiohttp.ClientTimeout(total=1),
+    ) as session:
+        yield session

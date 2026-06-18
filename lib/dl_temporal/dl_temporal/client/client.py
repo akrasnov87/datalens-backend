@@ -1,13 +1,15 @@
 import asyncio
 import datetime
 import logging
+from typing import Mapping
 
 import attrs
-import temporalio.api.workflowservice.v1
+import temporalio.api
 import temporalio.client
 import temporalio.service
 from typing_extensions import Self
 
+import dl_settings
 import dl_temporal.base as base
 import dl_temporal.client.exc as exc
 import dl_temporal.client.metadata as metadata
@@ -16,13 +18,27 @@ import dl_temporal.client.metadata as metadata
 LOGGER = logging.getLogger(__name__)
 
 
+class TemporalClientSettings(dl_settings.BaseSettings):
+    HOST: str
+    PORT: int = 7233
+    TLS: bool = True
+    NAMESPACE: str
+    METADATA_PROVIDER: dl_settings.TypedAnnotation[metadata.MetadataProviderSettings]
+    INITIAL_CONNECT_TIMEOUT_SECONDS: int = 10
+
+    @property
+    def initial_connect_timeout(self) -> datetime.timedelta:
+        return datetime.timedelta(seconds=self.INITIAL_CONNECT_TIMEOUT_SECONDS)
+
+
 @attrs.define(kw_only=True, frozen=True)
-class TemporalClientSettings:
+class TemporalClientDependencies:
     namespace: str
     host: str
     port: int = 7233
-    tls: bool = False
+    tls: bool = True
     lazy: bool = True
+    initial_connect_timeout: datetime.timedelta = attrs.field(factory=lambda: datetime.timedelta(seconds=10))
     metadata_provider: metadata.MetadataProvider = attrs.field(factory=metadata.EmptyMetadataProvider)
 
     @property
@@ -34,21 +50,25 @@ class TemporalClientSettings:
 class TemporalClient:
     base_client: temporalio.client.Client
     metadata_provider: metadata.MetadataProvider
+    check_health_timeout: datetime.timedelta = attrs.field(default=datetime.timedelta(seconds=5))
 
     _update_metadata_task: asyncio.Task = attrs.field(init=False)
 
     @classmethod
-    async def from_settings(cls, settings: TemporalClientSettings) -> Self:
-        metadata_provider = settings.metadata_provider
+    async def from_dependencies(cls, dependencies: TemporalClientDependencies) -> Self:
+        metadata_provider = dependencies.metadata_provider
         rpc_metadata = await metadata_provider.get_metadata()
 
-        temporal_client = await temporalio.client.Client.connect(
-            target_host=settings.target_host,
-            namespace=settings.namespace,
-            lazy=settings.lazy,
-            tls=settings.tls,
-            rpc_metadata=rpc_metadata,
-            data_converter=base.DataConverter(),
+        temporal_client = await asyncio.wait_for(
+            temporalio.client.Client.connect(
+                target_host=dependencies.target_host,
+                namespace=dependencies.namespace,
+                lazy=dependencies.lazy,
+                tls=dependencies.tls,
+                rpc_metadata=rpc_metadata,
+                data_converter=base.DataConverter(),
+            ),
+            timeout=dependencies.initial_connect_timeout.total_seconds(),
         )
 
         return cls(
@@ -86,9 +106,11 @@ class TemporalClient:
     async def check_health(self) -> bool:
         try:
             return await self.base_client.service_client.check_health(
-                timeout=datetime.timedelta(seconds=1),
+                timeout=self.check_health_timeout,
+                retry=True,
             )
         except Exception:
+            LOGGER.exception("Temporal client health check failed")
             return False
 
     async def check_auth(self) -> bool:
@@ -123,6 +145,17 @@ class TemporalClient:
         except temporalio.service.RPCError as e:
             exc.wrap_temporal_error(e)
 
+    async def add_search_attributes(
+        self,
+        search_attributes: Mapping[str, temporalio.api.enums.v1.IndexedValueType.ValueType],
+    ) -> None:
+        await self.base_client.operator_service.add_search_attributes(
+            temporalio.api.operatorservice.v1.AddSearchAttributesRequest(
+                namespace=self.base_client.namespace,
+                search_attributes=search_attributes,
+            ),
+        )
+
     async def start_workflow(
         self,
         workflow: type[base.WorkflowProtocol[base.SelfType, base.WorkflowParamsT, base.WorkflowResultT]],
@@ -138,3 +171,122 @@ class TemporalClient:
             result_type=workflow.Result,
             execution_timeout=params.execution_timeout,
         )
+
+    async def get_schedule(
+        self,
+        schedule_id: str,
+    ) -> temporalio.client.ScheduleHandle:
+        return self.base_client.get_schedule_handle(id=schedule_id)
+
+    async def create_schedule(
+        self,
+        schedule_id: str,
+        workflow: type[base.WorkflowProtocol[base.SelfType, base.WorkflowParamsT, base.WorkflowResultT]],
+        params: base.WorkflowParamsT,
+        task_queue: str,
+        spec: temporalio.client.ScheduleSpec,
+    ) -> temporalio.client.ScheduleHandle:
+        action = temporalio.client.ScheduleActionStartWorkflow(
+            workflow=workflow.name,
+            arg=params,
+            id=schedule_id,
+            task_queue=task_queue,
+            execution_timeout=params.execution_timeout,
+        )
+        schedule = temporalio.client.Schedule(
+            action=action,
+            spec=spec,
+        )
+        return await self.base_client.create_schedule(
+            id=schedule_id,
+            schedule=schedule,
+        )
+
+    async def update_schedule(
+        self,
+        schedule_id: str,
+        workflow: type[base.WorkflowProtocol[base.SelfType, base.WorkflowParamsT, base.WorkflowResultT]],
+        params: base.WorkflowParamsT,
+        task_queue: str,
+        spec: temporalio.client.ScheduleSpec,
+    ) -> temporalio.client.ScheduleHandle:
+        handle = await self.get_schedule(schedule_id)
+
+        async def _update(
+            input: temporalio.client.ScheduleUpdateInput,
+        ) -> temporalio.client.ScheduleUpdate:
+            schedule = input.description.schedule
+
+            assert isinstance(schedule.action, temporalio.client.ScheduleActionStartWorkflow)
+            schedule.action.workflow = workflow.name
+            schedule.action.args = [params]
+            schedule.action.id = schedule_id
+            schedule.action.task_queue = task_queue
+            schedule.action.execution_timeout = params.execution_timeout
+            schedule.spec = spec
+
+            return temporalio.client.ScheduleUpdate(schedule=schedule)
+
+        await handle.update(_update)
+        return handle
+
+    async def list_schedules(self) -> temporalio.client.ScheduleAsyncIterator:
+        return await self.base_client.list_schedules()
+
+    async def list_schedule_executions(
+        self,
+        schedule_id: str,
+        page_size: int,
+        next_page_token: bytes | None = None,
+    ) -> tuple[list[temporalio.api.workflow.v1.WorkflowExecutionInfo], bytes | None]:
+        query = "TemporalScheduledById = '{}'".format(schedule_id.replace("'", "''"))
+        response = await self.base_client.workflow_service.list_workflow_executions(
+            req=temporalio.api.workflowservice.v1.ListWorkflowExecutionsRequest(
+                namespace=self.base_client.namespace,
+                query=query,
+                page_size=page_size,
+                next_page_token=next_page_token or b"",
+            )
+        )
+        return list(response.executions), response.next_page_token or None
+
+    async def update_schedule_spec(
+        self,
+        schedule_id: str,
+        spec: temporalio.client.ScheduleSpec,
+    ) -> None:
+        handle = await self.get_schedule(schedule_id)
+
+        async def _update_schedule_spec(
+            input: temporalio.client.ScheduleUpdateInput,
+        ) -> temporalio.client.ScheduleUpdate:
+            schedule = input.description.schedule
+            schedule.spec = spec
+            return temporalio.client.ScheduleUpdate(schedule=input.description.schedule)
+
+        await handle.update(_update_schedule_spec)
+
+    async def delete_schedule(
+        self,
+        schedule_id: str,
+    ) -> None:
+        handle = await self.get_schedule(schedule_id)
+        try:
+            await handle.delete()
+        except temporalio.service.RPCError as e:
+            exc.wrap_temporal_error(e)
+
+    async def pause_schedule(
+        self,
+        schedule_id: str,
+        note: str | None = None,
+    ) -> None:
+        handle = await self.get_schedule(schedule_id)
+        await handle.pause(note=note)
+
+    async def unpause_schedule(
+        self,
+        schedule_id: str,
+    ) -> None:
+        handle = await self.get_schedule(schedule_id)
+        await handle.unpause()

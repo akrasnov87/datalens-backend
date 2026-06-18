@@ -6,6 +6,7 @@ from datetime import (
     timezone,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
     Optional,
 )
@@ -16,6 +17,10 @@ import shortuuid
 from dl_api_commons.base_models import RequestContextInfo
 from dl_configs.crypto_keys import CryptoKeysConfig
 from dl_core.base_models import EntryLocation
+from dl_core.enums import (
+    USEntryBranch,
+    USEntryMode,
+)
 from dl_core.exc import USObjectNotFoundException
 from dl_core.services_registry.top_level import (
     DummyServiceRegistry,
@@ -29,6 +34,10 @@ from dl_core.united_storage_client import (
 )
 from dl_core.us_manager.us_manager_sync import SyncUSManager
 import dl_retrier
+
+
+if TYPE_CHECKING:
+    from dl_core.lifecycle.factory_base import EntryLifecycleManagerFactoryBase
 
 
 class MockedUStorageClient(UStorageClient):
@@ -63,6 +72,7 @@ class MockedUStorageClient(UStorageClient):
         self,
         request_data: UStorageClientBase.RequestData,
         retry_policy_name: Optional[str] = None,
+        context_name: Optional[str] = None,
     ) -> dict[str, Any]:
         raise NotImplementedError("This is dummy US client")
 
@@ -77,6 +87,7 @@ class MockedUStorageClient(UStorageClient):
         type_: Optional[str] = None,
         hidden: Optional[bool] = None,
         links: Optional[dict[str, Any]] = None,
+        mode: USEntryMode = USEntryMode.publish,
         **kwargs: Any,
     ) -> dict[str, Any]:
         assert not kwargs, "Not supported by dummy"
@@ -121,6 +132,7 @@ class MockedUStorageClient(UStorageClient):
         hidden: Optional[bool] = None,
         links: Optional[dict[str, Any]] = None,
         update_revision: Optional[bool] = None,
+        mode: USEntryMode = USEntryMode.publish,
     ) -> dict[str, Any]:
         previous_resp = self._saved_entries[entry_id]
 
@@ -148,6 +160,8 @@ class MockedUStorageClient(UStorageClient):
         include_permissions: bool = True,
         include_links: bool = True,
         include_favorite: bool = True,
+        context_name: Optional[str] = None,
+        branch: USEntryBranch = USEntryBranch.published,
     ) -> dict[str, Any]:
         assert params is None
         try:
@@ -157,6 +171,12 @@ class MockedUStorageClient(UStorageClient):
         else:
             return previous_resp
 
+    def delete_entry(self, entry_id: str, lock: str | None = None) -> None:
+        if entry_id in self._saved_entries:
+            del self._saved_entries[entry_id]
+        else:
+            raise USObjectNotFoundException()
+
 
 class MockedSyncUSManager(SyncUSManager):
     def __init__(
@@ -164,6 +184,7 @@ class MockedSyncUSManager(SyncUSManager):
         bi_context: RequestContextInfo = RequestContextInfo.create_empty(),  # noqa: B008
         crypto_keys_config: Optional[CryptoKeysConfig] = None,
         services_registry: ServicesRegistry = DummyServiceRegistry(rci=RequestContextInfo.create_empty()),  # noqa: B008
+        lifecycle_manager_factory: Optional[EntryLifecycleManagerFactoryBase] = None,
     ):
         super().__init__(
             bi_context=bi_context,
@@ -175,9 +196,10 @@ class MockedSyncUSManager(SyncUSManager):
             )
             if crypto_keys_config is None
             else crypto_keys_config,
-            us_auth_context=USAuthContextMaster("FakeKey"),
+            us_auth_context=USAuthContextMaster(us_master_token="FakeKey"),
             services_registry=services_registry,
             retry_policy_factory=dl_retrier.DefaultRetryPolicyFactory(),
+            lifecycle_manager_factory=lifecycle_manager_factory,
         )
 
     def _create_us_client(self) -> UStorageClient:

@@ -71,7 +71,11 @@ async def _get_gsheets_auth(
     if dfile_token is not None:  # if there is a token in dfile, then use it
         refresh_token = dfile_token
     elif conn_id is not None:  # otherwise, use the one from the connection
-        conn: GSheetsFileS3Connection = await usm.get_by_id(conn_id, GSheetsFileS3Connection)
+        conn: GSheetsFileS3Connection = await usm.get_by_id(
+            conn_id,
+            GSheetsFileS3Connection,
+            context_name="connection",
+        )
         if conn.data.refresh_token is None:
             raise NoToken()
         refresh_token = conn.data.refresh_token
@@ -161,7 +165,7 @@ class DownloadGSheetTask(BaseExecutorTask[task_interface.DownloadGSheetTask, Fil
     async def run(self) -> TaskResult:
         dfile: Optional[DataFile] = None
         sources_to_update_by_sheet_id: dict[int, list[DataSource]] = defaultdict(list)
-        usm = self._ctx.get_async_usm()
+        usm = await self._ctx.get_async_usm()
         usm.set_tenant_override(self._ctx.tenant_resolver.resolve_tenant_def_by_tenant_id(self.meta.tenant_id))
         task_processor = self._ctx.make_task_processor(self._request_id)
         redis = self._ctx.redis_service.get_redis()

@@ -1,21 +1,16 @@
 import datetime
-import itertools
+import http
 from typing import (
-    Iterable,
     Iterator,
-    Protocol,
     TypeAlias,
 )
 
 import attr
-import frozendict
-import typing_extensions
-
-from dl_retrier.settings import RetryPolicyFactorySettings
 
 
 @attr.s(kw_only=True, frozen=True, auto_attribs=True)
 class Retry:
+    attempt_number: int
     request_timeout: float
     connect_timeout: float
     sleep_before_seconds: float
@@ -60,34 +55,34 @@ class RetryPolicy:
     backoff_factor: float = attr.ib()
     """
     Backoff exponential factor. Backoff delay is computed as
-    `backoff = min(backoff_max, backoff_initial * (backoff_factor ** (retry_number - 1)))`.
+    `backoff = min(backoff_max, backoff_initial * (backoff_factor ** (attempt_number - 2)))`.
     """
 
     backoff_max: float = attr.ib()
     """
     Maximal backoff delay. Backoff delay is computed as
-    `backoff = min(backoff_max, backoff_initial * (backoff_factor ** (retry_number - 1)))`.
+    `backoff = min(backoff_max, backoff_initial * (backoff_factor ** (attempt_number - 2)))`.
     """
 
-    def get_backoff_at(self, retry: int) -> float:
+    def _get_sleep_before(self, attempt_number: int) -> float:
+        if attempt_number <= 1:
+            return 0
+
         return min(
             self.backoff_max,
-            self.backoff_initial * (self.backoff_factor**retry),
+            self.backoff_initial * (self.backoff_factor ** (attempt_number - 2)),
         )
-
-    def get_backoff(self) -> Iterable[float]:
-        for idx in itertools.count():
-            yield self.get_backoff_at(idx)
 
     def can_retry_error(self, error_code: ErrorCode) -> bool:
         return error_code in self.retryable_codes
 
-    def iter_retries(retry_policy: typing_extensions.Self) -> Iterator[Retry]:
+    def iter_retries(self) -> Iterator[Retry]:
         start_dt = datetime.datetime.now()
-        end_dt = start_dt + datetime.timedelta(seconds=retry_policy.total_timeout)
+        end_dt = start_dt + datetime.timedelta(seconds=self.total_timeout)
+        max_attempts_count = self.retries_count + 1  # First attempt is not a retry
 
-        for idx in range(retry_policy.retries_count + 1):  # First Retry is not a retry
-            sleep_before_seconds = 0 if idx == 0 else retry_policy.get_backoff_at(idx - 1)
+        for attempt_number in range(1, max_attempts_count + 1):
+            sleep_before_seconds = self._get_sleep_before(attempt_number)
             total_timeout_remaining = (end_dt - datetime.datetime.now()).total_seconds()
 
             if sleep_before_seconds > total_timeout_remaining:
@@ -96,97 +91,36 @@ class RetryPolicy:
             total_timeout_remaining -= sleep_before_seconds
 
             yield Retry(
-                request_timeout=min(retry_policy.request_timeout, total_timeout_remaining),
-                connect_timeout=min(retry_policy.connect_timeout, total_timeout_remaining),
+                attempt_number=attempt_number,
+                request_timeout=min(self.request_timeout, total_timeout_remaining),
+                connect_timeout=min(self.connect_timeout, total_timeout_remaining),
                 sleep_before_seconds=sleep_before_seconds,
             )
 
 
-DEFAULT_RETRY_POLICY = RetryPolicy(
-    total_timeout=10,
+DEFAULT_RETRY_POLICY: RetryPolicy = RetryPolicy(
+    total_timeout=120,
     connect_timeout=30,
     request_timeout=30,
     retries_count=10,
-    retryable_codes=frozenset([500, 501, 502, 503, 504, 521]),
+    retryable_codes=frozenset(
+        [
+            http.HTTPStatus.TOO_MANY_REQUESTS,
+            http.HTTPStatus.INTERNAL_SERVER_ERROR,
+            http.HTTPStatus.NOT_IMPLEMENTED,
+            http.HTTPStatus.BAD_GATEWAY,
+            http.HTTPStatus.SERVICE_UNAVAILABLE,
+            http.HTTPStatus.GATEWAY_TIMEOUT,
+            521,  # Web Server Is Down
+        ]
+    ),
     backoff_initial=0.5,
     backoff_factor=2,
     backoff_max=120,
 )
 
 
-class BaseRetryPolicyFactory(Protocol):
-    def get_policy(self, name: str | None = None) -> RetryPolicy:
-        """
-        Get policy by specified name (case-sensitive).
-        """
-
-
-class RetryPolicyFactory:
-    _default_policy: RetryPolicy
-    _policies: frozendict.frozendict[str, RetryPolicy]
-
-    def __init__(
-        self,
-        settings: RetryPolicyFactorySettings,
-    ):
-        # Populate bucket of kitten
-        if settings.DEFAULT_POLICY is not None:
-            self._default_policy = RetryPolicy(
-                total_timeout=settings.DEFAULT_POLICY.total_timeout,
-                connect_timeout=settings.DEFAULT_POLICY.connect_timeout,
-                request_timeout=settings.DEFAULT_POLICY.request_timeout,
-                retries_count=settings.DEFAULT_POLICY.retries_count,
-                retryable_codes=frozenset(settings.DEFAULT_POLICY.retryable_codes),
-                backoff_initial=settings.DEFAULT_POLICY.backoff_initial,
-                backoff_factor=settings.DEFAULT_POLICY.backoff_factor,
-                backoff_max=settings.DEFAULT_POLICY.backoff_max,
-            )
-        else:
-            self._default_policy = DEFAULT_RETRY_POLICY
-
-        policies = {}
-        for key, policy_settings in settings.RETRY_POLICIES.items():
-            policies[key] = RetryPolicy(
-                total_timeout=policy_settings.total_timeout,
-                connect_timeout=policy_settings.connect_timeout,
-                request_timeout=policy_settings.request_timeout,
-                retries_count=policy_settings.retries_count,
-                retryable_codes=frozenset(policy_settings.retryable_codes),
-                backoff_initial=policy_settings.backoff_initial,
-                backoff_factor=policy_settings.backoff_factor,
-                backoff_max=policy_settings.backoff_max,
-            )
-
-        self._policies = frozendict.frozendict(policies)
-
-    @classmethod
-    def from_settings(cls, settings: RetryPolicyFactorySettings) -> typing_extensions.Self:
-        return cls(settings=settings)
-
-    def get_policy(self, name: str | None = None) -> RetryPolicy:
-        """
-        Get policy by specified name. Uses settings to construct policy values. None and non-existing policy fallbacks
-        to `DEFAULT_POLICY` options.
-        """
-
-        if name is None:
-            return self._default_policy
-
-        return self._policies.get(name, self._default_policy)
-
-
-class DefaultRetryPolicyFactory:
-    def get_policy(self, name: str | None = None) -> RetryPolicy:
-        """
-        Default factory returns single pre-defined policy for every request
-        """
-
-        return DEFAULT_RETRY_POLICY
-
-
 __all__ = [
+    "DEFAULT_RETRY_POLICY",
     "RetryPolicy",
-    "BaseRetryPolicyFactory",
-    "RetryPolicyFactory",
-    "DefaultRetryPolicyFactory",
 ]

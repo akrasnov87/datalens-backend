@@ -13,6 +13,7 @@ from typing import (
     overload,
 )
 
+import typing_extensions
 from typing_extensions import Self
 
 from dl_api_commons.base_models import RequestContextInfo
@@ -22,6 +23,10 @@ from dl_core import exc
 from dl_core.base_models import (
     ConnectionRef,
     DefaultConnectionRef,
+)
+from dl_core.enums import (
+    USEntryBranch,
+    USEntryMode,
 )
 from dl_core.united_storage_client import (
     USAuthContextBase,
@@ -85,7 +90,8 @@ class SyncUSManager(USManagerBase):
             prefix=self._us_api_prefix,
             auth_ctx=self._us_auth_context,
             context_request_id=self._bi_context.request_id if self._bi_context is not None else None,
-            context_forwarded_for=self._bi_context.forwarder_for,
+            context_forwarded_for=self._bi_context.forwarded_for,
+            context_real_ip=self._bi_context.real_ip,
             context_workbook_id=self._bi_context.workbook_id,
             context_rpc_authorization_id=self._bi_context.rpc_authorization if self._bi_context is not None else None,
             retry_policy_factory=self._retry_policy_factory,
@@ -124,8 +130,41 @@ class SyncUSManager(USManagerBase):
 
     # CRUD
     #
-    def save(self, entry: USEntry, update_revision: Optional[bool] = None) -> None:
-        lifecycle_manager = self.get_lifecycle_manager(entry=entry, service_registry=self._services_registry)
+    @typing_extensions.deprecated("Use create/update instead", category=DeprecationWarning)
+    def save(
+        self,
+        entry: USEntry,
+        update_revision: bool | None = None,
+        original_entry: USEntry | None = None,
+        mode: USEntryMode = USEntryMode.publish,
+    ) -> None:
+        self._save(
+            entry=entry,
+            update_revision=update_revision,
+            original_entry=original_entry,
+            mode=mode,
+        )
+
+    def _save(
+        self,
+        entry: USEntry,
+        update_revision: bool | None = None,
+        original_entry: USEntry | None = None,
+        mode: USEntryMode = USEntryMode.publish,
+    ) -> None:
+        """
+        Save USEntry to US.
+
+        :param entry: US entry to save
+        :param update_revision: Update revision on save
+        :param original_entry: Previous version of the entry for lifecycle hook handling
+        """
+
+        lifecycle_manager = self.get_lifecycle_manager(
+            entry=entry,
+            service_registry=self._services_registry,
+            original_entry=original_entry,
+        )
         lifecycle_manager.pre_save_hook()
 
         save_params = self._get_entry_save_params(entry)
@@ -140,6 +179,7 @@ class SyncUSManager(USManagerBase):
                 key=entry_loc,
                 scope=us_scope,
                 type_=us_type,
+                mode=mode,
                 **save_params,
             )
             entry.uuid = resp["entryId"]
@@ -156,6 +196,41 @@ class SyncUSManager(USManagerBase):
             save_params = self._prepare_update_entry_params(entry, False)
             assert entry.uuid is not None
             entry._us_resp = self._us_client.update_entry(entry.uuid, lock=entry.lock, **save_params)
+
+    def create(
+        self,
+        entry: USEntry,
+        update_revision: bool | None = None,
+        mode: USEntryMode = USEntryMode.publish,
+    ) -> None:
+        """
+        Create entry - alias for save without previous entry.
+        """
+
+        self._save(
+            entry=entry,
+            original_entry=None,
+            update_revision=update_revision,
+            mode=mode,
+        )
+
+    def update(
+        self,
+        entry: USEntry,
+        original_entry: USEntry | None = None,
+        update_revision: bool | None = None,
+        mode: USEntryMode = USEntryMode.publish,
+    ) -> None:
+        """
+        Update entry - alias for save with a previous/original entry.
+        """
+
+        self._save(
+            entry=entry,
+            original_entry=original_entry,
+            update_revision=update_revision,
+            mode=mode,
+        )
 
     def delete(self, entry: USEntry) -> None:
         lifecycle_manager = self.get_lifecycle_manager(entry=entry)
@@ -176,6 +251,8 @@ class SyncUSManager(USManagerBase):
         entry_id: str,
         expected_type: None = None,
         params: Optional[dict[str, str]] = None,
+        context_name: Optional[str] = None,
+        branch: USEntryBranch = USEntryBranch.published,
     ) -> USEntry:
         pass
 
@@ -185,6 +262,8 @@ class SyncUSManager(USManagerBase):
         entry_id: str,
         expected_type: Optional[type[_ENTRY_TV]] = None,
         params: Optional[dict[str, str]] = None,
+        context_name: Optional[str] = None,
+        branch: USEntryBranch = USEntryBranch.published,
     ) -> _ENTRY_TV:
         pass
 
@@ -194,12 +273,19 @@ class SyncUSManager(USManagerBase):
         entry_id: str,
         expected_type: Optional[type[USEntry]] = None,
         params: Optional[dict[str, str]] = None,
+        context_name: Optional[str] = None,
+        branch: USEntryBranch = USEntryBranch.published,
     ) -> USEntry:
         with self._enrich_us_exception(
             entry_id=entry_id,
             entry_scope=expected_type.scope if expected_type is not None else None,
         ):
-            us_resp = self.get_migrated_entry(entry_id, params=params)
+            us_resp = self.get_migrated_entry(
+                entry_id,
+                params=params,
+                context_name=context_name,
+                branch=branch,
+            )
 
         obj = self._entry_dict_to_obj(us_resp, expected_type)
         await_sync(self.get_lifecycle_manager(entry=obj).post_init_async_hook())
@@ -237,8 +323,19 @@ class SyncUSManager(USManagerBase):
         return obj
 
     @generic_profiler("us-get-migrated-entity")
-    def get_migrated_entry(self, entry_id: str, params: Optional[dict[str, str]] = None) -> dict[str, Any]:
-        us_resp = self._us_client.get_entry(entry_id, params=params)
+    def get_migrated_entry(
+        self,
+        entry_id: str,
+        params: Optional[dict[str, str]] = None,
+        context_name: Optional[str] = None,
+        branch: USEntryBranch = USEntryBranch.published,
+    ) -> dict[str, Any]:
+        us_resp = self._us_client.get_entry(
+            entry_id,
+            params=params,
+            context_name=context_name,
+            branch=branch,
+        )
         return self._migrate_response(us_resp)
 
     def _migrate_response(self, us_resp: dict) -> dict:
@@ -367,11 +464,16 @@ class SyncUSManager(USManagerBase):
         entry_id: str,
         duration: Optional[int] = None,
         wait_timeout: Optional[int] = None,
+        context_name: Optional[str] = None,
     ) -> Generator[_ENTRY_TV, None, None]:
         lock_token = self._us_client.acquire_lock(entry_id, duration, wait_timeout)
         entry = None
         try:
-            entry = self.get_by_id(entry_id, expected_type=expected_type)
+            entry = self.get_by_id(
+                entry_id,
+                expected_type=expected_type,
+                context_name=context_name,
+            )
             entry.lock = lock_token
             yield entry
         finally:
@@ -402,7 +504,11 @@ class SyncUSManager(USManagerBase):
         else:
             try:
                 assert isinstance(conn_ref, DefaultConnectionRef)
-                conn = self.get_by_id(conn_ref.conn_id, ConnectionBase)
+                conn = self.get_by_id(
+                    conn_ref.conn_id,
+                    ConnectionBase,
+                    context_name="connection",
+                )
             except (exc.USObjectNotFoundException, exc.USAccessDeniedException) as err:
                 r_scope = referrer.scope if referrer is not None else "unk"
                 r_uuid = referrer.uuid if referrer is not None else "unk"

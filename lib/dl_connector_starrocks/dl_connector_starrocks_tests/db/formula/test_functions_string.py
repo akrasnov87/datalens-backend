@@ -1,0 +1,8 @@
+from dl_formula_testing.testcases.functions_string import DefaultStringFunctionFormulaConnectorTestSuite
+from dl_testing.regulated_test import RegulatedTestCase
+
+from dl_connector_starrocks_tests.db.formula.base import StarRocksTestBase
+
+
+class TestStringFunctionStarRocks(StarRocksTestBase, RegulatedTestCase, DefaultStringFunctionFormulaConnectorTestSuite):
+    pass

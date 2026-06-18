@@ -54,7 +54,11 @@ async def _get_yadocs_oauth_token(
     if dfile_token is not None:  # if there is a token in dfile, then use it
         oauth_token = dfile_token
     elif conn_id is not None:  # otherwise, use the one from the connection
-        conn: YaDocsFileS3Connection = await usm.get_by_id(conn_id, YaDocsFileS3Connection)
+        conn: YaDocsFileS3Connection = await usm.get_by_id(
+            conn_id,
+            YaDocsFileS3Connection,
+            context_name="connection",
+        )
         if conn.data.oauth_token is None:
             raise NoToken()
         oauth_token = conn.data.oauth_token
@@ -72,7 +76,7 @@ class DownloadYaDocsTask(BaseExecutorTask[task_interface.DownloadYaDocsTask, Fil
         dfile: Optional[DataFile] = None
         redis = self._ctx.redis_service.get_redis()
         task_processor = self._ctx.make_task_processor(self._request_id)
-        usm = self._ctx.get_async_usm()
+        usm = await self._ctx.get_async_usm()
         usm.set_tenant_override(self._ctx.tenant_resolver.resolve_tenant_def_by_tenant_id(self.meta.tenant_id))
         connection_error_tracker = FileConnectionDataSourceErrorTracker(
             usm=usm,

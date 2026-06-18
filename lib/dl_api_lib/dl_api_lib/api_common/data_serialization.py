@@ -19,9 +19,9 @@ from dl_api_lib.common_models.data_export import (
 from dl_api_lib.schemas.data import (
     DataApiV2ResponseSchema,
     DatasetFieldsResponseSchema,
-    NotificationSchema,
 )
 from dl_api_lib.schemas.legend import LegendSchema
+from dl_api_lib.schemas.notification import NotificationSchema
 from dl_api_lib.schemas.pivot import (
     PivotHeaderInfoSchema,
     PivotItemSchema,
@@ -174,6 +174,7 @@ def get_fields_data_raw(dataset: Dataset, for_result: bool = False) -> list[dict
                 {
                     "hidden": fld.hidden,
                     "type": fld.type,
+                    "ui_settings": fld.ui_settings,
                 }
                 if not for_result
                 else {}

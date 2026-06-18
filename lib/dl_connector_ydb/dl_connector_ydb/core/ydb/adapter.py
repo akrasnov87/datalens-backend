@@ -12,14 +12,21 @@ from typing import (
 import attr
 import grpc
 from ydb import DriverConfig
-import ydb.dbapi as ydb_dbapi
 from ydb.driver import credentials_impl
 import ydb.issues as ydb_cli_err
+import ydb_dbapi
+import ydb_dbapi.connections
 
 from dl_configs.utils import get_root_certificates
 from dl_constants.enums import ConnectionType
 from dl_core import exc
-from dl_core.connection_models import TableIdent
+from dl_core.connection_executors.models.db_adapter_data import RawColumnInfo
+from dl_core.connection_models import (
+    SATextTableDefinition,
+    TableDefinition,
+    TableIdent,
+)
+from dl_core.utils import sa_plain_text
 
 from dl_connector_ydb.core.base.adapter import YQLAdapterBase
 from dl_connector_ydb.core.ydb.constants import (
@@ -58,7 +65,11 @@ class YDBAdapterBase(YQLAdapterBase[_DBA_YDB_BASE_DTO_TV]):
 
     def _update_connect_args(self, args: dict) -> None:
         if self._target_dto.auth_type == YDBAuthTypeMode.oauth:
-            args.update(auth_token=self._target_dto.password)
+            args.update(
+                credentials=credentials_impl.AuthTokenCredentials(
+                    token=self._target_dto.password,
+                ),
+            )
         elif self._target_dto.auth_type == YDBAuthTypeMode.password:
             driver_config = DriverConfig(
                 endpoint="{}://{}:{}".format(
@@ -71,7 +82,9 @@ class YDBAdapterBase(YQLAdapterBase[_DBA_YDB_BASE_DTO_TV]):
             )
             args.update(
                 credentials=credentials_impl.StaticCredentials(
-                    driver_config=driver_config, user=self._target_dto.username, password=self._target_dto.password
+                    driver_config=driver_config,
+                    user=self._target_dto.username,
+                    password=self._target_dto.password,
                 )
             )
         else:
@@ -80,11 +93,9 @@ class YDBAdapterBase(YQLAdapterBase[_DBA_YDB_BASE_DTO_TV]):
     def get_connect_args(self) -> dict:
         target_dto = self._target_dto
         args = dict(
-            endpoint="{}://{}:{}".format(
-                "grpcs" if self._target_dto.ssl_enable else "grpc",
-                target_dto.host,
-                target_dto.port,
-            ),
+            host=self._target_dto.host,
+            port=self._target_dto.port,
+            protocol="grpcs" if self._target_dto.ssl_enable else "grpc",
             database=target_dto.db_name,
             root_certificates=self._get_ssl_ca(),
         )
@@ -99,7 +110,8 @@ class YDBAdapterBase(YQLAdapterBase[_DBA_YDB_BASE_DTO_TV]):
         connection = db_engine.connect()
         try:
             # SA db_engine -> SA connection -> DBAPI connection -> YDB driver
-            driver = connection.connection.driver  # type: ignore  # 2024-01-24 # TODO: "DBAPIConnection" has no attribute "driver"  [attr-defined]
+            dbapi_connection: ydb_dbapi.connections.BaseConnection = connection.connection
+            driver = dbapi_connection._driver
             assert driver
 
             queue = [db_name]
@@ -120,7 +132,7 @@ class YDBAdapterBase(YQLAdapterBase[_DBA_YDB_BASE_DTO_TV]):
                 ]
                 children.sort()
                 for full_path, child in children:
-                    if child.is_any_table():
+                    if child.is_any_table() or child.is_view() or child.is_column_table():
                         yield full_path.removeprefix(unprefix)
                     elif child.is_directory():
                         queue.append(full_path)
@@ -134,7 +146,8 @@ class YDBAdapterBase(YQLAdapterBase[_DBA_YDB_BASE_DTO_TV]):
             for item in result:
                 yield item
         except driver_excs as err:
-            raise exc.DatabaseQueryError(db_message=str(err), query="list_directory()") from None
+            query = "list_directory()"
+            raise exc.DatabaseQueryError(db_message=str(err), query=query, inspector_query=query) from None
 
     def _get_tables(self, schema_ident: SchemaIdent, page_ident: PageIdent | None = None) -> list[TableIdent]:
         db_name = schema_ident.db_name
@@ -147,6 +160,40 @@ class YDBAdapterBase(YQLAdapterBase[_DBA_YDB_BASE_DTO_TV]):
             )
             for name in self._list_table_names(db_name)
         ]
+
+    def _get_raw_columns_info(self, table_def: TableDefinition) -> tuple[RawColumnInfo, ...]:
+        # Check if target path is view
+        # Note: sa.inspect.get_columns cannot be used on YDB VIEW as it does not have schema. However schema can be determined using subselect.
+        if isinstance(table_def, TableIdent):
+            assert table_def.table_name is not None
+
+            db_engine = self.get_db_engine(table_def.db_name)
+            connection = db_engine.connect()
+
+            try:
+                # SA db_engine -> SA connection -> DBAPI connection -> YDB driver
+                driver = connection.connection._driver  # type: ignore  # 2024-01-24 # TODO: "DBAPIConnection" has no attribute "_driver"  [attr-defined]
+                assert driver
+
+                if table_def.db_name is None:
+                    table_path = table_def.table_name
+                elif table_def.table_name.startswith("/"):
+                    table_path = table_def.table_name
+                else:
+                    table_path = table_def.db_name.rstrip("/") + "/" + table_def.table_name
+
+                result = driver.scheme_client.describe_path(table_path)
+
+                if result.is_view():
+                    return self._get_subselect_table_info(
+                        SATextTableDefinition(
+                            sa_plain_text(self.make_subselect_query(table_def)),
+                        ),
+                    ).columns
+            finally:
+                connection.close()
+
+        return super()._get_raw_columns_info(table_def)
 
 
 class YDBAdapter(YDBAdapterBase[YDBConnTargetDTO]):

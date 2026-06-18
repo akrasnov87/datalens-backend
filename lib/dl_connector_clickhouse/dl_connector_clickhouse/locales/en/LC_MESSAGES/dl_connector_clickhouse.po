@@ -15,6 +15,24 @@ msgstr "ClickHouse"
 msgid "field_readonly-mode"
 msgstr "Readonly"
 
+msgid "label_experimental-features"
+msgstr "Experimental features"
+
+msgid "value_experimental-features-off"
+msgstr "Off"
+
+msgid "value_experimental-features-on"
+msgstr "On"
+
+msgid "label_clickhouse-ssl-ca-verify"
+msgstr "SSL CA verify"
+
+msgid "value_ssl-ca-verify-off"
+msgstr "Off"
+
+msgid "value_ssl-ca-verify-on"
+msgstr "On"
+
 msgid "field_click-house-port"
 msgstr "HTTP interface port"
 

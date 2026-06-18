@@ -14,14 +14,53 @@ import pydantic_core
 from typing_extensions import Self
 
 import dl_pydantic.base as base
+import dl_pydantic.exceptions as exceptions
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 TypedBaseModelT = TypeVar("TypedBaseModelT", bound="TypedBaseModel")
 
 
+def _merge_dict_keys(data: dict[str, Any]) -> dict[str, Any]:
+    """
+    Merge keys that differ only by case into a single lowercase key.
+    For example: {'CHILD': {'VALUE': 'test_4'}, 'child': {'secret': 'secret_test'}}
+    becomes: {'child': {'VALUE': 'test_4', 'secret': 'secret_test'}}
+
+    Returns a new dictionary with merged keys.
+    """
+    result: dict[str, Any] = {}
+    for key, source in data.items():
+        key_lower = key.lower()
+        if key_lower not in result:
+            result[key_lower] = source
+            continue
+
+        target = result[key_lower]
+        if not isinstance(target, dict) or not isinstance(source, dict):
+            raise ValueError("Can't merge non-dict")
+
+        target_keys = {key for key in target}
+        source_keys = {key for key in source}
+
+        if target_keys & source_keys:
+            raise ValueError(f"Can't merge duplicated keys: {target_keys & source_keys}")
+
+        target.update(source)
+
+    return result
+
+
 class TypedMeta(pydantic_model_construction.ModelMetaclass):
     def __init__(cls, name: str, bases: tuple[type, ...], attrs: dict[str, Any]):
         cls._classes: dict[str, type["TypedBaseModel"]] = {}
+        cls._unknown_class: type["TypedBaseModel"] | None = None
+
+    @property
+    def classes(cls) -> dict[str, type["TypedBaseModel"]]:
+        return cls._classes
 
 
 class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
@@ -34,13 +73,28 @@ class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
     @classmethod
     def register(cls, name: str, class_: Type) -> None:  # noqa: UP006
         if name in cls._classes:
-            raise ValueError(f"Class with name '{name}' already registered")
+            if cls._classes[name] is class_:
+                LOGGER.warning("Class %s(type=%s) already registered: %s", cls.__name__, name, class_)
+                return
+
+            raise ValueError(f"{cls.__name__}(type={name}) already registered")
 
         if not issubclass(class_, cls):
             raise ValueError(f"Class '{class_}' must be subclass of '{cls}'")
 
         cls._classes[name] = class_
-        logging.info(f"Registered class '{name}' as '{class_}'")
+        LOGGER.debug("Registered %s(type=%s): %s", cls.__name__, name, class_)
+
+    @classmethod
+    def register_unknown(cls, class_: Type) -> None:  # noqa: UP006
+        if cls._unknown_class is not None:
+            raise ValueError("Unknown class already registered")
+
+        if not issubclass(class_, cls):
+            raise ValueError(f"Class '{class_}' must be subclass of {cls}")
+
+        cls._unknown_class = class_
+        LOGGER.debug("Registered unknown for %s: %s", cls.__name__, class_)
 
     @classmethod
     def _prepare_data(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -52,7 +106,14 @@ class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
         if type_key not in data:
             raise ValueError(f"Data must contain '{type_key}' key")
 
-        return data[type_key]
+        data_type = data[type_key]
+
+        data_type_lower = data_type.lower()
+        for registered_type in cls._classes:
+            if registered_type.lower() == data_type_lower:
+                return registered_type
+
+        raise exceptions.UnknownTypeException(f"Unknown type: {data_type}")
 
     @classmethod
     def factory(cls, data: Any) -> Self:
@@ -62,10 +123,14 @@ class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
         if not isinstance(data, dict):
             raise ValueError("Data must be dict")
 
-        class_name = cls._get_class_name(data)
-        if class_name not in cls._classes:
-            raise ValueError(f"Unknown type: {class_name}")
-        class_ = cls._classes[class_name]
+        try:
+            class_name = cls._get_class_name(data)
+        except exceptions.UnknownTypeException as exc:
+            if cls._unknown_class is None:
+                raise exc
+            class_ = cls._unknown_class
+        else:
+            class_ = cls._classes[class_name]
 
         data = class_._prepare_data(data)
 
@@ -84,6 +149,40 @@ class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
             raise ValueError("Data must be mapping for dict factory")
 
         return {key: cls.factory(value) for key, value in data.items()}
+
+    @classmethod
+    def dict_with_type_key_factory(cls, data: dict[str, Any]) -> dict[str, base.BaseModel]:
+        if not isinstance(data, dict):
+            raise ValueError("Data must be mapping for dict factory")
+
+        result: dict[str, base.BaseModel] = {}
+        type_key = cls.type_key()
+
+        data = _merge_dict_keys(data)
+
+        for key, value in data.items():
+            if isinstance(value, cls):
+                if value.type != key:
+                    raise ValueError(f"Type mismatch: dict key is '{key}', but {cls.__name__}.type is '{value.type}'")
+                result[key] = value
+                continue
+
+            elif isinstance(value, dict):
+                if type_key in value:
+                    raise ValueError(f"Data must not contain '{type_key}' key, dict key is already used as type")
+                value[type_key] = key
+
+            else:
+                raise ValueError(f"Value must be dict or {cls.__name__}")
+
+            try:
+                result_cls = cls.factory(value)
+            except exceptions.UnknownTypeException:
+                LOGGER.error("Skipping unknown type '%s' in dict_with_type_key_factory for %s", key, cls.__name__)
+                continue
+
+            result[result_cls.type] = result_cls
+        return result
 
     @classmethod
     def __get_pydantic_json_schema__(
@@ -110,10 +209,21 @@ class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
         return cls.model_fields["type"].alias or "type"
 
 
+class TypedBaseSchema(TypedBaseModel, base.BaseSchema):
+    ...
+
+
+TypedBaseSchemaT = TypeVar("TypedBaseSchemaT", bound=TypedBaseSchema)
+
+
 if TYPE_CHECKING:
     TypedAnnotation = Annotated[TypedBaseModelT, ...]
     TypedListAnnotation = Annotated[list[TypedBaseModelT], ...]
     TypedDictAnnotation = Annotated[dict[str, TypedBaseModelT], ...]
+    TypedDictWithTypeKeyAnnotation = Annotated[dict[str, TypedBaseModelT], ...]
+    TypedSchemaAnnotation = Annotated[TypedBaseSchemaT, ...]
+    TypedSchemaListAnnotation = Annotated[list[TypedBaseSchemaT], ...]
+    TypedSchemaDictAnnotation = Annotated[dict[str, TypedBaseSchemaT], ...]
 else:
 
     class TypedAnnotation:
@@ -137,10 +247,46 @@ else:
                 pydantic.BeforeValidator(base_class.dict_factory),
             ]
 
+    class TypedDictWithTypeKeyAnnotation:
+        def __class_getitem__(cls, base_class: TypedBaseModelT) -> Any:
+            return Annotated[
+                dict[str, pydantic.SerializeAsAny[base_class]],
+                pydantic.BeforeValidator(base_class.dict_with_type_key_factory),
+            ]
+
+    class TypedSchemaAnnotation:
+        def __class_getitem__(cls, base_class: TypedBaseSchemaT) -> Any:
+            return Annotated[
+                base_class,
+                pydantic.BeforeValidator(base_class.factory),
+                pydantic.SerializeAsAny(),
+            ]
+
+    class TypedSchemaListAnnotation:
+        def __class_getitem__(cls, base_class: TypedBaseSchemaT) -> Any:
+            return Annotated[
+                list[base_class],
+                pydantic.BeforeValidator(base_class.list_factory),
+                pydantic.SerializeAsAny(),
+            ]
+
+    class TypedSchemaDictAnnotation:
+        def __class_getitem__(cls, base_class: TypedBaseSchemaT) -> Any:
+            return Annotated[
+                dict[str, base_class],
+                pydantic.BeforeValidator(base_class.dict_factory),
+                pydantic.SerializeAsAny(),
+            ]
+
 
 __all__ = [
-    "TypedBaseModel",
     "TypedAnnotation",
-    "TypedListAnnotation",
+    "TypedBaseModel",
+    "TypedBaseSchema",
     "TypedDictAnnotation",
+    "TypedDictWithTypeKeyAnnotation",
+    "TypedListAnnotation",
+    "TypedSchemaAnnotation",
+    "TypedSchemaDictAnnotation",
+    "TypedSchemaListAnnotation",
 ]

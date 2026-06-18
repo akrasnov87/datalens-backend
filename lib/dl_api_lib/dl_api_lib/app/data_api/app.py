@@ -4,6 +4,7 @@ import abc
 import functools
 import logging.config
 from typing import (
+    ClassVar,
     Generic,
     TypeVar,
 )
@@ -13,6 +14,8 @@ from aiohttp.typedefs import Middleware
 import attr
 
 from dl_api_commons.aio.middlewares.commit_rci import commit_rci_middleware
+from dl_api_commons.aio.middlewares.obfuscation_context import obfuscation_context_middleware
+from dl_api_commons.aio.middlewares.rci_headers import rci_headers_middleware
 from dl_api_commons.aio.middlewares.request_bootstrap import RequestBootstrap
 from dl_api_commons.aio.middlewares.request_id import RequestId
 from dl_api_commons.aio.middlewares.tracing import TracingService
@@ -28,6 +31,10 @@ from dl_api_lib.aio.aiohttp_wrappers import (
 from dl_api_lib.aio.middlewares.error_handling_outer import DatasetAPIErrorHandler
 from dl_api_lib.aio.middlewares.json_body_middleware import json_body_middleware
 from dl_api_lib.app.data_api.resources.dashsql import DashSQLView
+from dl_api_lib.app.data_api.resources.dataset.cache_invalidation_last_result import (
+    DatasetCacheInvalidationLastResultView,
+)
+from dl_api_lib.app.data_api.resources.dataset.cache_invalidation_test import DatasetCacheInvalidationTestView
 from dl_api_lib.app.data_api.resources.dataset.distinct import (
     DatasetDistinctViewV1,
     DatasetDistinctViewV1_5,
@@ -59,12 +66,14 @@ from dl_api_lib.app.data_api.resources.typed_query import DashSQLTypedQueryView
 from dl_api_lib.app.data_api.resources.typed_query_raw import DashSQLTypedQueryRawView
 from dl_api_lib.app.data_api.resources.unistat import UnistatView
 from dl_api_lib.app_common import SRFactoryBuilder
-from dl_api_lib.app_settings import DataApiAppSettings
+from dl_api_lib.app_settings import (
+    DataApiAppSettings,
+    RedisSentinelSettings,
+    RedisSingleHostSettings,
+)
 from dl_compeng_pg.compeng_pg_base.data_processor_service_pg import CompEngPgConfig
-from dl_configs.connectors_settings import ConnectorSettingsBase
 from dl_configs.enums import RedisMode
 from dl_constants.enums import (
-    ConnectionType,
     ProcessorType,
     RedisInstanceKind,
 )
@@ -72,6 +81,13 @@ from dl_core.aio.web_app_services.data_processing.factory import make_compeng_se
 from dl_core.aio.web_app_services.redis import (
     RedisSentinelService,
     SingleHostSimpleRedisService,
+)
+from dl_core.connectors.settings.base import ConnectorSettings
+from dl_core.us_manager.factory import USMFactory
+from dl_obfuscator import (
+    OBFUSCATION_BASE_OBFUSCATORS_KEY,
+    SecretKeeper,
+    create_base_obfuscators,
 )
 
 
@@ -113,6 +129,7 @@ TDataApiSettings = TypeVar("TDataApiSettings", bound=DataApiAppSettings)
 @attr.s(kw_only=True)
 class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
     _settings: TDataApiSettings = attr.ib()
+    private_us_manager_factory_class: ClassVar[type[USMFactory]] = USMFactory
 
     @abc.abstractmethod
     def get_app_version(self) -> str:
@@ -121,7 +138,7 @@ class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
     @abc.abstractmethod
     def set_up_environment(
         self,
-        connectors_settings: dict[ConnectionType, ConnectorSettingsBase],
+        connectors_settings: dict[str, ConnectorSettings],
     ) -> EnvSetupResult:
         raise NotImplementedError()
 
@@ -133,6 +150,9 @@ class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
     @property
     def _is_async_env(self) -> bool:
         return True
+
+    def _get_extra_regex_patterns(self) -> tuple[str, ...] | None:
+        return None
 
     def set_up_routes(self, app: web.Application) -> None:
         app.router.add_route("get", "/ping", PingView)
@@ -185,6 +205,15 @@ class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
             app.router.add_route("post", "/api/data/v2/datasets/data/preview", DatasetPreviewViewV2)
             app.router.add_route("post", "/api/data/v2/datasets/{ds_id}/preview", DatasetPreviewViewV2)
 
+            app.router.add_route(
+                "post", "/api/data/v2/datasets/{ds_id}/cache_invalidation_test", DatasetCacheInvalidationTestView
+            )
+            app.router.add_route(
+                "get",
+                "/api/data/v2/datasets/{ds_id}/cache_invalidation_last_result",
+                DatasetCacheInvalidationLastResultView,
+            )
+
     def set_up_sentry(self) -> None:
         configure_sentry_for_aiohttp(
             SentryConfig(
@@ -195,7 +224,7 @@ class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
 
     def create_app(
         self,
-        connectors_settings: dict[ConnectionType, ConnectorSettingsBase],
+        connectors_settings: dict[str, ConnectorSettings],
     ) -> web.Application:
         if self._settings.SENTRY_ENABLED:
             self.set_up_sentry()
@@ -224,7 +253,9 @@ class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
                 error_handler=error_handler,
                 timeout_sec=self._settings.COMMON_TIMEOUT_SEC,
             ).middleware,
+            rci_headers_middleware(),
             *env_setup_result.auth_mw_list,
+            obfuscation_context_middleware(),
             commit_rci_middleware(),
             *env_setup_result.sr_middleware_list,
             *env_setup_result.usm_middleware_list,
@@ -234,6 +265,15 @@ class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
         app = web.Application(
             middlewares=middleware_list,
         )
+
+        if self._settings.OBFUSCATION_ENABLED:
+            global_keeper = SecretKeeper()
+            if self._settings.US_MASTER_TOKEN:
+                global_keeper.add_secret(self._settings.US_MASTER_TOKEN, "us_master_token")
+            app[OBFUSCATION_BASE_OBFUSCATORS_KEY] = create_base_obfuscators(
+                global_keeper=global_keeper,
+                extra_regex_patterns=self._get_extra_regex_patterns(),
+            )
 
         wrapper = AppWrapper(
             allow_query_cache_usage=self._settings.CACHES_ON,
@@ -296,6 +336,31 @@ class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
                 )
                 app.on_startup.append(_log_exc(mutations_redis_server_sentinel.init_hook))
                 app.on_cleanup.append(_log_exc(mutations_redis_server_sentinel.tear_down_hook))
+
+        cache_inval = self._settings.CACHE_INVALIDATION
+        if cache_inval.ENABLED and cache_inval.REDIS:
+            invalidation_redis_server: SingleHostSimpleRedisService | RedisSentinelService
+            if isinstance(cache_inval.REDIS, RedisSingleHostSettings):
+                invalidation_redis_server = SingleHostSimpleRedisService(
+                    instance_kind=RedisInstanceKind.cache_invalidation,
+                    url=cache_inval.REDIS.as_single_host_url(),
+                    password=cache_inval.REDIS.PASSWORD,
+                    ssl=cache_inval.REDIS.SSL,
+                )
+            elif isinstance(cache_inval.REDIS, RedisSentinelSettings):
+                invalidation_redis_server = RedisSentinelService(
+                    instance_kind=RedisInstanceKind.cache_invalidation,
+                    namespace=cache_inval.REDIS.CLUSTER_NAME,
+                    sentinel_hosts=cache_inval.REDIS.HOSTS,
+                    sentinel_port=cache_inval.REDIS.PORT,
+                    db=cache_inval.REDIS.DB,
+                    password=cache_inval.REDIS.PASSWORD,
+                    ssl=cache_inval.REDIS.SSL,
+                )
+            else:
+                raise ValueError(f"Unknown redis settings type {type(cache_inval.REDIS)}")
+            app.on_startup.append(_log_exc(invalidation_redis_server.init_hook))
+            app.on_cleanup.append(_log_exc(invalidation_redis_server.tear_down_hook))
 
         if self._settings.BI_COMPENG_PG_ON and self._settings.BI_COMPENG_PG_URL is not None:
             compeng_service = make_compeng_service(

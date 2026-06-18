@@ -11,10 +11,11 @@ async def test_default(temporal_client: dl_temporal.TemporalClient) -> None:
 
 @pytest.mark.asyncio
 async def test_unavailable() -> None:
-    temporal_client = await dl_temporal.TemporalClient.from_settings(
-        settings=dl_temporal.TemporalClientSettings(
+    temporal_client = await dl_temporal.TemporalClient.from_dependencies(
+        dependencies=dl_temporal.TemporalClientDependencies(
             host="unavailable_host",
             port=8080,
+            tls=False,
             namespace="dl_temporal_tests",
         ),
     )

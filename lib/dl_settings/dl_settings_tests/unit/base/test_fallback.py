@@ -77,28 +77,17 @@ def test_fallback_getattr_lower() -> None:
     assert settings.TEST == "test"
 
 
-@pytest.mark.parametrize(
-    "env_key, fallback_key",
-    [
-        ("TEST_KEY", "ANOTHER_KEY"),
-        ("TEST_KEY", "another_key"),
-        ("test_key", "ANOTHER_KEY"),
-        ("test_key", "another_key"),
-    ],
-)
 def test_fallback_env_source(
-    env_key: str,
-    fallback_key: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class Settings(dl_settings.WithFallbackEnvSource, dl_settings.BaseRootSettings):
         TEST_KEY: str = NotImplemented
 
         fallback_env_keys = {
-            env_key: fallback_key,
+            "TEST_KEY": "ANOTHER_KEY",
         }
 
-    monkeypatch.setenv(fallback_key, "value")
+    monkeypatch.setenv("ANOTHER_KEY", "value")
 
     with warnings.catch_warnings(record=True) as w:
         settings = Settings()
@@ -113,10 +102,10 @@ def test_fallback_env_source_nested(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class Nested(dl_settings.BaseSettings):
-        test: str = NotImplemented
+        TEST: str = NotImplemented
 
     class Settings(dl_settings.WithFallbackEnvSource, dl_settings.BaseRootSettings):
-        nested: Nested = NotImplemented
+        NESTED: Nested = NotImplemented
 
         fallback_env_keys = {
             "NESTED__TEST": "NESTED_TEST",
@@ -127,4 +116,45 @@ def test_fallback_env_source_nested(
     with warnings.catch_warnings(record=True):
         settings = Settings()
 
-    assert settings.nested.test == "value"
+    assert settings.NESTED.TEST == "value"
+
+
+def test_fallback_extra_env_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Settings(dl_settings.WithFallbackEnvSource, dl_settings.BaseRootSettings):
+        TEST_KEY: str = NotImplemented
+
+    extra_fallback_env_keys = {"TEST_KEY": "ANOTHER_KEY"}
+    monkeypatch.setenv("ANOTHER_KEY", "value")
+
+    with warnings.catch_warnings(record=True) as w:
+        settings = Settings(extra_fallback_env_keys=extra_fallback_env_keys)
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert "Deprecated env var found" in str(w[0].message)
+
+    assert settings.TEST_KEY == "value"
+
+
+def test_fallback_extra_env_source_merged_with_class(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Settings(dl_settings.WithFallbackEnvSource, dl_settings.BaseRootSettings):
+        TEST_KEY: str = NotImplemented
+        ANOTHER_KEY: str = NotImplemented
+
+        fallback_env_keys = {
+            "TEST_KEY": "OLD_TEST_KEY",
+        }
+
+    extra_fallback_env_keys = {"ANOTHER_KEY": "OLD_ANOTHER_KEY"}
+    monkeypatch.setenv("OLD_TEST_KEY", "value1")
+    monkeypatch.setenv("OLD_ANOTHER_KEY", "value2")
+
+    with warnings.catch_warnings(record=True) as w:
+        settings = Settings(extra_fallback_env_keys=extra_fallback_env_keys)
+        assert len(w) == 2
+
+    assert settings.TEST_KEY == "value1"
+    assert settings.ANOTHER_KEY == "value2"

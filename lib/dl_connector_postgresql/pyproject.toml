@@ -13,7 +13,6 @@ attrs = "*"
 dl-api-commons = {path = "../dl_api_commons"}
 dl-api-connector = {path = "../dl_api_connector"}
 dl-app-tools = {path = "../dl_app_tools"}
-dl-configs = {path = "../dl_configs"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
 dl-core-testing = {path = "../dl_core_testing"}
@@ -35,6 +34,7 @@ typing-extensions = "*"
 aiohttp = "*"
 dl-api-client = {path = "../dl_api_client"}
 dl-api-lib-testing = {path = "../dl_api_lib_testing"}
+dl-configs = {path = "../dl_configs"}
 dl-formula-testing = {path = "../dl_formula_testing"}
 dl-testing = {path = "../dl_testing"}
 pytest = "*"
@@ -95,6 +95,13 @@ dl_formula_ref_dl_connector_postgresql = [
   {path = "dl_connector_postgresql/formula_ref"},
 ]
 
-[datalens.pytest.local]
+[datalens.pytest.db]
+labels = ["fat"]
 root_dir = "dl_connector_postgresql_tests/"
-target_path = "db unit"
+target_path = "db"
+
+[datalens.pytest.unit]
+labels = ["no_compose"]
+root_dir = "dl_connector_postgresql_tests/"
+skip_compose = "true"
+target_path = "unit"

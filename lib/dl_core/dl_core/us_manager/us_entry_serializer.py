@@ -6,7 +6,7 @@ from functools import reduce
 import logging
 from typing import (
     ClassVar,
-    Optional,
+    Union,
 )
 from typing import (
     TYPE_CHECKING,
@@ -24,9 +24,9 @@ from dl_app_tools.profiling_base import (
 from dl_core.base_models import BaseAttrsDataModel
 from dl_core.us_dataset import Dataset
 from dl_core.us_entry import USEntry
-from dl_core.us_manager.crypto.main import EncryptedData
 from dl_core.us_manager.storage_schemas.connection_schema_registry import MAP_TYPE_TO_SCHEMA_MAP_TYPE_TO_SCHEMA
 from dl_core.us_manager.storage_schemas.dataset import DatasetStorageSchema
+import dl_crypto
 from dl_utils.utils import (
     AddressableData,
     DataKey,
@@ -40,10 +40,19 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 
+SecretType = dict[str, Union["SecretType", str, dl_crypto.EncryptedData, None]]
+
+
+@attr.s()
+class USUnversionedDataPack:
+    unversioned_data: dict[str, Any] = attr.ib(factory=dict)
+    secrets: SecretType = attr.ib(repr=False, factory=dict)
+
+
 @attr.s()
 class USDataPack:
     data: dict[str, Any] = attr.ib()
-    secrets: dict[str, Optional[str | EncryptedData]] = attr.ib(repr=False, factory=dict)
+    unversioned_data: USUnversionedDataPack = attr.ib()
 
 
 class USEntrySerializer(abc.ABC):
@@ -89,6 +98,10 @@ class USEntrySerializer(abc.ABC):
         raise NotImplementedError()
 
     @abc.abstractmethod
+    def get_unversioned_keys(self, cls: type[USEntry]) -> set[DataKey]:
+        raise NotImplementedError()
+
+    @abc.abstractmethod
     def set_data_attr(self, entry: USEntry, key: DataKey, value: Any) -> None:
         raise NotImplementedError()
 
@@ -98,20 +111,40 @@ class USEntrySerializer(abc.ABC):
 
     @generic_profiler("us-serialize")
     def serialize(self, obj: USEntry) -> USDataPack:
+        """
+        Serializes a `USEntry` object into a `USDataPack`.
+
+        This method extracts secrets and unversioned data from the input `USEntry`
+        and moves them to the USUnversionedDataPack portion of the resulting
+        `USDataPack`. The `USDataPack` effectively becomes a container holding both
+        versioned data (from the original `USEntry`) and unversioned data.
+        """
+
         raw_dict = self.serialize_raw(obj)
 
         secret_keys = self.get_secret_keys(type(obj))
+        unversioned_keys = self.get_unversioned_keys(type(obj))
 
         raw_addressable = AddressableData(raw_dict)
         secrets_addressable = AddressableData({})
+        unversioned_addressable = AddressableData({})
 
         for sec_key in secret_keys:
-            sec_val = raw_addressable.pop(sec_key)
-            secrets_addressable.set(sec_key, sec_val)
+            if raw_addressable.contains(sec_key):
+                sec_val = raw_addressable.pop(sec_key, remove_empty=True)
+                secrets_addressable.set(sec_key, sec_val)
+
+        for unversioned_key in unversioned_keys:
+            if raw_addressable.contains(unversioned_key):
+                unversioned_val = raw_addressable.pop(unversioned_key, remove_empty=True)
+                unversioned_addressable.set(unversioned_key, unversioned_val)
 
         return USDataPack(
             data=raw_addressable.data,
-            secrets=secrets_addressable.data,
+            unversioned_data=USUnversionedDataPack(
+                secrets=secrets_addressable.data,
+                unversioned_data=unversioned_addressable.data,
+            ),
         )
 
     @generic_profiler("us-deserialize")
@@ -124,19 +157,42 @@ class USEntrySerializer(abc.ABC):
         common_properties: dict[str, Any],
         data_strict: bool = True,
     ) -> USEntry:
+        """
+        Deserializes a `USDataPack` into a `USEntry` object.
+
+        This method merges unversioned data and secrets from the `USUnversionedDataPack`
+        into the `USDataPack`'s data dictionary. The combined data is then used to
+        construct and return a `USEntry` instance.
+        """
+
         # Assumed that data_pack's dicts was decoupled with initial US response
-        secret_source_addressable = AddressableData(data_pack.secrets)
+        secret_source_addressable = AddressableData(data_pack.unversioned_data.secrets)
+        unversioned_addressable = AddressableData(data_pack.unversioned_data.unversioned_data)
         raw_addressable = AddressableData(data_pack.data)
 
         declared_secret_keys = self.get_secret_keys(cls)
+        declared_unversioned_keys = self.get_unversioned_keys(cls)
 
         for secret_key in declared_secret_keys:
             if secret_source_addressable.contains(secret_key):
-                sec_val = secret_source_addressable.pop(secret_key)
+                sec_val = secret_source_addressable.pop(key=secret_key, remove_empty=True)
                 raw_addressable.set(secret_key, sec_val)
 
         if secret_source_addressable.data:
             LOGGER.warning("Undeclared secrets found")
+
+        for unversioned_key in declared_unversioned_keys:
+            if unversioned_addressable.contains(unversioned_key):
+                unversioned_val = unversioned_addressable.pop(key=unversioned_key, remove_empty=True)
+
+                if raw_addressable.contains(unversioned_key):
+                    current_key_str = ".".join(unversioned_key.parts)
+                    LOGGER.warning("Key %s exists in both versioned and unversioned data", current_key_str)
+
+                raw_addressable.set(unversioned_key, unversioned_val)
+
+        if unversioned_addressable.data:
+            LOGGER.warning("Undeclared unversioned data found")
 
         with GenericProfiler("us-deserialize-raw"):
             return self.deserialize_raw(cls, raw_addressable.data, entry_id, us_manager, common_properties, data_strict)
@@ -177,6 +233,11 @@ class USEntrySerializerMarshmallow(USEntrySerializer):
         data_cls = cls.DataModel
         assert data_cls is not None and issubclass(data_cls, BaseAttrsDataModel)
         return data_cls.get_secret_keys()
+
+    def get_unversioned_keys(self, cls: type[USEntry]) -> set[DataKey]:
+        data_cls = cls.DataModel
+        assert data_cls is not None and issubclass(data_cls, BaseAttrsDataModel)
+        return data_cls.get_unversioned_keys()
 
     def set_data_attr(self, entry: USEntry, key: DataKey, value: Any) -> None:
         key_head = DataKey(parts=key.parts[:-1])

@@ -55,16 +55,16 @@ tasks:
       - echo "Cleaning unused envs in {{.VENV_PATH}}"
       - for env in "$UNUSED_ENVS"; do
           echo "Removing $env";
-          poetry env remove $env --directory={{.PYPROJECT_TOML_PATH}};
+          poetry env remove $env --directory=$(dirname {{.PYPROJECT_TOML_PATH}});
         done;
       - echo "Initializing python virtual environment in {{.VENV_PATH}}"
-      - poetry install --directory={{.PYPROJECT_TOML_PATH}} --sync --no-root --with mypy
+      - poetry install --directory=$(dirname {{.PYPROJECT_TOML_PATH}}) --sync --no-root --with mypy
     requires:
       vars:
         - PYPROJECT_TOML_PATH
     vars:
       UNUSED_ENVS:
-        sh: poetry env list --no-ansi --directory={{.PYPROJECT_TOML_PATH}}
+        sh: poetry env list --no-ansi --directory=$(dirname {{.PYPROJECT_TOML_PATH}})
           | sed 's/ (Activated)//g'
           | grep -v \".venv\" || true
 
@@ -74,6 +74,8 @@ tasks:
       POETRY_VERSION:
         sh: cat .poetry-version
     cmds:
+      - git reset -- {{.METAPKG_DIR}}/poetry.lock
+      - git restore -- {{.METAPKG_DIR}}/poetry.lock
       - poetry self update {{.POETRY_VERSION}}
       - poetry lock --no-update --directory={{.METAPKG_DIR}}
     requires:
@@ -97,7 +99,9 @@ tasks:
         command_status=0;
         for LIB_PATH in $LIB_PATHS; do
           ITERATION_COMMAND=${COMMAND//%s/$LIB_PATH};
-          echo "Going to run '$ITERATION_COMMAND'";
+          if [ "{{.CLI_SILENT}}" == "false" ]; then
+            echo "Going to run '$ITERATION_COMMAND'";
+          fi
           set +e;
           eval $ITERATION_COMMAND || command_status=$?;
           set -e;
@@ -150,6 +154,16 @@ tasks:
       vars:
         - VENV_PATH
 
+  clean-caches:
+    desc: Clean caches
+    cmds:
+      - echo "Cleaning mypy cache"
+      - find {{.PROJECT_ROOT_PATH}} -type d -name .mypy_cache -exec rm -rf {} +
+      - echo "Cleaning ruff cache"
+      - find {{.PROJECT_ROOT_PATH}} -type d -name .ruff_cache -exec rm -rf {} +
+      - echo "Cleaning python cache"
+      - find {{.PROJECT_ROOT_PATH}} -type d -name __pycache__ -exec rm -rf {} +
+
   toml-sort:
     desc: Sort toml files
     dir: "{{.USER_WORKING_DIR}}"
@@ -160,7 +174,7 @@ tasks:
           DIR: "{{.PROJECT_ROOT_PATH}}"
           CLI_ARGS: 'toml-sort {{if eq .FIX "true"}}--in-place{{else}}--check{{end}} {{.TOML_FILES}}'
     vars:
-      FIX: '{{.FIX | default "true"}}'
+      FIX: '{{.FIX | default "false"}}'
       TOML_FILES:
         sh: |
           find {{.CLI_ARGS | default "."}} -name 'pyproject.toml' \
@@ -215,12 +229,12 @@ tasks:
     cmds:
       - task: _run-for-each-lib
         vars:
-          COMMAND: 'task dev:_deptry LIB_PATH=%s'
+          COMMAND: 'task {{ if eq .CLI_SILENT true }}--silent{{ end }} dev:_deptry LIB_PATH=%s'
       - task: _run-for-each-lib
         vars:
-          COMMAND: 'task dev:_deptry-tests-dependencies LIB_PATH=%s'
+          COMMAND: 'task {{ if eq .CLI_SILENT true }}--silent{{ end }} dev:_deptry-tests-dependencies LIB_PATH=%s'
 
-  _mypy:
+  mypy_package:
     desc: Run mypy on package
     requires:
       vars:
@@ -231,37 +245,86 @@ tasks:
         vars:
           DIR: "{{.LIB_PATH}}"
           CLI_ARGS: |
-            mypy .
+            mypy --cache-dir={{.PROJECT_ROOT_PATH}}/.mypy_cache .
 
   mypy:
     desc: Run mypy
     cmds:
       - task: _run-for-each-lib
         vars:
-          COMMAND: 'task dev:_mypy LIB_PATH=%s'
+          COMMAND: 'task {{ if eq .CLI_SILENT true }}--silent{{ end }} dev:mypy_package LIB_PATH=%s'
+
+  black:
+    desc: Run black
+    dir: "{{.USER_WORKING_DIR}}"
+    cmds:
+      - echo "Running black..."
+      - task: venv-python
+        vars:
+          CLI_ARGS: 'black --config {{.LINTERS_PYPROJECT_TOML_PATH}} {{if eq .FIX "true"}}--safe{{else}}--check{{end}} {{.LINT_PATH}}'
+    vars:
+      FIX: '{{.FIX | default "false"}}'
+      LINT_PATH: '{{.CLI_ARGS | default "."}}'
+
+  isort:
+    desc: Run isort
+    dir: "{{.USER_WORKING_DIR}}"
+    cmds:
+      - echo "Running isort..."
+      - task: venv-python
+        vars:
+          CLI_ARGS: 'isort --settings-path {{.LINTERS_PYPROJECT_TOML_PATH}} {{if ne .FIX "true"}}--check-only{{end}} {{.LINT_PATH}}'
+    vars:
+      FIX: '{{.FIX | default "false"}}'
+      LINT_PATH: '{{.CLI_ARGS | default "."}}'
+
+  ruff:
+    desc: Run ruff
+    dir: "{{.USER_WORKING_DIR}}"
+    cmds:
+      - echo "Running ruff..."
+      - task: venv-python
+        vars:
+          CLI_ARGS: 'ruff check {{if eq .FIX "true"}}--fix{{end}} {{.LINT_PATH}}'
+    vars:
+      FIX: '{{.FIX | default "false"}}'
+      LINT_PATH: '{{.CLI_ARGS | default "."}}'
+
+  sort-all:
+    desc: Sort __all__ in Python files
+    dir: "{{.USER_WORKING_DIR}}"
+    cmds:
+      - echo "Running sort-all..."
+      - task: venv-bin
+        vars:
+          CLI_ARGS: 'sort-all {{if eq .FIX "true"}}--no-error-on-fix{{else}}--check{{end}} {{.PY_FILES}}'
+    vars:
+      FIX: '{{.FIX | default "false"}}'
+      PY_FILES:
+        sh: |
+          find {{.CLI_ARGS | default "."}} -name '*.py' \
+          | sort \
+          | xargs -n1 realpath \
+          {{ if .EXCLUDE_SORT_ALL -}}
+            {{- range $i, $path := .EXCLUDE_SORT_ALL | splitLines -}}
+              {{- if ne $path "" }} | grep -v "^{{$path}}$" {{ end -}}
+            {{- end -}}
+          {{- end -}}
+          | tr '\n' ' '
 
   lint:
     desc: Lint code
     dir: "{{.USER_WORKING_DIR}}"
     cmds:
-      - echo "Running black checks..."
-      - task: venv-python
-        vars:
-          CLI_ARGS: "black --config {{.LINTERS_PYPROJECT_TOML_PATH}} --check {{.LINT_PATH}}"
+      - task: black
 
-      - echo "Running isort checks..."
-      - task: venv-python
-        vars:
-          CLI_ARGS: "isort --settings-path {{.LINTERS_PYPROJECT_TOML_PATH}} --check-only {{.LINT_PATH}}"
+      - task: isort
 
-      - echo "Running ruff checks..."
-      - task: venv-python
-        vars:
-          CLI_ARGS: "ruff check {{.LINT_PATH}}"
+      - task: ruff
+
+      - task: sort-all
 
       - task: toml-sort
-        vars:
-          FIX: 'false'
 
       - task: deptry
 
@@ -273,20 +336,21 @@ tasks:
     desc: Lint fix code
     dir: "{{.USER_WORKING_DIR}}"
     cmds:
-      - echo "Running black fixes..."
-      - task: venv-python
+      - task: black
         vars:
-          CLI_ARGS: "black --safe --config {{.LINTERS_PYPROJECT_TOML_PATH}} {{.LINT_PATH}}"
+          FIX: 'true'
 
-      - echo "Running isort fixes..."
-      - task: venv-python
+      - task: isort
         vars:
-          CLI_ARGS: "isort --settings-path {{.LINTERS_PYPROJECT_TOML_PATH}} {{.LINT_PATH}}"
+          FIX: 'true'
 
-      - echo "Running ruff fixes..."
-      - task: venv-python
+      - task: ruff
         vars:
-          CLI_ARGS: "ruff check --fix {{.LINT_PATH}}"
+          FIX: 'true'
+
+      - task: sort-all
+        vars:
+          FIX: 'true'
 
       - task: toml-sort
         vars:
@@ -354,6 +418,22 @@ tasks:
       - task: compose-start
         vars:
           DOCKER_HOST: "ssh://{{.VM_HOST}}"
+
+  compose-ps:
+    desc: Show docker-compose ps
+    dir: "{{.USER_WORKING_DIR}}"
+    cmds:
+      - |
+        {{ if .DOCKER_HOST }}DOCKER_HOST={{.DOCKER_HOST}}{{ end }} \
+        docker ps
+
+  compose-remote-ps:
+    desc: Show docker-compose ps remotely
+    dir: "{{.USER_WORKING_DIR}}"
+    cmds:
+      - task: compose-ps
+        vars:
+          DOCKER_HOST: 'ssh://{{.VM_HOST}}'
 
   compose-stop:
     desc: Stop docker-compose
@@ -435,8 +515,12 @@ tasks:
     cmds:
       - task: _compose
         vars:
-          CLI_ARGS: logs --follow {{.CONTAINER}}
+          CLI_ARGS: |
+            logs --follow {{.CONTAINER}} \
+            {{ if .TAIL }}--tail {{.TAIL}}{{ end }}
           DOCKER_HOST: '{{.DOCKER_HOST | default ""}}'
+    vars:
+      TAIL: '{{.TAIL | default "10000"}}'
 
   compose-remote-logs:
     desc: Show docker-compose logs remotely
@@ -450,6 +534,7 @@ tasks:
   ssh-forward-start:
     desc: Forward docker ports to localhost
     cmds:
+      - task: ssh-forward-stop
       - for port in $PORTS; do
           echo "Forwarding port $port";
           ssh -f -N -L $port:localhost:$port {{.VM_HOST}};
@@ -467,8 +552,8 @@ tasks:
     desc: Stop SSH port forwarding for Docker containers
     cmds:
       - echo "Next processes will be killed:"
-      - ps -ef | grep "ssh -f -N -L" | grep --invert-match "grep"
-      - pkill -f "ssh -f -N -L"
+      - ps -ef | grep "ssh -f -N -L" | grep --invert-match "grep" || true
+      - pkill -f "ssh -f -N -L" || true
 
   squash:
     desc: Squash all commits made on CHILD_BRANCH relative to PARENT_BRANCH into single one (using git reset --soft)

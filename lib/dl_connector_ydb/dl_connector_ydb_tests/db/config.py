@@ -1,12 +1,15 @@
 from typing import ClassVar
+import uuid
 
-from frozendict import frozendict
 import requests
 import sqlalchemy as sa
+import ydb_sqlalchemy.sqlalchemy as ydb_sa
 
 from dl_api_lib_testing.configuration import ApiTestEnvironmentConfiguration
 from dl_constants.enums import UserDataType
 from dl_core_testing.configuration import CoreTestEnvironmentConfiguration
+import dl_sqlalchemy_ydb.dialect
+import dl_sqlalchemy_ydb.dialect as ydb_dialect
 from dl_testing.containers import get_test_container_hostport
 
 from dl_connector_ydb.formula.constants import YqlDialect as D
@@ -35,16 +38,11 @@ def fetch_ca_certificate() -> str:
     return response.text
 
 
-def make_ssl_engine_params(ssl_ca: str) -> dict:
-    engine_params = {
-        "connect_args": frozendict(
-            {
-                "ca_cert": ssl_ca,
-                "root_certificates": ssl_ca.encode("ascii"),
-            }
-        ),
+def make_ssl_connect_args(ssl_ca: str) -> dict:
+    return {
+        "ca_cert": ssl_ca,
+        "root_certificates": ssl_ca.encode("ascii"),
     }
-    return engine_params
 
 
 class CoreConnectionSettings:
@@ -71,18 +69,73 @@ DB_CONFIGURATIONS = {
 
 TABLE_SCHEMA = (
     ("id", UserDataType.integer, sa.Integer),
-    ("distinct_string", UserDataType.string, sa.String),
-    ("some_int32", UserDataType.integer, sa.Integer),
-    ("some_int64", UserDataType.integer, sa.BigInteger),
-    ("some_uint8", UserDataType.integer, sa.SmallInteger),
+    ("distinct_string", UserDataType.string, ydb_dialect.YqlString),
+    ("some_int32", UserDataType.integer, ydb_sa.types.Int32),
+    ("some_int64", UserDataType.integer, ydb_sa.types.Int64),
+    ("some_uint8", UserDataType.integer, ydb_sa.types.Int16),
     ("some_bool", UserDataType.boolean, sa.Boolean),
-    ("some_double", UserDataType.float, sa.Float),
-    ("some_string", UserDataType.string, sa.String),
-    ("some_utf8", UserDataType.string, sa.Unicode),
+    ("some_double", UserDataType.float, ydb_dialect.YqlDouble),
+    ("some_string", UserDataType.string, ydb_dialect.YqlString),
+    ("some_utf8", UserDataType.string, ydb_dialect.YqlUtf8),
     ("some_date", UserDataType.date, sa.Date),
-    ("some_datetime", UserDataType.genericdatetime, sa.DateTime),
-    ("some_timestamp", UserDataType.genericdatetime, sa.TIMESTAMP),
+    ("some_datetime", UserDataType.genericdatetime, ydb_dialect.YqlDateTime),
+    ("some_timestamp", UserDataType.genericdatetime, ydb_dialect.YqlTimestamp),
+    ("some_interval", UserDataType.integer, dl_sqlalchemy_ydb.dialect.YqlInterval),
+    ("some_uuid", UserDataType.uuid, dl_sqlalchemy_ydb.dialect.YqlUuid),
 )
+
+COLUMN_TABLE_SCHEMA = (
+    ("id", UserDataType.integer, sa.Integer),
+    ("distinct_string", UserDataType.string, ydb_dialect.YqlString),
+    ("some_int32", UserDataType.integer, ydb_sa.types.Int32),
+    ("some_int64", UserDataType.integer, ydb_sa.types.Int64),
+    ("some_uint8", UserDataType.integer, ydb_sa.types.UInt8),
+    ("some_double", UserDataType.float, ydb_dialect.YqlDouble),
+    ("some_string", UserDataType.string, ydb_dialect.YqlString),
+    ("some_utf8", UserDataType.string, ydb_dialect.YqlUtf8),
+    ("some_date", UserDataType.date, ydb_dialect.YqlDate),
+    ("some_datetime", UserDataType.genericdatetime, ydb_dialect.YqlDateTime),
+    ("some_timestamp", UserDataType.genericdatetime, ydb_dialect.YqlTimestamp),
+)
+_COLUMN_TABLE_SCHEMA_COLUMNS = set(col[0] for col in COLUMN_TABLE_SCHEMA)
+
+SA_TYPE_TO_YDB_TYPE_NAME = {
+    # Integer
+    ydb_sa.types.UInt8: "UInt8",
+    ydb_sa.types.UInt16: "UInt16",
+    ydb_sa.types.UInt32: "UInt32",
+    ydb_sa.types.UInt64: "UInt64",
+    ydb_sa.types.Int8: "Int8",
+    ydb_sa.types.Int16: "Int16",
+    ydb_sa.types.Int32: "Int32",
+    ydb_sa.types.Int64: "Int64",
+    sa.Integer: "Int32",
+    sa.String: "String",
+    sa.BigInteger: "Int64",
+    sa.SmallInteger: "Int8",
+    # Boolean
+    sa.Boolean: "Bool",
+    # Double
+    sa.Float: "Double",
+    ydb_dialect.YqlFloat: "Float",
+    ydb_dialect.YqlDouble: "Double",
+    # String
+    ydb_dialect.YqlString: "String",
+    ydb_dialect.YqlUtf8: "Utf8",
+    sa.Unicode: "Utf8",
+    # Date
+    sa.Date: "Date",
+    ydb_dialect.YqlDate: "Date",
+    # Datetime
+    sa.DATETIME: "Datetime",
+    ydb_dialect.YqlDateTime: "Datetime",
+    # Timestamp
+    sa.TIMESTAMP: "Timestamp",
+    ydb_dialect.YqlTimestamp: "Timestamp",
+    # Interval
+    dl_sqlalchemy_ydb.dialect.YqlInterval: "Interval",
+}
+
 TABLE_DATA = [
     {
         "id": 1,
@@ -97,6 +150,8 @@ TABLE_DATA = [
         "some_date": None,
         "some_datetime": None,
         "some_timestamp": None,
+        "some_interval": 9,
+        "some_uuid": uuid.UUID("a8f4768e-6cd3-4383-89dd-b4787cdc0c16"),
     },
     {
         "id": 2,
@@ -111,6 +166,8 @@ TABLE_DATA = [
         "some_date": None,
         "some_datetime": None,
         "some_timestamp": None,
+        "some_interval": None,
+        "some_uuid": uuid.UUID("00000000-0000-0000-0000-000000000000"),
     },
     {
         "id": 3,
@@ -125,6 +182,8 @@ TABLE_DATA = [
         "some_date": None,
         "some_datetime": None,
         "some_timestamp": None,
+        "some_interval": 1337,
+        "some_uuid": uuid.UUID("ec4fc0c5-9171-43a1-a8f6-f3d17aad7bf8"),
     },
     {
         "id": 4,
@@ -139,6 +198,8 @@ TABLE_DATA = [
         "some_date": None,
         "some_datetime": None,
         "some_timestamp": None,
+        "some_interval": 42,
+        "some_uuid": uuid.UUID("11111111-1111-1111-1111-111111111111"),
     },
     {
         "id": 5,
@@ -153,6 +214,8 @@ TABLE_DATA = [
         "some_date": None,
         "some_datetime": None,
         "some_timestamp": None,
+        "some_interval": None,
+        "some_uuid": uuid.UUID("11111111-1111-1111-1111-111111111111"),
     },
     {
         "id": 6,
@@ -167,6 +230,8 @@ TABLE_DATA = [
         "some_date": "2021-06-07",
         "some_datetime": "2021-06-07T18:19:20Z",
         "some_timestamp": "2021-06-07T18:19:20Z",
+        "some_interval": None,
+        "some_uuid": uuid.UUID("1418976a-c9c6-4cba-8b0e-a5b74b457381"),
     },
     {
         "id": 7,
@@ -181,6 +246,8 @@ TABLE_DATA = [
         "some_date": "1970-12-31",
         "some_datetime": "1970-12-31T23:58:57Z",
         "some_timestamp": "1970-12-31T23:58:57Z",
+        "some_interval": 0,
+        "some_uuid": None,
     },
     {
         "id": 8,
@@ -195,6 +262,8 @@ TABLE_DATA = [
         "some_date": "1972-03-28",
         "some_datetime": "1972-03-28T17:11:02Z",
         "some_timestamp": "1972-03-28T17:11:02Z",
+        "some_interval": 1,
+        "some_uuid": None,
     },
     {
         "id": 9,
@@ -209,6 +278,8 @@ TABLE_DATA = [
         "some_date": None,
         "some_datetime": None,
         "some_timestamp": None,
+        "some_interval": None,
+        "some_uuid": None,
     },
     {
         "id": 10,
@@ -223,6 +294,8 @@ TABLE_DATA = [
         "some_date": "2026-07-08",
         "some_datetime": None,
         "some_timestamp": None,
+        "some_interval": None,
+        "some_uuid": None,
     },
     {
         "id": 11,
@@ -237,9 +310,18 @@ TABLE_DATA = [
         "some_date": "2029-11-04",
         "some_datetime": None,
         "some_timestamp": None,
+        "some_interval": 1234,
+        "some_uuid": uuid.UUID("a68da475-4850-4a15-8b08-b5bd95edaadb"),
     },
 ]
+
+# Leave only values in COLUMN_TABLE_SCHEMA
+COLUMN_TABLE_DATA = [
+    {key: value for key, value in row.items() if key in _COLUMN_TABLE_SCHEMA_COLUMNS} for row in TABLE_DATA
+]
+
 TABLE_NAME = "test_table_h"
+
 
 DASHSQL_QUERY = r"""
 select
@@ -250,11 +332,17 @@ select
     MAX(CAST(111 AS UInt8)) as some_uint8,
     MAX(4398046511104) as some_int64,
     MAX(18446744073709551606) as some_uint64,
+    cast(MAX(1.11e-11) as Float) as some_float,
     MAX(1.11e-11) as some_double,
     MAX(true) as some_bool,
     MAX(Date('2021-06-09')) as some_date,
     MAX(Datetime('2021-06-09T20:50:47Z')) as some_datetime,
+    MAX(Datetime64('2021-06-09T20:50:47Z')) as some_datetime64,
     MAX(Timestamp('2021-07-10T21:51:48.841512Z')) as some_timestamp,
+    MAX(Timestamp64('2021-07-10T21:51:48.841512Z')) as some_timestamp64,
+    CAST(1 AS Interval) as some_interval,
+    CAST(1 AS Interval64) as some_interval64,
+    CAST("03bbcd6d-3de3-4718-a503-a37fcb75e663" AS UUID) as some_uuid,
 
     MAX(ListHead(ListSkip(Unicode::SplitToList(CAST(some_string AS UTF8), ''), 3))) as str_split,
     MAX(ListConcat(ListReplicate(CAST(' ' AS UTF8), 5))) as num_space_by_lst,

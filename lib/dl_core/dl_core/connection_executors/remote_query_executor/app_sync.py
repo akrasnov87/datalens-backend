@@ -14,16 +14,12 @@ from typing import (
     Union,
 )
 
+import attr
 from flask import current_app
 import flask.views
 from werkzeug.exceptions import HTTPException
 
-from dl_api_commons.flask.middlewares.aio_event_loop_middleware import AIOEventLoopMiddleware
-from dl_api_commons.flask.middlewares.body_signature import BodySignatureValidator
-from dl_api_commons.flask.middlewares.context_var_middleware import ContextVarMiddleware
-from dl_api_commons.flask.middlewares.logging_context import RequestLoggingContextControllerMiddleWare
-from dl_api_commons.flask.middlewares.request_id import RequestIDService
-from dl_api_commons.flask.middlewares.tracing import TracingMiddleware
+import dl_api_commons.flask.middlewares as flask_middlewares
 from dl_app_tools.profiling_base import GenericProfiler
 from dl_configs.env_var_definitions import (
     jaeger_service_name_env_aware,
@@ -55,10 +51,14 @@ from dl_core.loader import (
     CoreLibraryConfig,
     load_core_lib,
 )
-from dl_core.logging_config import hook_configure_logging as _hook_configure_logging
+from dl_core.logging_config import hook_configure_logging
 from dl_dashsql.typed_query.query_serialization import get_typed_query_serializer
 from dl_dashsql.typed_query.result_serialization import get_typed_query_result_serializer
 from dl_model_tools.msgpack import DLSafeMessagePackSerializer
+from dl_obfuscator import (
+    OBFUSCATION_BASE_OBFUSCATORS_KEY,
+    create_base_obfuscators,
+)
 
 
 if TYPE_CHECKING:
@@ -90,7 +90,13 @@ class ActionHandlingView(flask.views.View):
     methods = ["POST"]
 
     def get_action(self) -> act.RemoteDBAdapterAction:
-        return ActionSerializer().deserialize_action(flask.request.json, allowed_dba_classes=SUPPORTED_ADAPTER_CLS)  # type: ignore  # 2024-01-30 # TODO: Argument 1 to "deserialize_action" of "ActionSerializer" has incompatible type "Any | None"; expected "dict[Any, Any]"  [arg-type]
+        action = ActionSerializer().deserialize_action(flask.request.json, allowed_dba_classes=SUPPORTED_ADAPTER_CLS)  # type: ignore  # 2024-01-30 # TODO: Argument 1 to "deserialize_action" of "ActionSerializer" has incompatible type "Any | None"; expected "dict[Any, Any]"  [arg-type]
+        rci = flask_middlewares.ReqCtxInfoMiddleware.get_request_context_info()
+        if rci.obfuscation_engine is not None:
+            action = attr.evolve(
+                action, req_ctx_info=attr.evolve(action.req_ctx_info, obfuscation_engine=rci.obfuscation_engine)
+            )
+        return action
 
     def execute_non_streamed_action(
         self,
@@ -238,9 +244,11 @@ class ActionHandlingView(flask.views.View):
                 if host is None or ipaddress.ip_address(host).is_private:
                     time.sleep(random.uniform(5, 20))
                     query = None
+                    inspector_query = None
                     if isinstance(action, (act.ActionExecuteQuery, act.ActionNonStreamExecuteQuery)):
                         query = action.db_adapter_query.debug_compiled_query
-                    raise SourceTimeout(db_message="Source timed out", query=query)
+                        inspector_query = action.db_adapter_query.inspector_query
+                    raise SourceTimeout(db_message="Source timed out", query=query, inspector_query=inspector_query)
 
         if isinstance(action, act.ActionExecuteQuery):
             return self.execute_execute_action(dba, action)
@@ -269,7 +277,7 @@ def hook_init_logging(
     app_prefix: Optional[str] = None,
     **kwargs: Any,
 ) -> None:
-    return _hook_configure_logging(
+    return hook_configure_logging(
         app=app,
         app_name=app_name,
         app_prefix=app_prefix,
@@ -287,7 +295,9 @@ def _handle_exception(err: Exception) -> tuple[flask.Response, int]:
         return flask.jsonify(ActionSerializer().serialize_exc(err)), 500
 
 
-def create_sync_app() -> flask.Flask:
+def create_sync_app(
+    obfuscation_extra_patterns: tuple[str, ...] = (),
+) -> flask.Flask:
     deprecated_settings = load_settings_from_env_with_fallback(DeprecatedRQESettings)
     settings = RQESettings(fallback=deprecated_settings)
     hmac_keys = settings.RQE_SECRET_KEY
@@ -297,24 +307,33 @@ def create_sync_app() -> flask.Flask:
     load_core_lib(core_lib_config=CoreLibraryConfig(core_connector_ep_names=settings.CORE_CONNECTOR_WHITELIST))
 
     app = flask.Flask(__name__)
-    TracingMiddleware(
+    flask_middlewares.TracingMiddleware(
         url_prefix_exclude=(
             "/ping",
             "/unistat",
             "/metrics",
         ),
     ).wrap_flask_app(app)
-    ContextVarMiddleware().wrap_flask_app(app)
-    AIOEventLoopMiddleware().wrap_flask_app(app)
+    flask_middlewares.ContextVarMiddleware().wrap_flask_app(app)
+    flask_middlewares.AIOEventLoopMiddleware().wrap_flask_app(app)
 
-    RequestLoggingContextControllerMiddleWare().set_up(app)
-    RequestIDService(
+    flask_middlewares.RequestLoggingContextControllerMiddleWare().set_up(app)
+    flask_middlewares.RequestIDService(
         request_id_app_prefix=None,
         append_local_req_id=False,
         accept_logging_context=True,
     ).set_up(app)
+    flask_middlewares.RCIHeadersMiddleware().set_up(app)
+
+    if settings.OBFUSCATION_ENABLED:
+        app.config[OBFUSCATION_BASE_OBFUSCATORS_KEY] = create_base_obfuscators(
+            extra_regex_patterns=obfuscation_extra_patterns,
+        )
+        flask_middlewares.setup_obfuscation_context_middleware(app)
+
+    flask_middlewares.ReqCtxInfoMiddleware().set_up(app)
     profiling_middleware.set_up(app, accept_outer_stages=True)
-    BodySignatureValidator(
+    flask_middlewares.BodySignatureValidator(
         hmac_keys=tuple(hmac_key.encode() for hmac_key in hmac_keys),
         header=HEADER_BODY_SIGNATURE,
     ).set_up(app)

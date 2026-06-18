@@ -1,4 +1,4 @@
-name: main
+name: "🔄 Main"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -15,18 +15,14 @@ on:
       - unlabeled
   workflow_dispatch:
     inputs:
-      run_all_tests:
+      run_for_all_packages:
         type: boolean
         default: false
-        description: "Run all tests"
-      run_mypy_only:
+        description: "Run for all packages"
+      skip_tests:
         type: boolean
         default: false
-        description: "Check to only run mypy"
-      mypy_timeout_minutes:
-        type: number
-        default: 20
-        description: "Timeout for pytest JOB in minutes"
+        description: "Skip tests"
 
 jobs:
   drop-ci-approved-label:
@@ -206,23 +202,46 @@ jobs:
         fi
         echo "result=$result" >> $GITHUB_OUTPUT
       id: extract_head_commit
-    - name: Get changed files
-      uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62
-      id: git-changed-files
+
+    - uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62
+      id: changed-files-base
+      if: ${{ steps.extract_base_commit.outputs.result != steps.extract_head_commit.outputs.result }}
       with:
         base_sha: ${{ steps.extract_base_commit.outputs.result }}
         sha: ${{ steps.extract_head_commit.outputs.result }}
         write_output_files: true
         separator: "\n"
+    # if base and head commit are the same tj-actions/changed-files action raises an error, so we need to handle it
+    # https://github.com/tj-actions/changed-files/issues/2708
+    - name: Get changed files
+      id: changed-files
+      run: |
+        if [ "$base_sha" != "$sha" ]; then
+          {
+            echo "all_changed_files<<EOF"
+            echo "${changed_files_base}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        fi
+      env:
+        sha: ${{ steps.extract_head_commit.outputs.result }}
+        base_sha: ${{ steps.extract_base_commit.outputs.result }}
+        changed_files_base: ${{ steps.changed-files-base.outputs.all_changed_files }}
     - name: Get changed packages
       uses: ovsds/get-changed-packages-action@v1
       id: changed-packages
       with:
-        changed-files: ${{ steps.git-changed-files.outputs.all_changed_files }}
+        changed-files: ${{ steps.changed-files.outputs.all_changed_files }}
         all-packages: |
           ./lib/*
           ./app/*
-        package-dependencies-resolution-method: ${{ github.event.inputs.run_all_tests == 'true' && 'all' || 'poetry-path' }}
+        package-dependencies-resolution-method: >-
+          ${{
+            (
+              github.event.inputs.run_for_all_packages == 'true'
+              || contains(github.event.pull_request.labels.*.name, 'run-ci-for-all-packages')
+            ) && 'poetry-all' || 'poetry-path'
+          }}
         poetry-path-dependencies-groups: |
           tool.poetry.dependencies
           tool.poetry.group.tests.dependencies
@@ -265,9 +284,7 @@ jobs:
       - router
       - check-skip-tests-label
       - gh_build_image
-    if: ${{ needs.check-skip-tests-label.outputs.result != 'true' }}
-
-    # if: ${{ github.event.inputs.run_mypy_only != 'true' }}
+    if: ${{ needs.check-skip-tests-label.outputs.result != 'true' && github.event.inputs.skip_tests != 'true' }}
     container:
       image: ${{ needs.gh_build_image.outputs.IMAGE }}
       credentials:
@@ -532,32 +549,60 @@ jobs:
           CONTAINER_NETWORK: "${{ job.container.network }}"
           COMPOSE_PROJECT: "${{ steps.get_compose_prj.outputs.result }}"
 
+  mypy_split:
+    runs-on: ubuntu-22.04
+    needs: router
+    outputs:
+      matrix: ${{ steps.split.outputs.matrix }}
+    steps:
+      - name: Split packages into groups
+        id: split
+        uses: ovsds/split-matrix-action@v0
+        with:
+          matrix: ${{ needs.router.outputs.changed-packages }}
+          target-group-size: 10
+          result-item-prefix: "/src/"
+
   mypy:
-    runs-on: [ self-hosted, linux, k8s-runner-fat ]
-    needs: gh_build_image
+    name: "🐲 mypy (group ${{ strategy.job-index }})"
+    runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
+    needs: [ mypy_split, gh_build_image ]
+    if: ${{ needs.mypy_split.outputs.matrix != '[]' }}
     container:
       image: ${{ needs.gh_build_image.outputs.IMAGE }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-      volumes:
-        - /var/run/docker.sock:/var/run/docker.sock
-    name: "🐲 mypy"
-    timeout-minutes: ${{ inputs.mypy_timeout_minutes && fromJSON(inputs.mypy_timeout_minutes ) || 20 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        lib_paths: ${{ fromJson(needs.mypy_split.outputs.matrix) }}
+    env:
+      VENV_PATH: /venv
     steps:
       - uses: datalens-tech/cleanup-folder-action@v1
-      - name: Checkout code, just to get access to .github/execute_mypy...
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 1
+      - uses: datalens-tech/fix-dubious-ownership-action@v1
       - name: run mypy
-        run: |
-          . /venv/bin/activate
-          execute-mypy-multi /src --processes=4
+        run: task --silent dev:mypy FAIL_FAST=false
         env:
-          PYTHONUNBUFFERED: "1"
+          LIB_PATHS: ${{ matrix.lib_paths }}
+
+  mypy-results:
+    name: Mypy results
+    runs-on: ubuntu-22.04
+    needs: mypy
+    if: always() && !cancelled()
+    steps:
+      - name: Collect Result
+        uses: ovsds/collect-needs-result-action@v1
+        with:
+          needs_json: ${{ toJson(needs) }}
 
   test-results:
     name: Test results
@@ -597,8 +642,10 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 1
-      - run: task dev:toml-sort FIX=false
-      - run: task dev:deptry FAIL_FAST=false
-      - run: |
-          task cq:check_dir -- .
-          task cq:check_dir_strict -- .
+      - uses: datalens-tech/fix-dubious-ownership-action@v1
+      - run: task --silent dev:black
+      - run: task --silent dev:isort
+      - run: task --silent dev:ruff
+      - run: task --silent dev:sort-all
+      - run: task --silent dev:toml-sort
+      - run: task --silent dev:deptry FAIL_FAST=false

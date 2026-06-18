@@ -2,7 +2,7 @@ from .containers import (
     HostPort,
     get_test_container_hostport,
 )
-from .env_params import GenericEnvParamGetter
+from .settings import BaseRootSettings
 from .utils import (
     get_default_ssl_context,
     get_root_certificates,
@@ -13,12 +13,12 @@ from .utils import (
 
 
 __all__ = [
-    "get_test_container_hostport",
+    "BaseRootSettings",
     "HostPort",
     "get_default_ssl_context",
     "get_root_certificates",
     "get_root_certificates_path",
+    "get_test_container_hostport",
     "register_all_assert_rewrites",
-    "GenericEnvParamGetter",
     "wait_for_port",
 ]

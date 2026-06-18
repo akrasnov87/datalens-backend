@@ -11,6 +11,12 @@ from sqlalchemy.sql.elements import ClauseElement
 
 from dl_core.connection_executors.models.db_adapter_data import DBAdapterQuery
 from dl_core.connection_models import DBIdent
+from dl_obfuscator import (
+    ObfuscationContext,
+    OnObfuscationError,
+    get_request_obfuscation_engine,
+)
+from dl_obfuscator.engine import ObfuscationEngine
 
 
 LOGGER = logging.getLogger(__name__)
@@ -21,20 +27,77 @@ def get_db_version_query(db_ident: DBIdent) -> DBAdapterQuery:
     return DBAdapterQuery(sa.select([sa.func.version()]), db_name=db_ident.db_name)
 
 
-def compile_query_for_debug(query: ClauseElement, dialect: Dialect) -> str:
+def compile_query_for_debug(query: ClauseElement | str, dialect: Dialect) -> str:
     """
     Compile query to string.
     This function is only suitable for logging and not execution of the result.
     Its result might not be valid SQL if query contains date/datetime literals.
     """
+    if isinstance(query, str):
+        return query
     try:
         try:
             return str(query.compile(dialect=dialect, compile_kwargs={"literal_binds": True}))
         except NotImplementedError:
             compiled = query.compile(dialect=dialect)
-            return make_debug_query(str(query), compiled.params)
+            return make_debug_query(str(compiled), compiled.params)
     except Exception:
+        LOGGER.exception("Failed to compile query for debug")
         return "-"
+
+
+def compile_query_for_inspector(
+    query: ClauseElement | str,
+    dialect: Dialect,
+    obfuscation_engine: ObfuscationEngine | None = None,
+) -> str:
+    # TODO: BI-6448
+    if isinstance(query, str):
+        compiled = query
+    else:
+        try:
+            try:
+                compiled = str(query.compile(dialect=dialect, compile_kwargs={"literal_binds": True}))
+            except NotImplementedError:
+                compiled_obj = query.compile(dialect=dialect)
+                compiled = make_debug_query(str(compiled_obj), compiled_obj.params)
+        except Exception:
+            LOGGER.exception("Failed to compile query for inspector")
+            return "-"
+
+    if obfuscation_engine is not None:
+        compiled = obfuscation_engine.obfuscate(compiled, ObfuscationContext.INSPECTOR)
+
+    return compiled
+
+
+def compile_query_with_literal_binds_if_possible(
+    query: ClauseElement | str,
+    dialect: Dialect,
+) -> ClauseElement | str:
+    """
+    Compile query to string using literal_binds.
+
+    In case of error, defaults to query as-is without compilation
+    """
+
+    if isinstance(query, str):
+        return query
+
+    try:
+        compiled_query = str(
+            query.compile(
+                dialect=dialect,
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+
+        # SA generates query for DBAPI, so mod is represented as `%%` so next hack is needed
+        return compiled_query % ()
+    except Exception:
+        LOGGER.exception("Failed to compile query with literal_binds")
+        LOGGER.debug(f"Debug query: {compile_query_for_debug(query, dialect)}")
+        return query
 
 
 def make_debug_query(query: str, params: Union[list, dict]) -> str:
@@ -69,6 +132,12 @@ class CursorLogger:
         span.finish()
 
         execution_time_seconds = time.monotonic() - query_start_time
+
+        obfuscation_engine = get_request_obfuscation_engine()
+        if obfuscation_engine is not None:
+            statement = obfuscation_engine.obfuscate(
+                statement, ObfuscationContext.TRACING, on_error=OnObfuscationError.SKIP
+            )
 
         extra = dict(
             event_code="db_exec",

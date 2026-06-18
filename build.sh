@@ -5,5 +5,5 @@ version=$(cat version.json \
   | sed 's/[",]//g')
 echo $version
 
-./docker_build/run-project-bake dl_control_api --set "dl_control_api.tags=akrasnov87/datalens-control-api:$version"
-./docker_build/run-project-bake dl_data_api --set "dl_data_api.tags=akrasnov87/datalens-data-api:$version"
+./docker_build/run-project-bake dl_control_api --set "dl_control_api.tags=akrasnov87/datalens-control-api:$version" --no-cache
+./docker_build/run-project-bake dl_data_api --set "dl_data_api.tags=akrasnov87/datalens-data-api:$version" --no-cache

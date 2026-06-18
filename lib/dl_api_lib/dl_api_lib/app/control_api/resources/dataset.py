@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from http import HTTPStatus
 import logging
+import os
 from typing import (
     Any,
     ClassVar,
 )
 import uuid
+
+from flask import request
 
 from dl_api_commons.flask.middlewares.logging_context import put_to_request_context
 from dl_api_commons.flask.required_resources import RequiredResourceCommon
@@ -33,6 +36,7 @@ import dl_api_lib.schemas.data
 import dl_api_lib.schemas.dataset_base
 import dl_api_lib.schemas.main
 import dl_api_lib.schemas.validation
+from dl_constants.api_constants import DLHeadersCommon
 from dl_constants.enums import (
     DataSourceCreatedVia,
     ManagedBy,
@@ -47,6 +51,7 @@ from dl_core.base_models import (
 from dl_core.components.accessor import DatasetComponentAccessor
 from dl_core.components.editor import DatasetComponentEditor
 from dl_core.constants import DatasetConstraints
+from dl_core.enums import USEntryMode
 from dl_core.us_dataset import Dataset
 from dl_core.utils import generate_revision_id
 import dl_query_processing.exc
@@ -55,6 +60,8 @@ import dl_query_processing.exc
 LOGGER = logging.getLogger(__name__)
 
 ns = API.namespace("Datasets", path="/datasets")
+
+USE_S2S_AUTH = os.getenv("USE_S2S_AUTH", "0") == "1"
 
 VALIDATION_OK_MESSAGE = "Validation was successful"
 
@@ -81,7 +88,7 @@ class DatasetCollection(DatasetResource):
     )
     def post(self, body: dict) -> dict:
         """Create dataset"""
-        us_manager = self.get_us_manager()
+        us_manager = self.get_regular_us_manager()
         dataset = Dataset.create_from_dict(
             Dataset.DataModel(name=""),  # TODO: Remove name - it's not used, but is required
             ds_key=self.generate_dataset_location(body),
@@ -100,7 +107,7 @@ class DatasetCollection(DatasetResource):
         loader = self.create_dataset_api_loader()
         loader.populate_dataset_from_body(dataset=dataset, body=body["dataset"], us_manager=us_manager)
 
-        us_manager.save(dataset)
+        us_manager.create(dataset)
 
         LOGGER.info("New dataset was saved with ID %s", dataset.uuid)
 
@@ -118,10 +125,11 @@ class DatasetItem(BIResource):
     )
     def delete(self, dataset_id: str) -> None:
         """Delete dataset"""
-        us_manager = self.get_us_manager()
-        us_manager.set_dataset_context(dataset_id)
-        service_us_manager = self.get_service_us_manager()
-        service_us_manager.set_dataset_context(dataset_id)
+        connection_headers = {
+            DLHeadersCommon.DATASET_ID.value: dataset_id,
+        }
+        us_manager = self.get_us_manager_based_on_required_resources()
+        us_manager.set_context("connection", connection_headers)
 
         ds, _ = DatasetResource.get_dataset(dataset_id=dataset_id, body={}, load_dependencies=False)
         utils.need_permission_on_entry(ds, USPermissionKind.admin)
@@ -140,10 +148,11 @@ class DatasetItemFields(BIResource):
         },
     )
     def get(self, dataset_id: str) -> dict:
-        us_manager = self.get_us_manager()
-        us_manager.set_dataset_context(dataset_id)
-        service_us_manager = self.get_service_us_manager()
-        service_us_manager.set_dataset_context(dataset_id)
+        connection_headers = {
+            DLHeadersCommon.DATASET_ID.value: dataset_id,
+        }
+        us_manager = self.get_us_manager_based_on_required_resources()
+        us_manager.set_context("connection", connection_headers)
 
         ds, _ = DatasetResource.get_dataset(dataset_id=dataset_id, body={}, load_dependencies=False)
         fields = [
@@ -174,8 +183,11 @@ class DatasetCopy(DatasetResource):
     )
     def post(self, dataset_id: str, body: dict) -> dict:
         copy_us_key = body["new_key"]
-        us_manager = self.get_us_manager()
-        us_manager.set_dataset_context(dataset_id)
+        connection_headers = {
+            DLHeadersCommon.DATASET_ID.value: dataset_id,
+        }
+        us_manager = self.get_regular_us_manager()
+        us_manager.set_context("connection", connection_headers)
 
         ds, _ = self.get_dataset(dataset_id=dataset_id, body={})
         orig_ds_loc = ds.entry_key
@@ -190,7 +202,9 @@ class DatasetCopy(DatasetResource):
 
         LOGGER.info("Going to copy dataset %s with new key %r", dataset_id, copy_us_key)
         ds_copy = us_manager.copy_entry(ds, key=copy_ds_loc)
-        us_manager.save(ds_copy)
+
+        us_manager.create(ds_copy)
+
         LOGGER.info("Dataset copy was saved with ID %s", ds_copy.uuid)
 
         return self.make_dataset_response_data(dataset=ds_copy, us_entry_buffer=us_manager.get_entry_buffer())
@@ -209,11 +223,28 @@ class DatasetVersionItem(DatasetResource):
     )
     def get(self, dataset_id: str, version: str, query: dict) -> dict:
         """Get dataset version"""
-        us_manager = self.get_us_manager()
-        us_manager.set_dataset_context(dataset_id)
+        audit_mode = request.headers.get(DLHeadersCommon.AUDIT_MODE.value)
+
+        connection_headers: dict[str, str] = {
+            DLHeadersCommon.DATASET_ID.value: dataset_id,
+        }
+        if audit_mode is not None:
+            connection_headers[DLHeadersCommon.AUDIT_MODE.value] = audit_mode
+
+        us_manager = self.get_regular_us_manager()
+        us_manager.set_context("connection", connection_headers)
+
+        if audit_mode is not None:
+            us_manager.set_context("dataset", {DLHeadersCommon.AUDIT_MODE.value: audit_mode})
 
         if "rev_id" in query:
-            ds, _ = self.get_dataset(dataset_id=dataset_id, body={}, params={"revId": query["rev_id"]})
+            ds, _ = self.get_dataset(
+                dataset_id=dataset_id,
+                body={},
+                params={
+                    "revId": query["rev_id"],
+                },
+            )
             utils.need_permission_on_entry(ds, USPermissionKind.edit)
             # raw entry to avoid double deserialization
             ds_raw = us_manager.get_migrated_entry(dataset_id)
@@ -252,8 +283,11 @@ class DatasetVersionItem(DatasetResource):
     )
     def put(self, dataset_id: str, version: str, body: dict[str, Any]) -> dict:
         """Update dataset version"""
-        us_manager = self.get_us_manager()
-        us_manager.set_dataset_context(dataset_id)
+        connection_headers = {
+            DLHeadersCommon.DATASET_ID.value: dataset_id,
+        }
+        us_manager = self.get_regular_us_manager()
+        us_manager.set_context("connection", connection_headers)
 
         with us_manager.get_locked_entry_cm(Dataset, dataset_id, wait_timeout=DEFAULT_DATASET_LOCK_WAIT_TIMEOUT) as ds:
             utils.need_permission_on_entry(ds, USPermissionKind.edit)
@@ -267,6 +301,8 @@ class DatasetVersionItem(DatasetResource):
 
             old_sources = ds_accessor.get_data_source_id_list()
             loader = self.create_dataset_api_loader()
+            original_ds = us_manager.clone_entry_instance(ds)
+
             update_info = loader.populate_dataset_from_body(dataset=ds, body=body["dataset"], us_manager=us_manager)
             new_sources = update_info.added_own_source_ids + update_info.updated_own_source_ids
             invalidate_sample_sources(
@@ -286,7 +322,13 @@ class DatasetVersionItem(DatasetResource):
 
             ds_editor = DatasetComponentEditor(dataset=ds)
             ds_editor.set_revision_id(revision_id=generate_revision_id())
-            us_manager.save(ds)
+
+            us_manager.update(
+                entry=ds,
+                original_entry=original_ds,
+                # Default in US Client is mode = "publish"
+                mode=body.get("mode", USEntryMode.publish),
+            )
 
             return self.make_dataset_response_data(dataset=ds, us_entry_buffer=us_manager.get_entry_buffer())
 
@@ -294,7 +336,15 @@ class DatasetVersionItem(DatasetResource):
 @ns.route("/export/<dataset_id>")
 class DatasetExportItem(DatasetResource):
     REQUIRED_RESOURCES: ClassVar[frozenset[RequiredResourceCommon]] = frozenset(
-        {RequiredResourceCommon.SKIP_AUTH, RequiredResourceCommon.US_HEADERS_TOKEN}
+        {
+            RequiredResourceCommon.ONLY_SERVICES_ALLOWED,
+            RequiredResourceCommon.US_HEADERS_TOKEN,
+        }
+        if USE_S2S_AUTH
+        else {
+            RequiredResourceCommon.SKIP_AUTH,
+            RequiredResourceCommon.US_HEADERS_TOKEN,
+        }
     )
 
     @put_to_request_context(endpoint_code="DatasetExport")
@@ -310,8 +360,11 @@ class DatasetExportItem(DatasetResource):
     def post(self, dataset_id: str, body: dict) -> dict:
         """Export dataset"""
 
-        us_manager = self.get_service_us_manager()
-        us_manager.set_dataset_context(dataset_id)
+        connection_headers = {
+            DLHeadersCommon.DATASET_ID.value: dataset_id,
+        }
+        us_manager = self.get_private_us_manager()
+        us_manager.set_context("connection", connection_headers)
 
         tenant = self.get_current_rci().tenant
         assert tenant is not None
@@ -346,7 +399,15 @@ class DatasetExportItem(DatasetResource):
 @ns.route("/import")
 class DatasetImportCollection(DatasetResource):
     REQUIRED_RESOURCES: ClassVar[frozenset[RequiredResourceCommon]] = frozenset(
-        {RequiredResourceCommon.SKIP_AUTH, RequiredResourceCommon.US_HEADERS_TOKEN}
+        {
+            RequiredResourceCommon.ONLY_SERVICES_ALLOWED,
+            RequiredResourceCommon.US_HEADERS_TOKEN,
+        }
+        if USE_S2S_AUTH
+        else {
+            RequiredResourceCommon.SKIP_AUTH,
+            RequiredResourceCommon.US_HEADERS_TOKEN,
+        }
     )
 
     @classmethod
@@ -400,7 +461,7 @@ class DatasetImportCollection(DatasetResource):
 
         self.replace_conn_ids(data, body["id_mapping"])
 
-        us_manager = self.get_service_us_manager()
+        us_manager = self.get_private_us_manager()
         tenant = self.get_current_rci().tenant
         assert tenant is not None
         us_manager.set_tenant_override(tenant)
@@ -410,7 +471,13 @@ class DatasetImportCollection(DatasetResource):
             ds_key=self.generate_dataset_location(data),
             us_manager=us_manager,
         )
-        us_manager.set_dataset_context(dataset.uuid)
+
+        # Pass dataset_id to US from URL
+        if dataset.uuid is not None:
+            connection_headers = {
+                DLHeadersCommon.DATASET_ID.value: dataset.uuid,
+            }
+            us_manager.set_context("connection", connection_headers)
 
         ds_editor = DatasetComponentEditor(dataset=dataset)
 
@@ -423,7 +490,7 @@ class DatasetImportCollection(DatasetResource):
         loader = self.create_dataset_api_loader()
         loader.populate_dataset_from_body(dataset=dataset, body=data["dataset"], us_manager=us_manager)
 
-        us_manager.save(dataset)
+        us_manager.create(dataset)
 
         LOGGER.info("New dataset was saved with ID %s", dataset.uuid)
 
@@ -454,11 +521,20 @@ class DatasetVersionValidator(DatasetResource):
         body: dict | None = None,
     ) -> tuple[dict, HTTPStatus]:
         """Validate dataset version schema"""
-        us_manager = self.get_us_manager()
-        us_manager.set_dataset_context(dataset_id)
+        us_manager = self.get_regular_us_manager()
+
+        # Pass dataset_id to US from URL
+        if dataset_id is not None:
+            connection_headers = {
+                DLHeadersCommon.DATASET_ID.value: dataset_id,
+            }
+            us_manager.set_context("connection", connection_headers)
 
         assert body is not None
-        dataset, _ = self.get_dataset(dataset_id=dataset_id, body=body)
+        dataset, _ = self.get_dataset(
+            dataset_id=dataset_id,
+            body=body,
+        )
         dataset_validator_factory = self.get_service_registry().get_dataset_validator_factory()
         ds_validator = dataset_validator_factory.get_dataset_validator(ds=dataset, us_manager=us_manager)
         data = {}
@@ -515,11 +591,20 @@ class DatasetVersionFieldValidator(DatasetResource):
         body: dict | None = None,
     ) -> tuple[dict, HTTPStatus]:
         """Validate formula field of dataset version"""
-        us_manager = self.get_us_manager()
-        us_manager.set_dataset_context(dataset_id)
+        us_manager = self.get_regular_us_manager()
+
+        # Pass dataset_id to US from URL
+        if dataset_id is not None:
+            connection_headers = {
+                DLHeadersCommon.DATASET_ID.value: dataset_id,
+            }
+            us_manager.set_context("connection", connection_headers)
 
         assert body is not None
-        dataset, _ = self.get_dataset(dataset_id=dataset_id, body=body)
+        dataset, _ = self.get_dataset(
+            dataset_id=dataset_id,
+            body=body,
+        )
         dataset_validator_factory = self.get_service_registry().get_dataset_validator_factory()
         ds_validator = dataset_validator_factory.get_dataset_validator(ds=dataset, us_manager=us_manager)
         formula = body["field"]["formula"]

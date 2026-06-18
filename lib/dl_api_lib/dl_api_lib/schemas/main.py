@@ -22,6 +22,7 @@ from dl_constants.enums import (
     DataSourceCreatedVia,
     NotificationLevel,
 )
+from dl_core.enums import USEntryMode
 from dl_model_tools.schema.base import BaseSchema
 from dl_model_tools.schema.dynamic_enum_field import DynamicEnumField
 
@@ -98,6 +99,7 @@ class CreateDatasetSchema(DatasetContentSchema):
 
 class CreateDatasetResponseSchema(DatasetContentSchema):
     id = ma_fields.String()
+    operation = ma_fields.Dict(load_default=None, required=False, allow_none=True)
 
 
 class NormalizedDateTime(ma_fields.DateTime):
@@ -124,6 +126,7 @@ class GetDatasetResponseSchema(DatasetContentSchema):
     mtime = NormalizedDateTime(format="%Y-%m-%d %H:%M:%S")
     is_favorite = ma_fields.Boolean()
     permissions = ma_fields.Dict(keys=ma_fields.String(), values=ma_fields.Boolean())
+    full_permissions = ma_fields.Dict(keys=ma_fields.String(), values=ma_fields.Boolean())
 
 
 class UpdateDatasetSchema(BaseSchema):
@@ -131,7 +134,7 @@ class UpdateDatasetSchema(BaseSchema):
 
 
 class DatasetUpdateSchema(DatasetContentSchema):
-    pass
+    mode = ma_fields.Enum(USEntryMode, load_default=USEntryMode.publish)
 
 
 class DatasetCopyRequestSchema(BaseSchema):

@@ -37,9 +37,20 @@ class ClickHouseConnectionSchema(
         load_default=None,
         load_only=True,
     )
+    ssl_ca_verify = core_ma_fields.OnOffField(
+        attribute="data.ssl_ca_verify",
+        bi_extra=FieldExtra(editable=True),
+        required=False,
+        load_default=True,
+    )
     readonly = ma_fields.Integer(
         attribute="data.readonly",
         bi_extra=FieldExtra(editable=True),
         load_default=2,
         dump_default=2,
+    )
+    experimental_features = core_ma_fields.OnOffField(
+        attribute="data.experimental_features",
+        bi_extra=FieldExtra(editable=True),
+        load_default=False,
     )

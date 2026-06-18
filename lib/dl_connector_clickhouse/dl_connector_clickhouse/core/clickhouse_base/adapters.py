@@ -156,7 +156,10 @@ class BaseClickHouseAdapter(BaseClassicAdapter["BaseClickHouseConnTargetDTO"], B
         }
 
         if self._target_dto.secure:
-            args["verify"] = self.get_ssl_cert_path(self._target_dto.ssl_ca)
+            if self._target_dto.ssl_ca_verify:
+                args["verify"] = self.get_ssl_cert_path(self._target_dto.ssl_ca)
+            else:
+                args["verify"] = False
 
         return args
 
@@ -183,9 +186,13 @@ class BaseClickHouseAdapter(BaseClassicAdapter["BaseClickHouseConnTargetDTO"], B
 
     @classmethod
     def make_exc(  # TODO:  Move to ErrorTransformer
-        cls, wrapper_exc: Exception, orig_exc: Optional[Exception], debug_compiled_query: Optional[str]
+        cls,
+        wrapper_exc: Exception,
+        orig_exc: Exception | None,
+        debug_query: str | None,
+        inspector_query: str | None,
     ) -> tuple[type[exc.DatabaseQueryError], DBExcKWArgs]:
-        exc_cls, kw = super().make_exc(wrapper_exc, orig_exc, debug_compiled_query)
+        exc_cls, kw = super().make_exc(wrapper_exc, orig_exc, debug_query, inspector_query)
 
         ch_exc_cls: Optional[type[exc.DatabaseQueryError]] = None
         if isinstance(wrapper_exc, ch_exc.DatabaseException):
@@ -216,7 +223,7 @@ class BaseClickHouseAdapter(BaseClassicAdapter["BaseClickHouseConnTargetDTO"], B
 
     # TODO CONSIDER: Do we really need to overwrite native type???
     def normalize_sa_col_type(self, sa_col_type: TypeEngine) -> TypeEngine:
-        if isinstance(sa_col_type, ch_types.Decimal):
+        if isinstance(sa_col_type, ch_types.Numeric):
             return sa.Float()
         elif isinstance(sa_col_type, (ch_types.Enum8, ch_types.Enum16)):
             return sa.String()
@@ -417,8 +424,8 @@ class BaseAsyncClickHouseAdapter(AiohttpDBAdapter):
     def _get_current_tracing_headers(self) -> dict[str, str]:
         return {}
 
-    def _get_ssl_context(self) -> Optional[ssl.SSLContext]:
-        return None
+    def _get_ssl_param(self) -> ssl.SSLContext | bool:
+        return True
 
     # TODO FIX: Add logging from dl_core.connection_executors.adapters.sa_utils.CursorLogger
     async def _make_query(self, dba_q: DBAdapterQuery, mirroring_mode: bool = False) -> ClientResponse:
@@ -464,7 +471,7 @@ class BaseAsyncClickHouseAdapter(AiohttpDBAdapter):
             data=final_query.encode(),
             allow_redirects=False,
             headers={**tracing_headers},
-            ssl_context=self._get_ssl_context(),
+            ssl=self._get_ssl_param(),
         )
 
         # CHYT rewrites incoming query_id so we log returned one instead of constructing own id
@@ -517,6 +524,7 @@ class BaseAsyncClickHouseAdapter(AiohttpDBAdapter):
                     debug_info=dict(msg="Unexpected last event", event=event, data=data, chunk=decoded_chunk),
                     # TODO: provide the actual query
                     query="",
+                    inspector_query="",
                     # TODO?: show the chunk here for the user databases?
                     db_message="",
                 )
@@ -542,7 +550,9 @@ class BaseAsyncClickHouseAdapter(AiohttpDBAdapter):
         if resp.status != 200:
             bytes_body = await resp.read()
             body = bytes_body.decode(errors="replace")
-            db_exc = self.make_exc(resp.status, body, debug_compiled_query=query.debug_compiled_query)
+            db_exc = self.make_exc(
+                resp.status, body, debug_query=query.debug_compiled_query, inspector_query=query.inspector_query
+            )
             raise db_exc
 
         # Primarily for DashSQL
@@ -563,7 +573,9 @@ class BaseAsyncClickHouseAdapter(AiohttpDBAdapter):
             try:
                 return col_conv(val)
             except ValueError as err:
-                raise exc.DataParseError(f"Cannot convert {val!r}", query=query.debug_compiled_query) from err
+                raise exc.DataParseError(
+                    f"Cannot convert {val!r}", query=query.debug_compiled_query, inspector_query=query.inspector_query
+                ) from err
 
         events_generator = self._parse_response_body(resp)
         with self.wrap_execute_excs(query=query, stage="meta"):
@@ -642,7 +654,8 @@ class BaseAsyncClickHouseAdapter(AiohttpDBAdapter):
         self,
         status_code: int,  # noqa
         err_body: str,
-        debug_compiled_query: Optional[str] = None,
+        debug_query: str | None = None,
+        inspector_query: str | None = None,
     ) -> exc.DatabaseQueryError:
         exc_cls: type[exc.DatabaseQueryError]
         try:
@@ -652,7 +665,8 @@ class BaseAsyncClickHouseAdapter(AiohttpDBAdapter):
 
         return exc_cls(
             db_message=err_body,
-            query=debug_compiled_query,
+            query=debug_query,
+            inspector_query=inspector_query,
             orig=None,
             details={},
             params=exc_params,
@@ -688,8 +702,14 @@ class AsyncClickHouseAdapter(BaseAsyncClickHouseAdapter):
     conn_type = CONNECTION_TYPE_CLICKHOUSE
     ch_utils = ClickHouseUtils
 
-    def _get_ssl_context(self) -> Optional[ssl.SSLContext]:
-        if not self._target_dto.secure or self._target_dto.ssl_ca is None:
-            return None
+    def _get_ssl_param(self) -> ssl.SSLContext | bool:
+        if not self._target_dto.secure:
+            return True  # Value doesn't matter, because protocol is http
 
-        return ssl.create_default_context(cadata=self._target_dto.ssl_ca)
+        if not self._target_dto.ssl_ca_verify:
+            return False
+
+        if self._target_dto.ssl_ca:
+            return ssl.create_default_context(cadata=self._target_dto.ssl_ca)
+
+        return True

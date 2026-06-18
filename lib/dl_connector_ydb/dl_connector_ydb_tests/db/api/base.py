@@ -1,5 +1,9 @@
-from typing import ClassVar
+from typing import (
+    ClassVar,
+    Iterable,
+)
 
+from frozendict import frozendict
 import pytest
 
 from dl_api_lib_testing.configuration import ApiTestEnvironmentConfiguration
@@ -23,7 +27,10 @@ from dl_connector_ydb.core.ydb.constants import (
 )
 from dl_connector_ydb_tests.db.config import (
     API_TEST_CONFIG,
+    COLUMN_TABLE_DATA,
+    COLUMN_TABLE_SCHEMA,
     DB_CORE_URL,
+    SA_TYPE_TO_YDB_TYPE_NAME,
     TABLE_DATA,
     TABLE_NAME,
     TABLE_SCHEMA,
@@ -39,6 +46,18 @@ class YDBConnectionTestBase(ConnectionTestBase):
     @pytest.fixture(scope="class")
     def db_url(self) -> str:
         return DB_CORE_URL
+
+    @pytest.fixture(scope="class")
+    def engine_params(self) -> dict:
+        return dict(
+            connect_args=frozendict(
+                dict(
+                    host=CoreConnectionSettings.HOST,
+                    port=CoreConnectionSettings.PORT,
+                    protocol="grpc",
+                )
+            ),
+        )
 
     @pytest.fixture(scope="class")
     def bi_test_config(self) -> ApiTestEnvironmentConfiguration:
@@ -87,6 +106,71 @@ class YDBDatasetTestBase(YDBConnectionTestBase, DatasetTestBase):
                 table_name=sample_table.name,
             ),
         )
+
+
+class YDBViewDatasetTestBase(YDBConnectionTestBase, DatasetTestBase):
+    @pytest.fixture(scope="class")
+    def sample_view_name(
+        self,
+        db: Db,
+        sample_table: DbTable,
+    ) -> Iterable[str]:
+        view_name = sample_table.name + "_view"
+
+        db.get_current_connection().connection.cursor().execute_scheme(
+            f"CREATE VIEW `{view_name}` WITH (security_invoker = TRUE) AS SELECT * FROM `{sample_table.name}`;"
+        )
+
+        yield view_name
+
+        db.get_current_connection().connection.cursor().execute_scheme(f"DROP VIEW `{view_name}`;")
+
+    @pytest.fixture(scope="class")
+    def dataset_params(
+        self,
+        sample_view_name: str,
+    ) -> dict:
+        return dict(
+            source_type=SOURCE_TYPE_YDB_TABLE.name,
+            parameters=dict(
+                table_name=sample_view_name,
+            ),
+        )
+
+
+class YDBColumnDatasetTestBase(YDBDatasetTestBase):
+    @pytest.fixture(scope="class")
+    def sample_table(self, db: Db) -> DbTable:
+        table_name = TABLE_NAME + "_column"
+
+        db_table = make_table(
+            db=db,
+            name=table_name,
+            columns=[
+                C(name=name, user_type=user_type, sa_type=sa_type) for name, user_type, sa_type in COLUMN_TABLE_SCHEMA
+            ],
+            data=[],  # to avoid producing a sample data
+            create_in_db=False,
+        )
+
+        column_definitions_list = []
+        for name, _, sa_type in COLUMN_TABLE_SCHEMA:
+            target_type = SA_TYPE_TO_YDB_TYPE_NAME[sa_type]
+            if name == "id":
+                target_type += " NOT NULL"
+
+            column_definitions_list.append(f"{name} {target_type}")
+        column_definitions = ", ".join(column_definitions_list)
+
+        query = f"CREATE TABLE `{table_name}` ({column_definitions}, PRIMARY KEY (id)) WITH (STORE = COLUMN)"
+        db.get_current_connection().connection.cursor().execute_scheme(query)
+
+        db.create_table(db_table.table)
+        db.insert_into_table(db_table.table, COLUMN_TABLE_DATA)
+
+        yield db_table
+
+        db.get_current_connection().connection.cursor().execute_scheme(f"DROP TABLE `{table_name}`;")
 
 
 class YDBDataApiTestBase(YDBDatasetTestBase, StandardizedDataApiTestBase):

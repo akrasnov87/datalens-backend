@@ -100,14 +100,12 @@ class DatasetsPublicityChecker(BIResource):
     def post(self, body: typing.Mapping[str, typing.Any]) -> typing.Mapping[str, typing.Any]:
         ds_ids = body["datasets"]
         responses = []
-        us_manager = self.get_us_manager()
+        us_manager = self.get_regular_us_manager()
         reason = None
 
         public_usage_checker = PublicEnvEntityUsageChecker()
 
-        for ds in self.get_us_manager().get_collection(
-            Dataset, raise_on_broken_entry=True, include_data=True, ids=ds_ids
-        ):
+        for ds in us_manager.get_collection(Dataset, raise_on_broken_entry=True, include_data=True, ids=ds_ids):
             try:
                 us_manager.load_dependencies(ds)
                 localizer = self.get_service_registry().get_localizer()
@@ -148,7 +146,7 @@ class ConnectionsPublicityChecker(BIResource):
 
         public_usage_checker = PublicEnvEntityUsageChecker()
 
-        for conn in self.get_us_manager().get_collection(
+        for conn in self.get_regular_us_manager().get_collection(
             ConnectionBase, raise_on_broken_entry=True, include_data=True, ids=conn_ids
         ):
             try:
@@ -210,11 +208,13 @@ class ConnectorForm(BIResource):
         conn_id = query.get("conn_id", None)
         exports_history_url_path = self.get_service_registry().get_exports_history_url_path()
         user_id = self.get_current_rci().user_id
+        feature_flags = self.get_service_registry().get_feature_flags()
 
         form_params = FormConfigParams(
             user_id=user_id,
             conn_id=conn_id,
             exports_history_url_path=exports_history_url_path,
+            feature_flags=feature_flags,
         )
 
         form_factory = form_factory_cls(mode=mode, localizer=localizer, form_params=form_params)
@@ -234,7 +234,7 @@ class ConnectorForm(BIResource):
 class WorkbookInfo(BIResource):
     @schematic_request(ns=ns)
     def get(self, us_path: str) -> dict:
-        usm = self.get_us_manager()
+        usm = self.get_regular_us_manager()
         all_entries = usm.load_get_entries_at_path(us_path)
 
         return dict(

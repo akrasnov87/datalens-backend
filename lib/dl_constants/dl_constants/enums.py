@@ -17,7 +17,7 @@ from typing import (
     cast,
 )
 
-from dynamic_enum import (
+from dl_dynamic_enum import (
     AutoEnumValue,
     DynamicEnum,
 )
@@ -147,6 +147,19 @@ class CalcMode(_Normalizable["CalcMode"], Enum):
     direct = "direct"
     formula = "formula"
     parameter = "parameter"
+
+
+@unique
+class CacheInvalidationMode(Enum):
+    sql = "sql"
+    formula = "formula"
+    off = "off"
+
+
+@unique
+class CacheInvalidationLastResultStatus(Enum):
+    success = "success"
+    error = "error"
 
 
 @unique
@@ -280,7 +293,7 @@ class ManagedBy(_Normalizable["ManagedBy"], Enum):
 
 
 @unique
-class USAuthMode(Enum):
+class USAuthMode(Enum):  # TODO: to be removed in BI-6973
     master = "master"
     public = "public"
     regular = "regular"
@@ -407,6 +420,7 @@ class RedisInstanceKind(Enum):
     persistent = auto()
     mutations = auto()
     arq = auto()
+    cache_invalidation = auto()
 
 
 class FileProcessingStatus(Enum):
@@ -425,6 +439,7 @@ class NotificationLevel(Enum):
 
 class NotificationType(DynamicEnum):
     totals_removed_due_to_measure_filter = AutoEnumValue()
+    cache_invalidation_query_failed = AutoEnumValue()
 
 
 class ConnectorAvailability(DynamicEnum):

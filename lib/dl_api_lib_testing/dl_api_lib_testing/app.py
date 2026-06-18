@@ -20,15 +20,14 @@ from dl_api_lib.app_settings import (
 )
 from dl_api_lib.connector_availability.base import ConnectorAvailabilityConfig
 from dl_cache_engine.primitives import CacheTTLConfig
-from dl_configs.connectors_settings import ConnectorSettingsBase
 from dl_configs.enums import RequiredService
 from dl_constants.enums import (
-    ConnectionType,
     RLSSubjectType,
     USAuthMode,
 )
 from dl_core.aio.middlewares.services_registry import services_registry_middleware
 from dl_core.aio.middlewares.us_manager import service_us_manager_middleware
+from dl_core.connectors.settings.base import ConnectorSettings
 from dl_core.services_registry import ServicesRegistry
 from dl_core.services_registry.entity_checker import EntityUsageChecker
 from dl_core.services_registry.env_manager_factory_base import EnvManagerFactory
@@ -81,8 +80,18 @@ class TestingSubjectResolver(BaseSubjectResolver):
 
         return subjects
 
-    async def get_groups_by_subject(self, rci: RequestContextInfo) -> list[str]:
-        return ["_the_tests_asyncapp_group_"] if rci.user_id == TEST_USER_ID else []
+    async def get_groups_by_subject(self, rci: RequestContextInfo, by_id: bool = False) -> list[str]:
+        if rci.user_id != TEST_USER_ID:
+            return []
+        if by_id:
+            return ["_the_tests_group_real_id_"]
+        return ["_the_tests_asyncapp_group_"]
+
+    def resolve_group_slug(self, group_slug: str, rci: RequestContextInfo) -> str | None:
+        slug = group_slug.removeprefix("@group:")
+        if slug == "_the_tests_asyncapp_group_":
+            return "_the_tests_group_real_id_"
+        return slug
 
 
 @attr.s
@@ -163,7 +172,7 @@ class TestingDataApiAppFactory(DataApiAppFactory[DataApiAppSettings], TestingSRF
 
     def set_up_environment(
         self,
-        connectors_settings: dict[ConnectionType, ConnectorSettingsBase],
+        connectors_settings: dict[str, ConnectorSettings],
     ) -> DataApiEnvSetupResult:
         conn_opts_factory = ConnOptionsMutatorsFactory()
         ca_data = get_root_certificates()
@@ -186,6 +195,7 @@ class TestingDataApiAppFactory(DataApiAppFactory[DataApiAppSettings], TestingSRF
             services_registry_middleware(
                 services_registry_factory=sr_factory,
                 use_query_cache=self._settings.CACHES_ON,
+                use_cache_invalidation=self._settings.CACHE_INVALIDATION.ENABLED,
                 use_mutation_cache=self._settings.MUTATIONS_CACHES_ON,
                 mutation_cache_default_ttl=self._settings.MUTATIONS_CACHES_DEFAULT_TTL,
             ),
@@ -195,15 +205,17 @@ class TestingDataApiAppFactory(DataApiAppFactory[DataApiAppSettings], TestingSRF
             us_base_url=self._settings.US_BASE_URL,
             crypto_keys_config=self._settings.CRYPTO_KEYS_CONFIG,
             ca_data=ca_data,
-            retry_policy_factory=dl_retrier.RetryPolicyFactory(self._settings.US_CLIENT.RETRY_POLICY),
+            retry_policy_factory=dl_retrier.RetryPolicyFactory.from_settings(self._settings.US_CLIENT.RETRY_POLICY),
         )
 
         usm_middleware_list = [
             service_us_manager_middleware(
+                us_manager_factory_class=self.private_us_manager_factory_class,
                 us_master_token=self._settings.US_MASTER_TOKEN,
                 **common_us_kw,
             ),
             service_us_manager_middleware(
+                us_manager_factory_class=self.private_us_manager_factory_class,
                 us_master_token=self._settings.US_MASTER_TOKEN,
                 as_user_usm=True,
                 **common_us_kw,

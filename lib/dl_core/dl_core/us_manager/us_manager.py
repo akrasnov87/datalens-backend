@@ -54,7 +54,6 @@ from dl_core.us_entry import (
     USEntry,
     USMigrationEntry,
 )
-from dl_core.us_manager.crypto.main import CryptoController
 from dl_core.us_manager.local_cache import USEntryBuffer
 from dl_core.us_manager.schema_migration.base import BaseEntrySchemaMigration
 from dl_core.us_manager.schema_migration.factory import DefaultEntrySchemaMigrationFactory
@@ -65,8 +64,10 @@ from dl_core.us_manager.us_entry_serializer import (
     USDataPack,
     USEntrySerializer,
     USEntrySerializerMarshmallow,
+    USUnversionedDataPack,
 )
 from dl_core.us_manager.utils.fake_us_client import FakeUSClient
+import dl_crypto
 import dl_retrier
 from dl_utils.utils import AddressableData
 
@@ -143,7 +144,7 @@ class USManagerBase:
         self._us_base_url = us_base_url
         self._us_api_prefix = us_api_prefix
 
-        self._crypto_controller = CryptoController(self._crypto_keys_config)
+        self._crypto_controller = dl_crypto.CryptoController(self._crypto_keys_config)
         self._loaded_entries = USEntryBuffer()
         # To prevent usage of flask context
         self._fake_us_client = FakeUSClient()
@@ -171,12 +172,18 @@ class USManagerBase:
         return self._crypto_keys_config.actual_key_id
 
     def get_lifecycle_manager(
-        self, entry: USEntry, service_registry: Optional[ServicesRegistry] = None
+        self,
+        entry: USEntry,
+        service_registry: ServicesRegistry | None = None,
+        original_entry: USEntry | None = None,
     ) -> EntryLifecycleManager:
         if service_registry is None:
             service_registry = self.get_services_registry()
         return self._lifecycle_manager_factory.get_lifecycle_manager(
-            entry=entry, us_manager=self, service_registry=service_registry
+            entry=entry,
+            us_manager=self,
+            service_registry=service_registry,
+            original_entry=original_entry,
         )
 
     def get_schema_migration(
@@ -296,6 +303,92 @@ class USManagerBase:
             encrypted_value = self._crypto_controller.encrypt_with_actual_key(decrypted_value)
             secret_addressable.set(key, encrypted_value)
 
+    @generic_profiler("us-unpack-unversioned-data-from-us")
+    def unpack_unversioned_data_from_us(
+        self,
+        cls: type[USEntry],
+        unversioned_data: dict[str, Any],
+        serializer: USEntrySerializer,
+    ) -> USUnversionedDataPack:
+        """
+        Extracts and prepares unversioned data for deserialization.
+
+        This method processes the `unversioned_data` dictionary by:
+          - Decrypting any secrets contained within.
+          - Separating unversioned data fields for use during deserialization.
+        """
+
+        unversioned_data = copy.deepcopy(unversioned_data)
+        data_pack = USUnversionedDataPack()
+
+        # Assumed that data_pack's dicts was decoupled with initial US response
+        source_addressable = AddressableData(unversioned_data)
+        unversioned_data_addressable = AddressableData(data_pack.unversioned_data)
+        secrets_addressable = AddressableData(data_pack.secrets)
+
+        declared_secret_keys = serializer.get_secret_keys(cls)
+        declared_unversioned_keys = serializer.get_unversioned_keys(cls)
+
+        # Decrypt secrets
+        for secret_key in declared_secret_keys:
+            if source_addressable.contains(secret_key):
+                sec_val = source_addressable.pop(key=secret_key, remove_empty=True)
+                assert not isinstance(sec_val, str)
+                decrypted_sec_val = self._crypto_controller.decrypt(sec_val)
+                secrets_addressable.set(secret_key, decrypted_sec_val)
+
+        # Extract unversioned fields
+        for unversioned_key in declared_unversioned_keys:
+            if source_addressable.contains(unversioned_key):
+                unversioned_val = source_addressable.pop(key=unversioned_key, remove_empty=True)
+                unversioned_data_addressable.set(unversioned_key, unversioned_val)
+
+        if source_addressable.data:
+            LOGGER.warning("Undeclared unversioned fields found")
+
+        return data_pack
+
+    @generic_profiler("us-pack-unversioned-data-for-us")
+    def pack_unversioned_data_for_us(
+        self,
+        cls: type[USEntry],
+        data_pack: USUnversionedDataPack,
+        serializer: USEntrySerializer,
+    ) -> dict[str, Any]:
+        """
+        Serializes a `USUnversionedDataPack` into a dictionary suitable for US data packing.
+
+        This method takes a `USUnversionedDataPack`, extracts its unversioned data,
+        and handles the encryption of any secrets it may contain. The resulting
+        dictionary is then returned.
+        """
+
+        data_pack = copy.deepcopy(data_pack)
+        unversioned_data: dict[str, Any] = dict()
+
+        # Assumed that data_pack's dicts was decoupled with initial US response
+        result_addressable = AddressableData(unversioned_data)
+        unversioned_data_addressable = AddressableData(data_pack.unversioned_data)
+        secrets_addressable = AddressableData(data_pack.secrets)
+
+        declared_secret_keys = serializer.get_secret_keys(cls)
+        declared_unversioned_keys = serializer.get_unversioned_keys(cls)
+
+        # Encrypt secrets
+        for secret_key in declared_secret_keys:
+            if secrets_addressable.contains(secret_key):
+                sec_val = secrets_addressable.pop(key=secret_key, remove_empty=True)
+                assert sec_val is None or isinstance(sec_val, str)
+                result_addressable.set(secret_key, self._crypto_controller.encrypt_with_actual_key(sec_val))
+
+        # Extract unversioned fields
+        for unversioned_key in declared_unversioned_keys:
+            if unversioned_data_addressable.contains(unversioned_key):
+                unversioned_val = unversioned_data_addressable.pop(key=unversioned_key, remove_empty=True)
+                result_addressable.set(unversioned_key, unversioned_val)
+
+        return result_addressable.data
+
     @generic_profiler("us-deserialize-dict-to-object")
     def _entry_dict_to_obj(self, us_resp: dict, expected_type: Optional[type[USEntry]] = None) -> USEntry:
         """
@@ -349,6 +442,7 @@ class USManagerBase:
             is_locked=us_resp.get("isLocked"),
             is_favorite=us_resp.get("isFavorite"),
             permissions=us_resp.get("permissions") or {},
+            full_permissions=us_resp.get("fullPermissions") or {},
             links=us_resp.get("links") or {},
             hidden=us_resp["hidden"],
             migration_status=MigrationStatus(us_resp.get("migration_status", MigrationStatus.non_migrated.value)),
@@ -366,22 +460,23 @@ class USManagerBase:
             )
         else:
             data = us_resp.get("data", dict())
-            secrets = us_resp.get("unversionedData", dict())
+            unversioned_data = us_resp.get("unversionedData", dict())
 
             assert isinstance(data, dict)
-            assert isinstance(secrets, dict)
-            data_pack = USDataPack(
-                data=data,
-                secrets=secrets,
-            )
-
-            data_pack = copy.deepcopy(data_pack)
-            if data_pack.secrets:
-                for key, secret in data_pack.secrets.items():
-                    assert not isinstance(secret, str)
-                    data_pack.secrets[key] = self._crypto_controller.decrypt(secret)
+            assert isinstance(unversioned_data, dict)
 
             serializer = self.get_us_entry_serializer(entry_cls)
+
+            data_pack = USDataPack(
+                data=data,
+                unversioned_data=self.unpack_unversioned_data_from_us(
+                    cls=entry_cls,
+                    unversioned_data=unversioned_data,
+                    serializer=serializer,
+                ),
+            )
+            data_pack = copy.deepcopy(data_pack)
+
             entry = serializer.deserialize(
                 entry_cls,
                 data_pack,
@@ -410,7 +505,7 @@ class USManagerBase:
             migration_status=entry.migration_status,
             **entry_loc.to_us_resp_api_params(entry.raw_us_key),
         )
-        return self._entry_dict_to_obj(entry_data)
+        return self._entry_dict_to_obj(entry_data, expected_type=type(entry))
 
     @staticmethod
     def _get_us_type_for_entry(entry: USEntry) -> Optional[str]:
@@ -462,19 +557,24 @@ class USManagerBase:
             )
         else:
             entry_cls = type(entry)
+            serializer = self.get_us_entry_serializer(type(entry))
             if entry_cls.DataModel is not None:
-                serializer = self.get_us_entry_serializer(type(entry))
                 data_pack = serializer.serialize(entry)
             else:
-                data_pack = USDataPack(data=data_dict)
+                data_pack = USDataPack(
+                    data=data_dict,
+                    unversioned_data=USUnversionedDataPack(),
+                )
 
-            for key, secret in data_pack.secrets.items():
-                assert secret is None or isinstance(secret, str)
-                data_pack.secrets[key] = self._crypto_controller.encrypt_with_actual_key(secret)
+            unversioned_data = self.pack_unversioned_data_for_us(
+                cls=entry_cls,
+                data_pack=data_pack.unversioned_data,
+                serializer=serializer,
+            )
 
             save_params.update(
                 data=data_pack.data,
-                unversioned_data=data_pack.secrets,
+                unversioned_data=unversioned_data,
             )
 
         save_params.update(
@@ -572,6 +672,16 @@ class USManagerBase:
             return self._services_registry
         raise ValueError("Services registry was not passed to US manager")
 
-    def set_dataset_context(self, dataset_id: Optional[str]) -> None:
-        """Set or clear dataset context for US requests."""
-        self._us_client.set_dataset_context(dataset_id)
+    def set_context(
+        self,
+        context_name: str,
+        headers: dict[str, str],
+    ) -> None:
+        """
+        Set custom headers for named context. Headers will be added to US request with corresponding context_name
+
+        :param context_name: Name of the context (e.g., "dataset", "connection")
+        :param headers: Dictionary of headers to set for this context
+        """
+
+        self._us_client.set_context(context_name, headers)

@@ -1,6 +1,9 @@
 import abc
 import os
 from typing import (
+    Any,
+    Callable,
+    Coroutine,
     Generic,
     Optional,
     TypeVar,
@@ -16,6 +19,10 @@ from dl_core.aio.web_app_services.gsheets import GSheetsSettings
 from dl_core.loader import (
     CoreLibraryConfig,
     load_core_lib,
+)
+from dl_core.united_storage_client import (
+    USAuthContextMaster,
+    USAuthContextPrivateBase,
 )
 from dl_file_uploader_lib.settings_utils import init_redis_service
 from dl_file_uploader_task_interface.context import (
@@ -52,6 +59,7 @@ _TSettings = TypeVar("_TSettings", bound=FileUploaderWorkerSettings)
 @attr.s
 class FileUploaderContextFab(BaseContextFabric):
     _settings: FileUploaderWorkerSettings = attr.ib()
+    _us_auth_context_factory: Callable[[], Coroutine[Any, Any, USAuthContextPrivateBase]] = attr.ib()
     _ca_data: bytes = attr.ib()
     _tenant_resolver: TenantResolver = attr.ib(factory=lambda: CommonTenantResolver())
 
@@ -65,6 +73,7 @@ class FileUploaderContextFab(BaseContextFabric):
             secret_access_key=self._settings.S3.SECRET_ACCESS_KEY,
             endpoint_url=self._settings.S3.ENDPOINT_URL,
             use_virtual_host_addressing=self._settings.S3.USE_VIRTUAL_HOST_ADDRESSING,
+            ca_data=self._ca_data,
             tmp_bucket_name=self._settings.S3_TMP_BUCKET_NAME,
             persistent_bucket_name=self._settings.S3_PERSISTENT_BUCKET_NAME,
         )
@@ -90,6 +99,7 @@ class FileUploaderContextFab(BaseContextFabric):
             ),
             tenant_resolver=self._tenant_resolver,
             ca_data=self._ca_data,
+            us_auth_context_factory=self._us_auth_context_factory,
         )
 
     async def tear_down(self, inst: FileUploaderTaskContext) -> None:  # type: ignore  # 2024-01-30 # TODO: Argument 1 of "tear_down" is incompatible with supertype "BaseContextFabric"; supertype defines the argument type as "BaseContext"  [override]
@@ -109,6 +119,12 @@ class FileUploaderWorkerFactory(Generic[_TSettings], abc.ABC):
 
     def _get_metrics_sender(self) -> Optional[WorkerMetricsSenderProtocol]:
         return None
+
+    def _get_us_auth_context_factory(self) -> Callable[[], Coroutine[Any, Any, USAuthContextPrivateBase]]:
+        async def get_us_auth_context() -> USAuthContextPrivateBase:
+            return USAuthContextMaster(us_master_token=self._settings.US_MASTER_TOKEN)
+
+        return get_us_auth_context
 
     def create_worker(self, state: Optional[TaskState] = None) -> ArqWorker:
         if state is None:
@@ -131,6 +147,7 @@ class FileUploaderWorkerFactory(Generic[_TSettings], abc.ABC):
                 settings=self._settings,
                 ca_data=self._ca_data,
                 tenant_resolver=self._get_tenant_resolver(),
+                us_auth_context_factory=self._get_us_auth_context_factory(),
             ),
             worker_settings=WorkerSettings(max_concurrent_jobs=self._settings.MAX_CONCURRENT_JOBS),
             cron_tasks=cron_tasks,

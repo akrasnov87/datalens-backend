@@ -7,7 +7,6 @@ from typing import (
     final,
 )
 
-import attrs
 import pytest
 import pytest_mock
 
@@ -22,21 +21,29 @@ from dl_api_connector.form_config.models.base import (
     ConnectionFormMode,
 )
 from dl_api_lib.service_registry.service_registry import ApiServiceRegistry
-from dl_configs.connectors_settings import ConnectorSettingsBase
+from dl_core.connectors.settings.base import ConnectorSettings
 from dl_i18n.localizer_base import (
     LocalizerLoader,
     TranslationConfig,
 )
+import dl_settings
+
+
+class Settings(dl_settings.BaseRootSettings):
+    OVERWRITE_EXPECTED_FORMS: bool = False
 
 
 class ConnectionFormTestBase:
     CONN_FORM_FACTORY_CLS: ClassVar[type[ConnectionFormFactory]]
     TRANSLATION_CONFIGS: ClassVar[list[TranslationConfig]]
-    OVERWRITE_EXPECTED_FORMS: ClassVar[bool] = False
     EXPECTED_FORMS_DIR: ClassVar[str] = "expected_forms"
 
+    @pytest.fixture(name="settings")
+    def fixture_settings(self) -> Settings:
+        return Settings()
+
     @pytest.fixture
-    def connectors_settings(self) -> Optional[ConnectorSettingsBase]:
+    def connectors_settings(self) -> Optional[ConnectorSettings]:
         """Parametrize if a form has extra settings"""
 
         return None
@@ -61,7 +68,7 @@ class ConnectionFormTestBase:
     @pytest.fixture
     def form_config(
         self,
-        connectors_settings: Optional[ConnectorSettingsBase],
+        connectors_settings: Optional[ConnectorSettings],
         tenant: TenantDef,
         mode: ConnectionFormMode,
         service_registry: ApiServiceRegistry,
@@ -89,13 +96,15 @@ class ConnectionFormTestBase:
     def fixture_expected_form_config_file(
         self,
         config_dir: str,
-        connectors_settings: Optional[ConnectorSettingsBase],
+        connectors_settings: Optional[ConnectorSettings],
         tenant: TenantDef,
         mode: ConnectionFormMode,
     ) -> str:
         parts: list[str] = []
         if connectors_settings is not None:
-            for value in attrs.astuple(connectors_settings):
+            for key, value in connectors_settings.model_dump().items():
+                if key == "type":
+                    continue
                 parts.append(str(value))
         parts.append(str(tenant))
         parts.append(mode.value)
@@ -108,8 +117,9 @@ class ConnectionFormTestBase:
         self,
         expected_form_config_file: str,
         form_config: ConnectionForm,
+        settings: Settings,
     ) -> dict[str, typing.Any]:
-        if self.OVERWRITE_EXPECTED_FORMS:
+        if settings.OVERWRITE_EXPECTED_FORMS:
             with open(expected_form_config_file, mode="w") as f:
                 f.write(json.dumps(form_config.as_dict(), indent=4))
 
@@ -133,10 +143,13 @@ class ConnectionFormTestBase:
         self,
         expected_form_config: dict[str, typing.Any],
         form_config: ConnectionForm,
+        settings: Settings,
     ) -> None:
-        if self.OVERWRITE_EXPECTED_FORMS:
+        if settings.OVERWRITE_EXPECTED_FORMS:
             pytest.skip("Overwriting expected forms")
-        assert form_config.as_dict() == expected_form_config
+        assert (
+            form_config.as_dict() == expected_form_config
+        ), "Form config does not match expected form config, to overwrite expected forms, set the OVERWRITE_EXPECTED_FORMS environment variable to true"
 
 
 class DatasourceTemplateConnectionFormTestMixin:

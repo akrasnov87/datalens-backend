@@ -3,9 +3,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
-import ydb.sqlalchemy as ydb_sa
+import ydb_sqlalchemy.sqlalchemy as ydb_sa
 
 from dl_constants.enums import UserDataType
+import dl_sqlalchemy_ydb.dialect
+import dl_sqlalchemy_ydb.dialect as ydb_dialect
 from dl_type_transformer.type_transformer import (
     TypeTransformer,
     make_native_type,
@@ -20,42 +22,71 @@ class YQLTypeTransformer(TypeTransformer):
     _base_type_map: dict[UserDataType, tuple[SATypeSpec, ...]] = {
         # Note: first SA type is used as the default.
         UserDataType.integer: (
-            sa.BIGINT,
-            sa.SMALLINT,
             sa.INTEGER,
+            ydb_sa.types.Int8,
+            ydb_sa.types.Int16,
+            ydb_sa.types.Int32,
+            ydb_sa.types.Int64,
+            ydb_sa.types.UInt8,
+            ydb_sa.types.UInt16,
             ydb_sa.types.UInt32,
             ydb_sa.types.UInt64,
-            ydb_sa.types.UInt8,
+            dl_sqlalchemy_ydb.dialect.YqlInterval,
+            dl_sqlalchemy_ydb.dialect.YqlInterval64,
         ),
         UserDataType.float: (
             sa.FLOAT,
             sa.REAL,
             sa.NUMERIC,
-            # see also: DOUBLE_PRECISION,
+            sa.DECIMAL,
+            ydb_dialect.YqlDouble,
+            ydb_dialect.YqlFloat,
         ),
         UserDataType.boolean: (sa.BOOLEAN,),
         UserDataType.string: (
             sa.TEXT,
+            ydb_dialect.YqlString,
+            ydb_dialect.YqlUtf8,
+            sa.String,
             sa.CHAR,
             sa.VARCHAR,
-            # see also: ENUM,
+            sa.BINARY,
+            # TODO: JSON, YSON
         ),
-        # see also: UUID
-        UserDataType.date: (sa.DATE,),
+        UserDataType.date: (
+            sa.DATE,
+            dl_sqlalchemy_ydb.dialect.YqlDate,
+        ),
         UserDataType.datetime: (
             sa.DATETIME,
             sa.TIMESTAMP,
+            ydb_sa.types.YqlDateTime,
+            ydb_sa.types.YqlDateTime64,
+            ydb_sa.types.YqlTimestamp,
+            ydb_sa.types.YqlTimestamp64,
+            ydb_dialect.YqlDateTime,
+            ydb_dialect.YqlDateTime64,
+            ydb_dialect.YqlTimestamp,
+            ydb_dialect.YqlTimestamp64,
         ),
         UserDataType.genericdatetime: (
             sa.DATETIME,
             sa.TIMESTAMP,
+            ydb_sa.types.YqlDateTime,
+            ydb_sa.types.YqlDateTime64,
+            ydb_sa.types.YqlTimestamp,
+            ydb_sa.types.YqlTimestamp64,
+            ydb_dialect.YqlDateTime,
+            ydb_dialect.YqlDateTime64,
+            ydb_dialect.YqlTimestamp,
+            ydb_dialect.YqlTimestamp64,
         ),
         UserDataType.unsupported: (sa.sql.sqltypes.NullType,),  # Actually the default, so should not matter much.
+        UserDataType.uuid: (ydb_dialect.YqlUuid,),
     }
     _extra_type_map: dict[UserDataType, SATypeSpec] = {  # user-to-native only
         UserDataType.geopoint: sa.TEXT,
         UserDataType.geopolygon: sa.TEXT,
-        UserDataType.uuid: sa.TEXT,  # see also: UUID
         UserDataType.markup: sa.TEXT,
     }
 

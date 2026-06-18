@@ -163,7 +163,7 @@ class SaveSourceTask(BaseExecutorTask[task_interface.SaveSourceTask, FileUploade
 
             # TODO: init all this stuff in a proper place, not in task
             rci = self._ctx.get_rci()
-            usm = self._ctx.get_async_usm(rci=rci)
+            usm = await self._ctx.get_async_usm(rci=rci)
             usm.set_tenant_override(self._ctx.tenant_resolver.resolve_tenant_def_by_tenant_id(self.meta.tenant_id))
             service_registry = self._ctx.get_service_registry(rci=rci)
             release_update_source_lock_flag = False
@@ -173,7 +173,11 @@ class SaveSourceTask(BaseExecutorTask[task_interface.SaveSourceTask, FileUploade
                 async with RedisLock(redis, name=source_lock_key, timeout=120, blocking_timeout=120):
                     LOGGER.info(f"Lock {source_lock_key} acquired")
                     assert isinstance(usm, AsyncUSManager)
-                    conn = await usm.get_by_id(self.meta.connection_id, expected_type=BaseFileS3Connection)
+                    conn = await usm.get_by_id(
+                        self.meta.connection_id,
+                        expected_type=BaseFileS3Connection,
+                        context_name="connection",
+                    )
                     assert isinstance(conn, BaseFileS3Connection)
 
                     preview = await S3DataSourcePreview.get(manager=s3mm, obj_id=str(src_source.preview_id))
@@ -244,6 +248,7 @@ class SaveSourceTask(BaseExecutorTask[task_interface.SaveSourceTask, FileUploade
                     ce_query = ConnExecutorQuery(
                         query=_construct_insert_from_select_query(),
                         debug_compiled_query=_construct_insert_from_select_query(for_debug=True),
+                        inspector_query=_construct_insert_from_select_query(for_debug=True),  # TODO: BI-6448
                         trusted_query=True,
                         is_ddl_dml_query=True,
                     )
@@ -263,6 +268,7 @@ class SaveSourceTask(BaseExecutorTask[task_interface.SaveSourceTask, FileUploade
                         duration_sec=10,
                     ) as conn:
                         assert isinstance(conn, BaseFileS3Connection)
+                        original_conn = usm.clone_entry_instance(conn)
                         try:
                             conn.get_file_source_by_id(id=dst_source_id)
                             conn_file_source = conn.get_file_source_by_id(id=dst_source_id)
@@ -303,9 +309,16 @@ class SaveSourceTask(BaseExecutorTask[task_interface.SaveSourceTask, FileUploade
                         conn.data.component_errors.remove_errors(id=dst_source_id)
 
                         if self.meta.exec_mode == TaskExecutionMode.UPDATE_AND_SAVE:
-                            await usm.save(conn, update_revision=True)
+                            await usm.update(
+                                entry=conn,
+                                original_entry=original_conn,
+                                update_revision=True,
+                            )
                         else:
-                            await usm.save(conn)
+                            await usm.update(
+                                entry=conn,
+                                original_entry=original_conn,
+                            )
 
                     # sync source id with the connection to enable consistent work with dfile (e.g. polling)
                     src_source.id = dst_source_id

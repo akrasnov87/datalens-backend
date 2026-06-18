@@ -122,10 +122,15 @@ class USEntryCrawler:
         entry_id: str,
         logging_extra: dict[str, Any],
         usm: AsyncUSManager,
+        context_name: Optional[str] = None,
     ) -> AsyncGenerator[Optional[USEntry], None]:
         if self._dry_run:
             try:
-                entry = await usm.get_by_id(entry_id, expected_type=self.ENTRY_TYPE)
+                entry = await usm.get_by_id(
+                    entry_id,
+                    expected_type=self.ENTRY_TYPE,
+                    context_name=context_name,
+                )
             except Exception:
                 logging_extra.update(us_entry_crawler_exc_stage="entry_locked_load")
                 raise
@@ -148,11 +153,19 @@ class USEntryCrawler:
                 else:
                     yield entry
 
-    async def save_entry(self, entry: USEntry, usm: AsyncUSManager) -> None:
+    async def save_entry(
+        self,
+        entry: USEntry,
+        original_entry: USEntry,
+        usm: AsyncUSManager,
+    ) -> None:
         if self._dry_run:
             return
         else:
-            await usm.save(entry)
+            await usm.update(
+                entry=entry,
+                original_entry=original_entry,
+            )
 
     async def run(self) -> None:
         if self._run_fired:
@@ -291,6 +304,8 @@ class USEntryCrawler:
         usm = self.usm
         async with self.locked_entry_cm(entry_id, entry_handling_extra, usm=usm) as target_entry:
             assert target_entry is not None
+            original_target_entry = usm.clone_entry_instance(target_entry)
+
             # For future diff calculation reliability
             # (see `dl_maintenance.diff_utils.get_pre_save_top_level_dict`)
             assert target_entry._us_resp is not None
@@ -338,7 +353,11 @@ class USEntryCrawler:
 
             try:
                 if need_save:
-                    await self.save_entry(target_entry, usm=usm)
+                    await self.save_entry(
+                        target_entry,
+                        original_entry=original_target_entry,
+                        usm=usm,
+                    )
                     return EntryHandlingResult.SUCCESS
                 else:
                     return EntryHandlingResult.SKIPPED

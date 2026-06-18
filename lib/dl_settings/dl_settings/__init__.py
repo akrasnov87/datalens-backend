@@ -5,10 +5,12 @@ from .base import (
     TypedAnnotation,
     TypedBaseSettings,
     TypedDictAnnotation,
+    TypedDictWithTypeKeyAnnotation,
     TypedListAnnotation,
     WithFallbackEnvSource,
     WithFallbackGetAttr,
 )
+from .generators import prefix_alias_generator
 from .validators import (
     decode_multiline,
     decode_multiline_validator,
@@ -19,18 +21,20 @@ from .validators import (
 
 
 __all__ = [
-    "BaseSettings",
     "BaseRootSettings",
-    "TypedBaseSettings",
-    "TypedAnnotation",
-    "TypedListAnnotation",
-    "TypedDictAnnotation",
-    "WithFallbackGetAttr",
-    "WithFallbackEnvSource",
     "BaseRootSettingsWithFallback",
+    "BaseSettings",
+    "TypedAnnotation",
+    "TypedBaseSettings",
+    "TypedDictAnnotation",
+    "TypedDictWithTypeKeyAnnotation",
+    "TypedListAnnotation",
+    "WithFallbackEnvSource",
+    "WithFallbackGetAttr",
     "decode_multiline",
     "decode_multiline_validator",
-    "split_validator",
     "json_dict_validator",
     "parse_json_dict",
+    "prefix_alias_generator",
+    "split_validator",
 ]

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime
 import logging
 from typing import (
     TYPE_CHECKING,
@@ -13,10 +12,19 @@ from typing import (
 
 import attr
 import sqlalchemy as sa
+import ydb
+import ydb_sqlalchemy.sqlalchemy as ydb_sa
 
 from dl_core import exc
 from dl_core.connection_executors.adapters.adapters_base_sa_classic import BaseClassicAdapter
-from dl_core.connection_models import TableIdent
+from dl_core.connection_models import (
+    DBIdent,
+    TableIdent,
+)
+import dl_sqlalchemy_ydb.dialect
+import dl_sqlalchemy_ydb.dialect as ydb_dialect
+
+import dl_connector_ydb.core.base.row_converters
 
 
 if TYPE_CHECKING:
@@ -31,9 +39,23 @@ LOGGER = logging.getLogger(__name__)
 
 _DBA_YQL_BASE_DTO_TV = TypeVar("_DBA_YQL_BASE_DTO_TV", bound="BaseSQLConnTargetDTO")
 
+DEFAULT_YDB_REQUEST_TIMEOUT_SEC = 80
+
 
 @attr.s
 class YQLAdapterBase(BaseClassicAdapter[_DBA_YQL_BASE_DTO_TV]):
+    use_literal_binds: ClassVar[bool] = False
+    use_literal_binds_for_dashsql: ClassVar[bool] = True
+
+    execution_options: ClassVar[dict[str, Any]] = {
+        "ydb_retry_settings": ydb.RetrySettings(retry_cancelled=True),
+        "ydb_request_settings": (
+            ydb.BaseRequestSettings()
+            .with_timeout(DEFAULT_YDB_REQUEST_TIMEOUT_SEC)
+            .with_operation_timeout(DEFAULT_YDB_REQUEST_TIMEOUT_SEC)
+        ),
+    }
+
     def _get_db_version(self, db_ident: DBIdent) -> Optional[str]:
         # Not useful.
         return None
@@ -44,25 +66,31 @@ class YQLAdapterBase(BaseClassicAdapter[_DBA_YQL_BASE_DTO_TV]):
 
     _type_code_to_sa = {
         None: sa.TEXT,  # fallback
-        "Int8": sa.INTEGER,
-        "Int16": sa.INTEGER,
-        "Int32": sa.INTEGER,
-        "Int64": sa.INTEGER,
-        "Uint8": sa.INTEGER,
-        "Uint16": sa.INTEGER,
-        "Uint32": sa.INTEGER,
-        "Uint64": sa.INTEGER,
-        "Float": sa.FLOAT,
-        "Double": sa.FLOAT,
-        "String": sa.TEXT,
-        "Utf8": sa.TEXT,
+        "Int8": ydb_sa.types.Int8,
+        "Int16": ydb_sa.types.Int16,
+        "Int32": ydb_sa.types.Int32,
+        "Int64": ydb_sa.types.Int64,
+        "Uint8": ydb_sa.types.UInt8,
+        "Uint16": ydb_sa.types.UInt16,
+        "Uint32": ydb_sa.types.UInt32,
+        "Uint64": ydb_sa.types.UInt64,
+        "Float": dl_sqlalchemy_ydb.dialect.YqlFloat,
+        "Double": dl_sqlalchemy_ydb.dialect.YqlDouble,
+        "String": dl_sqlalchemy_ydb.dialect.YqlString,
+        "Utf8": dl_sqlalchemy_ydb.dialect.YqlUtf8,
+        "DyNumber": sa.FLOAT,
         "Json": sa.TEXT,
         "Yson": sa.TEXT,
-        "Uuid": sa.TEXT,
-        "Date": sa.DATE,
-        "Datetime": sa.DATETIME,
-        "Timestamp": sa.DATETIME,
-        "Interval": sa.INTEGER,
+        "Uuid": dl_sqlalchemy_ydb.dialect.YqlUuid,
+        "UUID": dl_sqlalchemy_ydb.dialect.YqlUuid,
+        "Date": ydb_sa.types.YqlDate,
+        "Date32": ydb_sa.types.YqlDate32,
+        "Timestamp": ydb_dialect.YqlTimestamp,
+        "Timestamp64": ydb_dialect.YqlTimestamp64,
+        "Datetime": ydb_dialect.YqlDateTime,
+        "Datetime64": ydb_dialect.YqlDateTime64,
+        "Interval": dl_sqlalchemy_ydb.dialect.YqlInterval,
+        "Interval64": dl_sqlalchemy_ydb.dialect.YqlInterval64,
         "Bool": sa.BOOLEAN,
     }
     _type_code_to_sa = {
@@ -89,30 +117,22 @@ class YQLAdapterBase(BaseClassicAdapter[_DBA_YQL_BASE_DTO_TV]):
 
     _subselect_cursor_info_where_false: ClassVar[bool] = False
 
-    @staticmethod
-    def _convert_bytes(value: bytes) -> str:
-        return value.decode("utf-8", errors="replace")
-
-    @staticmethod
-    def _convert_ts(value: int) -> datetime.datetime:
-        return datetime.datetime.utcfromtimestamp(value / 1e6).replace(tzinfo=datetime.timezone.utc)
-
     def _get_row_converters(self, cursor_info: ExecutionStepCursorInfo) -> tuple[Optional[Callable[[Any], Any]], ...]:
-        type_names_norm = [col[1].lower().strip("?") for col in cursor_info.raw_cursor_description]
+        type_names_norm = [col[1].lower().replace("?", "") for col in cursor_info.raw_cursor_description]
         return tuple(
-            self._convert_bytes
-            if type_name_norm == "string"
-            else self._convert_ts
-            if type_name_norm == "timestamp"
-            else None
+            dl_connector_ydb.core.base.row_converters.ROW_CONVERTERS.get(type_name_norm, None)
             for type_name_norm in type_names_norm
         )
 
     @classmethod
     def make_exc(  # TODO:  Move to ErrorTransformer
-        cls, wrapper_exc: Exception, orig_exc: Optional[Exception], debug_compiled_query: Optional[str]
+        cls,
+        wrapper_exc: Exception,
+        orig_exc: Exception | None,
+        debug_query: str | None,
+        inspector_query: str | None,
     ) -> tuple[type[exc.DatabaseQueryError], DBExcKWArgs]:
-        exc_cls, kw = super().make_exc(wrapper_exc, orig_exc, debug_compiled_query)
+        exc_cls, kw = super().make_exc(wrapper_exc, orig_exc, debug_query, inspector_query)
 
         try:
             message = wrapper_exc.message  # type: ignore  # 2024-01-24 # TODO: "Exception" has no attribute "message"  [attr-defined]
@@ -122,3 +142,18 @@ class YQLAdapterBase(BaseClassicAdapter[_DBA_YQL_BASE_DTO_TV]):
             kw["db_message"] = kw.get("db_message") or message
 
         return exc_cls, kw
+
+    def get_engine_kwargs(self) -> dict:
+        return {}
+
+    def make_subselect_query(self, table_def: TableIdent) -> str:
+        table = sa.table(table_def.table_name)
+        statement = sa.select(sa.text("*")).select_from(table).limit(1)
+        query = statement.compile(
+            dialect=self.get_dialect(),
+            compile_kwargs={
+                "literal_binds": True,
+            },
+        )
+
+        return f"({str(query) % ()})"

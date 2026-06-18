@@ -150,6 +150,20 @@ class BaseAttrsDataModel:
 
     @classmethod
     def get_secret_keys(cls) -> set[DataKey]:
+        """
+        Returns a set of keys representing secret fields. These fields are serialized with encrytion and deserialized
+        with decryption inside the `unversionedData` field.
+        """
+
+        return set()
+
+    @classmethod
+    def get_unversioned_keys(cls) -> set[DataKey]:
+        """
+        Returns a set of keys representing unversioned data fields. These fields are directly serialized and
+        deserialized inside the `unversionedData` field.
+        """
+
         return set()
 
 
@@ -160,7 +174,9 @@ class ConnectionDataModelBase(BaseAttrsDataModel):
 
 @attr.s
 class ConnCacheableDataModelMixin:
-    cache_ttl_sec: Optional[int] = attr.ib(kw_only=True, default=None)  # Override for default cache TTL
+    cache_ttl_sec: int | None = attr.ib(kw_only=True, default=None)  # Override for default cache TTL
+
+    cache_invalidation_throttling_interval_sec: int | None = attr.ib(kw_only=True, default=None)
 
 
 @attr.s
