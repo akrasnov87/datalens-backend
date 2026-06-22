@@ -3,11 +3,10 @@ from __future__ import annotations
 from typing import (
     TYPE_CHECKING,
     Any,
-    Optional,
 )
 import uuid
 
-from dl_constants.enums import (
+from dl_constants import (
     DataSourceCreatedVia,
     DataSourceRole,
     DataSourceType,
@@ -15,7 +14,6 @@ from dl_constants.enums import (
 from dl_core.us_connection import get_connection_class
 from dl_core.us_dataset import Dataset
 from dl_core_testing.dataset_wrappers import EditableDatasetTestWrapper
-
 
 if TYPE_CHECKING:
     from dl_core.connection_executors.sync_base import SyncConnExecutorBase
@@ -38,7 +36,7 @@ def add_dataset_source(
     editable_dataset_wrapper: EditableDatasetTestWrapper,
     created_from: DataSourceType,
     dsrc_params: dict,
-    title: Optional[str] = None,
+    title: str | None = None,
 ) -> None:
     def conn_executor_factory() -> SyncConnExecutorBase:
         return sync_usm.get_services_registry().get_conn_executor_factory().get_sync_conn_executor(conn=connection)
@@ -52,7 +50,11 @@ def add_dataset_source(
         parameters=dsrc_params,
         title=title,
     )
-    sync_usm.load_dependencies(dataset)
+
+    sync_usm.load_dataset_dependencies(
+        dataset,
+        respect_sources=True,
+    )
     dsrc = editable_dataset_wrapper.get_data_source_strict(source_id=source_id, role=DataSourceRole.origin)
     editable_dataset_wrapper.update_data_source(
         source_id=source_id,
@@ -65,17 +67,17 @@ def add_dataset_source(
 
 def make_dataset(
     sync_usm: SyncUSManager,
-    connection: Optional[ConnectionBase] = None,
-    db_table: Optional[DbTable] = None,
-    schema_name: Optional[str] = None,
-    table_name: Optional[str] = None,
-    created_from: Optional[DataSourceType] = None,
-    db_name: Optional[str] = None,
-    yt_path: Optional[str] = None,
-    yt_cluster: Optional[str] = None,
-    ds_info: Optional[dict] = None,
-    dsrc_params: Optional[dict] = None,
-    created_via: Optional[DataSourceCreatedVia] = None,
+    connection: ConnectionBase | None = None,
+    db_table: DbTable | None = None,
+    schema_name: str | None = None,
+    table_name: str | None = None,
+    created_from: DataSourceType | None = None,
+    db_name: str | None = None,
+    yt_path: str | None = None,
+    yt_cluster: str | None = None,
+    ds_info: dict | None = None,
+    dsrc_params: dict | None = None,
+    created_via: DataSourceCreatedVia | None = None,
 ) -> Dataset:
     ds_info = dict(ds_info or {})
     db = db_table.db if db_table else None
@@ -83,7 +85,7 @@ def make_dataset(
     schema_name = schema_name or (db_table.schema if db_table else None)
     db_name = db_name or (db.name if db else None)
 
-    name = "Dataset {}".format(str(uuid.uuid4()))
+    name = f"Dataset {uuid.uuid4()!s}"
     created_from = created_from or (get_created_from(db) if db is not None else None)
     dataset = Dataset.create_from_dict(
         Dataset.DataModel(name=name, **ds_info),
@@ -97,13 +99,11 @@ def make_dataset(
 
     if connection:
         dsrc_params = {
-            **dict(
-                db_name=db_name,
-                schema_name=schema_name,
-                table_name=table_name,
-                path=yt_path,
-                cluster=yt_cluster,
-            ),
+            "db_name": db_name,
+            "schema_name": schema_name,
+            "table_name": table_name,
+            "path": yt_path,
+            "cluster": yt_cluster,
             **(dsrc_params or {}),
         }
         dsrc_params = {key: value for key, value in dsrc_params.items() if value is not None}
@@ -127,7 +127,7 @@ def get_created_from(db: Db) -> DataSourceType:
     return source_type
 
 
-def data_source_settings_from_table(table: DbTable, db_name: Optional[str] = None) -> dict:
+def data_source_settings_from_table(table: DbTable, db_name: str | None = None) -> dict:
     source_type = get_created_from(db=table.db)
     data: dict[str, Any] = {  # this still requires connection_id to be defined
         "source_type": source_type,

@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-)
+from typing import TYPE_CHECKING
 
 import attr
 import flask
@@ -13,15 +10,14 @@ from dl_api_commons.flask.middlewares.commit_rci_middleware import ReqCtxInfoMid
 
 from ..services_registry.sr_factories import SRFactory
 
-
 if TYPE_CHECKING:
-    from dl_core.services_registry import ServicesRegistry  # noqa
+    from dl_core.services_registry import ServicesRegistry
 
 
 LOGGER = logging.getLogger(__name__)
 
 
-class NoServiceRegistryForRequest(Exception):
+class NoServiceRegistryForRequestError(Exception):
     pass
 
 
@@ -33,16 +29,16 @@ class ServicesRegistryMiddleware:
         app.before_request(self.bind_services_registry_to_request)
         app.teardown_request(self.cleanup_request_services_registry)
 
-    def cleanup_request_services_registry(self, _: Optional[BaseException] = None) -> None:
+    def cleanup_request_services_registry(self, _: BaseException | None = None) -> None:
         try:
             services_registry = self.get_request_services_registry()
-        except NoServiceRegistryForRequest:
+        except NoServiceRegistryForRequestError:
             LOGGER.debug("Service registry was not created. Close procedure does not required.")
         else:
             try:
                 LOGGER.info("Closing services registry...")
                 services_registry.close()
-            except Exception:  # noqa
+            except Exception:
                 LOGGER.exception("Error during services registry cleanup")
             LOGGER.info("Closed services registry.")
 
@@ -51,14 +47,14 @@ class ServicesRegistryMiddleware:
         flask.g.bi_services_registry = self.services_registry_factory.make_service_registry(rci)
 
     @classmethod
-    def get_request_services_registry(cls) -> "ServicesRegistry":
+    def get_request_services_registry(cls) -> ServicesRegistry:
         try:
             services_registry = flask.g.bi_services_registry
         except AttributeError as e:
-            raise NoServiceRegistryForRequest() from e
+            raise NoServiceRegistryForRequestError() from e
         else:
             if services_registry is None:
-                raise NoServiceRegistryForRequest()
+                raise NoServiceRegistryForRequestError()
             return services_registry
 
     @classmethod

@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import Callable
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
-    Optional,
 )
 
 import attr
 import marshmallow as ma
 
-from dl_constants.enums import DataSourceType
+from dl_constants import DataSourceType
 from dl_core.base_models import (
     ConnCacheableDataModelMixin,
     ConnRawSqlLevelDataModelMixin,
@@ -42,7 +41,6 @@ from dl_connector_chyt.core.dto import CHYTDTO
 from dl_connector_chyt.core.settings import CHYTConnectorSettings
 from dl_connector_clickhouse.core.clickhouse_base.us_connection import ConnectionClickhouseBase
 
-
 if TYPE_CHECKING:
     from dl_core.services_registry.top_level import ServicesRegistry
 
@@ -65,13 +63,13 @@ class BaseConnectionCHYT(
     @attr.s(kw_only=True)
     class DataModel(ConnCacheableDataModelMixin, ConnRawSqlLevelDataModelMixin, ConnectionBase.DataModel):
         alias: str = attr.ib()
-        max_execution_time: Optional[int] = attr.ib(default=None)
+        max_execution_time: int | None = attr.ib(default=None)
 
     async def validate_new_data(
         self,
         services_registry: ServicesRegistry,
-        changes: Optional[dict] = None,
-        original_version: Optional[ConnectionBase] = None,
+        changes: dict | None = None,
+        original_version: ConnectionBase | None = None,
     ) -> None:
         chyt_settings = self._connector_settings
         if self.data.alias in chyt_settings.FORBIDDEN_CLIQUES:
@@ -81,7 +79,7 @@ class BaseConnectionCHYT(
             raise ma.ValidationError(message=err_msg)
 
     @property
-    def cache_ttl_sec_override(self) -> Optional[int]:
+    def cache_ttl_sec_override(self) -> int | None:
         return self.data.cache_ttl_sec
 
     def get_conn_options(self) -> CHYTConnectOptions:
@@ -104,16 +102,17 @@ class BaseConnectionCHYT(
         return []
 
     def get_data_source_template_templates(self, localizer: Localizer) -> list[DataSourceTemplate]:
-        common: dict[str, Any] = dict(
-            group=[],
-            connection_id=self.uuid,
-            parameters={},
-        )
+        common: dict[str, Any] = {
+            "group": [],
+            "connection_id": self.uuid,
+            "parameters": {},
+        }
         return [
             make_table_datasource_template(
                 connection_id=self.uuid,  # type: ignore
                 source_type=self.chyt_table_source_type,
                 localizer=localizer,
+                disabled_text=self.subselect_disabled_text,
                 title="YTsaurus table via CHYT",
                 template_enabled=self.is_datasource_template_allowed,
                 table_form_title=localizer.translate(Translatable("source_templates-label-ytsaurus_table")),
@@ -174,6 +173,7 @@ class BaseConnectionCHYT(
                 source_type=self.chyt_subselect_source_type,
                 localizer=localizer,
                 disabled=not self.is_subselect_allowed,
+                disabled_text=self.subselect_disabled_text,
                 title="SQL query via CHYT",
                 field_doc_key="YTsaurus/CHYT_SUBSELECT/subsql",
                 template_enabled=self.is_datasource_template_allowed,

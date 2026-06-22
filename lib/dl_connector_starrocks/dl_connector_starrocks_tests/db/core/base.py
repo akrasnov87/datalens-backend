@@ -29,17 +29,17 @@ class BaseStarRocksTestClass(BaseConnectionTestClass[ConnectionStarRocks]):
     def db_url(self) -> str:
         return test_config.DB_CORE_URL
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def connection_creation_params(self) -> dict:
-        return dict(
-            host=test_config.CoreConnectionSettings.HOST,
-            port=test_config.CoreConnectionSettings.PORT,
-            username=test_config.CoreConnectionSettings.USERNAME,
-            password=test_config.CoreConnectionSettings.PASSWORD,
-            listing_sources=test_config.CoreConnectionSettings.LISTING_SOURCES,
-        )
+        return {
+            "host": test_config.CoreConnectionSettings.HOST,
+            "port": test_config.CoreConnectionSettings.PORT,
+            "username": test_config.CoreConnectionSettings.USERNAME,
+            "password": test_config.CoreConnectionSettings.PASSWORD,
+            "listing_sources": test_config.CoreConnectionSettings.LISTING_SOURCES,
+        }
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def existing_table_ident(self, sample_table: DbTable) -> TableIdent:
         return TableIdent(
             db_name=test_config.CoreConnectionSettings.CATALOG,
@@ -52,33 +52,32 @@ class BaseSslStarRocksTestClass(BaseStarRocksTestClass):
     @pytest.fixture(scope="class")
     def ssl_ca(self) -> str:
         uri = f"{test_config.CoreSslConnectionSettings.CERT_PROVIDER_URL}/ca.pem"
-        response = requests.get(uri)
+        response = requests.get(uri, timeout=30)
         assert response.status_code == 200, response.text
         return response.text
 
     @pytest.fixture(scope="class")
     def engine_params(self, ssl_ca: str) -> dict:
-        engine_params = {
+        return {
             "connect_args": frozendict(
                 {
                     "ssl": ssl.create_default_context(cadata=ssl_ca),
                 }
             ),
         }
-        return engine_params
 
     @pytest.fixture(scope="class")
     def db_url(self) -> str:
         return test_config.DB_CORE_SSL_URL
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def connection_creation_params(self, ssl_ca: str) -> dict:
-        return dict(
-            host=test_config.CoreSslConnectionSettings.HOST,
-            port=test_config.CoreSslConnectionSettings.PORT,
-            username=test_config.CoreSslConnectionSettings.USERNAME,
-            password=test_config.CoreSslConnectionSettings.PASSWORD,
-            listing_sources=test_config.CoreSslConnectionSettings.LISTING_SOURCES,
-            ssl_enable=True,
-            ssl_ca=ssl_ca,
-        )
+        return {
+            "host": test_config.CoreSslConnectionSettings.HOST,
+            "port": test_config.CoreSslConnectionSettings.PORT,
+            "username": test_config.CoreSslConnectionSettings.USERNAME,
+            "password": test_config.CoreSslConnectionSettings.PASSWORD,
+            "listing_sources": test_config.CoreSslConnectionSettings.LISTING_SOURCES,
+            "ssl_enable": True,
+            "ssl_ca": ssl_ca,
+        }

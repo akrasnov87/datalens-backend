@@ -1,11 +1,10 @@
+from collections.abc import Iterator
 import contextlib
 import json
 import logging
 from typing import (
     Any,
-    Iterator,
     NoReturn,
-    Optional,
 )
 
 import attr
@@ -18,7 +17,6 @@ from dl_api_commons.client.base import (
 )
 import dl_api_commons.exc
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -28,11 +26,10 @@ class CommonInternalAPIClient(DLCommonAPIClient):
     _read_only: bool = attr.ib(default=False)
 
     async def make_request(self, rq: Req) -> Resp:
-        if self._read_only:
-            if rq.method.lower() != "get":
-                raise AssertionError(
-                    f"Can not execute {rq.method!r} {rq.url!r} due to {type(self).__name__!r} is read-only"
-                )
+        if self._read_only and rq.method.lower() != "get":
+            raise AssertionError(
+                f"Can not execute {rq.method!r} {rq.url!r} due to {type(self).__name__!r} is read-only"
+            )
 
         return await super().make_request(rq)
 
@@ -41,7 +38,7 @@ class CommonInternalAPIClient(DLCommonAPIClient):
         try:
             yield None
         except marshmallow.exceptions.ValidationError as ma_exc:
-            LOGGER.info(f"Deserialization fail in internal API client: {type(self).__name__}", exc_info=True)
+            LOGGER.info("Deserialization fail in internal API client: %s", type(self).__name__, exc_info=True)
             effective_messages: dict[str, Any] = ma_exc.messages  # type: ignore  # 2024-01-30 # TODO: Incompatible types in assignment (expression has type "list[str] | list[Any] | dict[Any, Any]", variable has type "dict[str, Any]")  [assignment]
 
             raise dl_api_commons.exc.MalformedAPIResponseErr(
@@ -53,12 +50,12 @@ class CommonInternalAPIClient(DLCommonAPIClient):
             ) from ma_exc
 
     def create_exc_data(
-        self, resp: Resp, operation: str, validation_errors: Optional[dict[str, Any]] = None
+        self, resp: Resp, operation: str, validation_errors: dict[str, Any] | None = None
     ) -> dl_api_commons.exc.APIResponseData:
         body: Any
         try:
             body = resp.json
-        except Exception:  # noqa
+        except Exception:
             body = resp.content
 
         return dl_api_commons.exc.APIResponseData(
@@ -73,15 +70,16 @@ class CommonInternalAPIClient(DLCommonAPIClient):
         resp_data: str
         try:
             resp_data = json.dumps(common_data.response_body)
-        except Exception:  # noqa
+        except Exception:
             resp_data = repr(common_data.response_body)
 
         LOGGER.info(
-            f"Handling unexpected response in internal API client: {type(self).__name__}",
-            extra=dict(
-                status_code=resp.status,
-                resp_data=resp_data,
-            ),
+            "Handling unexpected response in internal API client: %s",
+            type(self).__name__,
+            extra={
+                "status_code": resp.status,
+                "resp_data": resp_data,
+            },
         )
 
         if resp.status in (401, 403):

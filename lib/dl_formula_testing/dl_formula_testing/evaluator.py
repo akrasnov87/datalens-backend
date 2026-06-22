@@ -1,15 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 import copy
 import datetime
 import re
 import time
-from typing import (
-    Any,
-    Collection,
-    Optional,
-    Union,
-)
+from typing import Any
 
 import attr
 import sqlalchemy as sa
@@ -41,7 +37,6 @@ from dl_formula.translation.translator import (
 )
 from dl_formula_testing.database import Db
 from dl_formula_testing.forced_literal import forced_literal_use  # noqa
-
 
 FIELD_TYPES = {
     # for the above table
@@ -84,12 +79,12 @@ class DbEvaluator:
     def translate_formula(
         self,
         formula: str | Formula,
-        context_flags: Optional[int] = None,
-        other_fields: Optional[dict] = None,
-        collect_errors: Optional[bool] = None,
-        field_types: Optional[dict[str, DataType]] = None,
-        group_by: Optional[list[str | Formula]] = None,
-        order_by: Optional[list[str | Formula]] = None,
+        context_flags: int | None = None,
+        other_fields: dict | None = None,
+        collect_errors: bool | None = None,
+        field_types: dict[str, DataType] | None = None,
+        group_by: list[str | Formula] | None = None,
+        order_by: list[str | Formula] | None = None,
         required_scopes: int = Scope.EXPLICIT_USAGE,
     ) -> TranslationCtx:
         other_fields = other_fields or {}
@@ -104,7 +99,7 @@ class DbEvaluator:
                 if field_node.name in other_fields:
                     formula = formula.replace_at_index(
                         index=field_node_idx,
-                        expr=CompiledExpression.make(self.translate_formula((other_fields[field_node.name]))),
+                        expr=CompiledExpression.make(self.translate_formula(other_fields[field_node.name])),
                     )
 
             # mutate
@@ -131,27 +126,27 @@ class DbEvaluator:
         return formula
 
     @staticmethod
-    def print_as_example(formula: Union[str, Formula], result: Any) -> None:
+    def print_as_example(formula: str | Formula, result: Any) -> None:
         if isinstance(result, datetime.date):
-            result_str = "#{}#".format(str(result))
+            result_str = f"#{result!s}#"
         elif isinstance(result, bool):
             result_str = str(result).upper()
         else:
             result_str = repr(result)
-        print("{},".format(repr("{} = {}".format(formula, result_str))))
+        print("{},".format(repr(f"{formula} = {result_str}")))
 
     def eval(  # type: ignore  # 2024-01-29 # TODO: Function is missing a return type annotation  [no-untyped-def]
         self,
-        formula: Union[str, Formula],
-        from_: Optional[ClauseElement] = None,
+        formula: str | Formula,
+        from_: ClauseElement | None = None,
         where: str | Formula | None = None,
         many: bool = False,
-        other_fields: Optional[dict] = None,
-        order_by: Optional[list[str | Formula]] = None,
-        group_by: Optional[list[str | Formula]] = None,
+        other_fields: dict | None = None,
+        order_by: list[str | Formula] | None = None,
+        group_by: list[str | Formula] | None = None,
         first: bool = False,
         required_scopes: int = Scope.EXPLICIT_USAGE,
-        field_types: Optional[dict[str, DataType]] = None,
+        field_types: dict[str, DataType] | None = None,
     ):
         select_ctx = self.translate_formula(
             formula,
@@ -210,9 +205,7 @@ class DbEvaluator:
                 try:
                     if many:
                         return [convert(row[0]) for row in self.db.execute(query).fetchall()]
-                    else:
-                        result = convert(self.db.execute(query).scalar())
-                        return result
+                    return convert(self.db.execute(query).scalar())
                 except Exception as exc:
                     exc_str = str(exc)
                     if attempt < self.attempts - 1 and (
@@ -231,13 +224,13 @@ class DbEvaluator:
 
     def compile_formula(
         self,
-        formula: Union[str, Formula],
-        from_: Optional[ClauseElement] = None,
+        formula: str | Formula,
+        from_: ClauseElement | None = None,
         where: str | Formula | None = None,
         many: bool = False,
-        other_fields: Optional[dict] = None,
-        order_by: Optional[list[str | Formula]] = None,
-        group_by: Optional[list[str | Formula]] = None,
+        other_fields: dict | None = None,
+        order_by: list[str | Formula] | None = None,
+        group_by: list[str | Formula] | None = None,
         first: bool = False,
         required_scopes: int = Scope.EXPLICIT_USAGE,
     ) -> str:

@@ -1,6 +1,6 @@
+from collections.abc import Callable
 import re
 import time
-from typing import Callable
 
 import flaky
 import pytest
@@ -66,7 +66,7 @@ def _bench_sequential(patterns: tuple[str, ...], text: str, iterations: int) -> 
 
 @flaky.flaky(max_runs=3)
 @pytest.mark.parametrize(
-    "scenario_name, text_factory",
+    ("scenario_name", "text_factory"),
     [
         ("clean_text", _build_clean_text),
         ("sparse_matches", _build_sparse_text),

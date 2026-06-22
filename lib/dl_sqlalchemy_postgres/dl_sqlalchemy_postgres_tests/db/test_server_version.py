@@ -1,8 +1,8 @@
-import mock
+from unittest import mock
+
 import sqlalchemy
 import sqlalchemy.dialects.postgresql.psycopg2 as sqlalchemy_dialect_psycopg2
 import sqlalchemy.orm as sqlalchemy_orm
-
 
 SERVER_VERSION_INFO = (123, 45, 67, 89)
 SERVER_VERSION = ".".join(map(str, SERVER_VERSION_INFO))
@@ -30,7 +30,7 @@ def test_server_version_error(patched_server_version: mock.Mock, sa_session: sql
 
 @mock.patch.object(sqlalchemy_dialect_psycopg2.PGDialect_psycopg2, "_get_server_version_info")
 def test_server_version_overwritten(patched_server_version: mock.Mock, engine_url: str):
-    sa_engine = sqlalchemy.create_engine(engine_url, connect_args=dict(server_version=SERVER_VERSION))
+    sa_engine = sqlalchemy.create_engine(engine_url, connect_args={"server_version": SERVER_VERSION})
     sa_session_maker = sqlalchemy_orm.sessionmaker(bind=sa_engine)
     sa_session = sa_session_maker()
 

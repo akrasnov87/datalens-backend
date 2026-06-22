@@ -1,20 +1,21 @@
 from __future__ import annotations
 
 import abc
-from typing import (
-    AbstractSet,
-    Any,
+from collections.abc import (
     Iterable,
-    NamedTuple,
-    Optional,
     Sequence,
+    Set,
+)
+from typing import (
+    Any,
+    NamedTuple,
+    Self,
     TypeVar,
 )
 
 import attr
-from typing_extensions import Self
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_core.components.ids import (
     AvatarId,
     FieldId,
@@ -42,8 +43,8 @@ class DetailedType(NamedTuple):
     field_id: str
     data_type: UserDataType
     # TODO: native_type: Optional[GenericNativeType] = None
-    formula_data_type: Optional[DataType] = None
-    formula_data_type_params: Optional[DataTypeParams] = None
+    formula_data_type: DataType | None = None
+    formula_data_type_params: DataTypeParams | None = None
 
     @property
     def extract(self) -> QueryElementExtract:
@@ -62,16 +63,18 @@ _META_TV = TypeVar("_META_TV", bound="TranslatedQueryMetaInfo")
 
 @attr.s
 class TranslatedQueryMetaInfo(QueryMetaInfo):
-    detailed_types: Optional[list[Optional[DetailedType]]] = attr.ib(kw_only=True, factory=list)
+    detailed_types: list[DetailedType | None] | None = attr.ib(kw_only=True, factory=list)
 
     @property
     def extract(self) -> QueryElementExtract:
         return QueryElementExtract(
-            values=(
+            values=(  # type: ignore[arg-type]  # 26.05.2026 mypy bump 1.20.2
                 *super().extract,
-                (dt.extract if dt is not None else None for dt in self.detailed_types)
-                if self.detailed_types is not None
-                else None,
+                (
+                    (dt.extract if dt is not None else None for dt in self.detailed_types)
+                    if self.detailed_types is not None
+                    else None
+                ),
             )
         )
 
@@ -79,7 +82,7 @@ class TranslatedQueryMetaInfo(QueryMetaInfo):
     def from_comp_meta(
         cls: type[_META_TV],
         comp_meta: QueryMetaInfo,
-        detailed_types: Optional[list[Optional[DetailedType]]] = None,
+        detailed_types: list[DetailedType | None] | None = None,
     ) -> _META_TV:
         detailed_types = detailed_types or []
         assert detailed_types is not None
@@ -99,14 +102,14 @@ class ExpressionCtxExt(ExpressionCtx):
     which is not needed in other clauses.
     """
 
-    formula_data_type: Optional[DataType] = None
-    formula_data_type_params: Optional[DataTypeParams] = None
-    original_field_id: Optional[FieldId] = None
+    formula_data_type: DataType | None = None
+    formula_data_type_params: DataTypeParams | None = None
+    original_field_id: FieldId | None = None
 
 
 @attr.s(frozen=True)
 class TranslatedJoinedFromObject:
-    root_from_id: Optional[str] = attr.ib(kw_only=True, default=None)
+    root_from_id: str | None = attr.ib(kw_only=True, default=None)
     froms: Sequence[FromObject] = attr.ib(kw_only=True, default=())  # FIXME: switch to translated froms
 
     def iter_ids(self) -> Iterable[str]:
@@ -126,8 +129,8 @@ class TranslatedFlatQuery:
     order_by: list[OrderByExpressionCtx] = attr.ib(kw_only=True)
     join_on: list[JoinOnExpressionCtx] = attr.ib(kw_only=True)
     joined_from: TranslatedJoinedFromObject = attr.ib(kw_only=True)
-    limit: Optional[int] = attr.ib(kw_only=True)
-    offset: Optional[int] = attr.ib(kw_only=True)
+    limit: int | None = attr.ib(kw_only=True)
+    offset: int | None = attr.ib(kw_only=True)
     column_list: list[SchemaColumn] = attr.ib(kw_only=True)
     meta: TranslatedQueryMetaInfo = attr.ib(kw_only=True, factory=TranslatedQueryMetaInfo)
 
@@ -175,7 +178,7 @@ class TranslatedMultiQueryBase(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_base_root_from_ids(self) -> AbstractSet[str]:
+    def get_base_root_from_ids(self) -> Set[str]:
         raise NotImplementedError
 
     def clone(self, **updates: Any) -> Self:
@@ -224,7 +227,7 @@ class TranslatedMultiQuery(TranslatedMultiQueryBase):
     def is_empty(self) -> bool:
         return not self.queries
 
-    def get_base_root_from_ids(self) -> AbstractSet[str]:
+    def get_base_root_from_ids(self) -> Set[str]:
         result: set[str] = set()
         for query in self.queries:
             root_from_id = query.joined_from.root_from_id

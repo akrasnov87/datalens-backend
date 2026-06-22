@@ -1,10 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 import itertools
-from typing import (
-    Optional,
-    Sequence,
-)
+from typing import Any
 
 import sqlalchemy as sa
 
@@ -15,7 +13,7 @@ class Formatter:
     inline_separator: str = " "
     preferred_width: int = 120
 
-    def join(self, pieces: Sequence[str], cleanup: bool = True, separator: Optional[str] = None) -> str:
+    def join(self, pieces: Sequence[str], cleanup: bool = True, separator: str | None = None) -> str:
         if separator is None:
             separator = self.separator
         if cleanup:
@@ -126,14 +124,12 @@ class CompilerPrettyMixin(sa.sql.compiler.SQLCompiler):  # type: ignore  # TODO:
     _pretty: Formatter = Formatter()
 
     @staticmethod
-    def _is_local_overrides_class(supcls):
+    def _is_local_overrides_class(supcls) -> bool:
         if supcls.__module__.startswith("dl_") or supcls.__module__.startswith("bi_"):
             return True
         if supcls.__module__.startswith("tests") or supcls.__module__.endswith("_tests"):
             return True
-        if supcls.__module__.startswith("__tests__"):
-            return True
-        return False
+        return bool(supcls.__module__.startswith("__tests__"))
 
     @classmethod
     def __init_subclass__(cls) -> None:
@@ -153,11 +149,11 @@ class CompilerPrettyMixin(sa.sql.compiler.SQLCompiler):  # type: ignore  # TODO:
         if uncovered_attrs:
             raise Exception(
                 "Dialect-specific compiler overrides methods that aren't re-overridden in `bi_...`",
-                dict(uncovered_attrs=uncovered_attrs, bi_clss=bi_clss, base_clss=base_clss),
+                {"uncovered_attrs": uncovered_attrs, "bi_clss": bi_clss, "base_clss": base_clss},
             )
         super().__init_subclass__()
 
-    def visit_join(self, join, asfrom=False, from_linter=None, **kwargs):
+    def visit_join(self, join, asfrom=False, from_linter=None, **kwargs: Any):
         if from_linter:
             from_linter.edges.update(itertools.product(join.left._from_objects, join.right._from_objects))
 
@@ -188,7 +184,7 @@ class CompilerPrettyMixin(sa.sql.compiler.SQLCompiler):  # type: ignore  # TODO:
         select_wraps_for=None,
         lateral=False,
         from_linter=None,
-        **kwargs,
+        **kwargs: Any,
     ):
         assert select_wraps_for is None, (
             "SQLAlchemy 1.4 requires use of "
@@ -352,11 +348,10 @@ class CompilerPrettyMixin(sa.sql.compiler.SQLCompiler):  # type: ignore  # TODO:
             if per_dialect:
                 text_pieces.append(self.get_statement_hint_text(per_dialect))
 
-        if self.ctes:
-            # In compound query, CTEs are shared at the compound level
-            if not is_embedded_select:
-                nesting_level = len(self.stack) if not toplevel else None
-                text_pieces = [self._render_cte_clause(nesting_level=nesting_level)] + text_pieces
+        # In compound query, CTEs are shared at the compound level
+        if self.ctes and not is_embedded_select:
+            nesting_level = len(self.stack) if not toplevel else None
+            text_pieces = [self._render_cte_clause(nesting_level=nesting_level), *text_pieces]
 
         if select_stmt._suffixes:
             text_pieces.append(self._generate_prefixes(select_stmt, select_stmt._suffixes, **kwargs))
@@ -432,24 +427,23 @@ class CompilerPrettyMixin(sa.sql.compiler.SQLCompiler):  # type: ignore  # TODO:
 
         return self._pretty.join(text_pieces)
 
-    def visit_alias(self, *args, **kwargs):
+    def visit_alias(self, *args: Any, **kwargs: Any):
         sup = super().visit_alias(*args, **kwargs)
-        sup = self._pretty.reparenthesize(sup)
-        return sup
+        return self._pretty.reparenthesize(sup)
 
-    def group_by_clause(self, select, **kw):
+    def group_by_clause(self, select, **kw: Any):
         sup = super().group_by_clause(select, **kw)
         return self._pretty.postprocess_block("GROUP BY", sup)
 
-    def order_by_clause(self, select, **kw):
+    def order_by_clause(self, select, **kw: Any):
         sup = super().order_by_clause(select, **kw)
         return self._pretty.postprocess_block("ORDER BY", sup)
 
-    def limit_clause(self, select, **kw):
+    def limit_clause(self, select, **kw: Any):
         sup = super().limit_clause(select, **kw)
         return self._pretty.postprocess_block("LIMIT", sup)
 
-    def visit_clauselist(self, clauselist, *args, **kwargs):
+    def visit_clauselist(self, clauselist, *args: Any, **kwargs: Any):
         if clauselist.operator is sa.sql.operators.and_:
             assert sa.sql.compiler.OPERATORS[clauselist.operator].strip() == "AND"
             pieces = [el._compiler_dispatch(self, *args, **kwargs) for el in clauselist.clauses]
@@ -457,10 +451,9 @@ class CompilerPrettyMixin(sa.sql.compiler.SQLCompiler):  # type: ignore  # TODO:
             pieces = pieces[:1] + [separator + piece for piece in pieces[1:]]
             return self._pretty.join_ext(pieces, extra_separator="")
 
-        sup = super().visit_clauselist(clauselist, *args, **kwargs)
-        return sup
+        return super().visit_clauselist(clauselist, *args, **kwargs)
 
-    def _generate_delimited_list(self, elements, separator, **kw):
+    def _generate_delimited_list(self, elements, separator, **kw: Any):
         if separator in (", ", " "):
             children = [el._compiler_dispatch(self, **kw) for el in elements]
             return self._pretty.join_ext(children, extra_separator=separator.strip())

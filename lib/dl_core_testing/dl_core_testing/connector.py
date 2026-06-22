@@ -1,6 +1,4 @@
-from typing import Optional
-
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DataSourceType,
 )
@@ -15,7 +13,6 @@ from dl_core.us_connection_base import ConnectionBase
 from dl_core.us_manager.storage_schemas.connection import BaseConnectionDataStorageSchema
 from dl_type_transformer.type_transformer import TypeTransformer
 
-
 CONNECTION_TYPE_TESTING = ConnectionType.declare("testing")
 SOURCE_TYPE_TESTING = DataSourceType.declare("TESTING")
 
@@ -25,7 +22,7 @@ class TestingConnection(ConnectionBase):
         raise NotImplementedError
 
     @property
-    def cache_ttl_sec_override(self) -> Optional[int]:
+    def cache_ttl_sec_override(self) -> int | None:
         return 0
 
 

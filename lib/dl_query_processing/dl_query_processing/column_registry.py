@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from itertools import chain
-import logging
-from typing import (
+from collections.abc import (
     Callable,
     Collection,
-    NamedTuple,
-    Optional,
 )
+from itertools import chain
+import logging
+from typing import NamedTuple
 
 from dl_core.components.ids import (
     AvatarId,
@@ -20,7 +19,6 @@ import dl_formula.core.exc as formula_exc
 import dl_formula.core.nodes as formula_nodes
 from dl_formula.inspect.expression import used_fields
 from dl_query_processing.compilation.type_mapping import BI_TO_FORMULA_TYPES
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -37,9 +35,9 @@ class AvatarColumn(NamedTuple):
 class ColumnRegistry:
     def __init__(
         self,
-        db_columns: Optional[Collection[SchemaColumn]] = None,
-        avatar_source_map: Optional[dict[AvatarId, SourceId]] = None,
-    ):
+        db_columns: Collection[SchemaColumn] | None = None,
+        avatar_source_map: dict[AvatarId, SourceId] | None = None,
+    ) -> None:
         self._db_columns = list(db_columns) if db_columns is not None else []
         self._avatar_source_map = avatar_source_map.copy() if avatar_source_map is not None else {}
 

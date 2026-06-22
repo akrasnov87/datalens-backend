@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
+from collections.abc import (
     Callable,
     Sequence,
-    Union,
 )
+from typing import TYPE_CHECKING
 
 from dl_formula.core.datatype import (
     DataType,
@@ -17,7 +16,6 @@ from dl_formula.translation.type_strategy import (
     TypeStrategy,
 )
 
-
 if TYPE_CHECKING:
     from dl_formula.translation.context import TranslationCtx
 
@@ -25,7 +23,7 @@ if TYPE_CHECKING:
 class Fixed(TypeStrategy):
     __slots__ = ("_type",)
 
-    def __init__(self, type_: DataType):
+    def __init__(self, type_: DataType) -> None:
         self._type = type_
 
     @property
@@ -39,7 +37,7 @@ class Fixed(TypeStrategy):
 class FromArgs(TypeStrategy):
     __slots__ = ("_indices",)
 
-    def __init__(self, *indices: Union[int, slice]):
+    def __init__(self, *indices: int | slice) -> None:
         self._indices = indices or [slice(0, None)]
 
     def get_from_args(self, arg_types: list[DataType]) -> DataType:
@@ -48,7 +46,7 @@ class FromArgs(TypeStrategy):
     @staticmethod
     def _get_from_args_and_indices(
         arg_types: list[DataType],
-        indices: Sequence[Union[int, slice]],
+        indices: Sequence[int | slice],
     ) -> DataType:
         use_arg_types = []
         for ind in indices:
@@ -65,7 +63,7 @@ class FromArgs(TypeStrategy):
 class DynamicIndexStrategy(FromArgs):
     __slots__ = ()
 
-    def get_indices(self, arg_cnt: int) -> list[Union[int, slice]]:
+    def get_indices(self, arg_cnt: int) -> list[int | slice]:
         return list(range(arg_cnt))
 
     def get_from_args(self, arg_types: list[DataType]) -> DataType:
@@ -73,10 +71,10 @@ class DynamicIndexStrategy(FromArgs):
 
 
 class Combined(TypeStrategy):
-    __slots__ = ("_substrats", "_replace_types")
+    __slots__ = ("_replace_types", "_substrats")
 
-    def __init__(self, *substrats: TypeStrategy, replace_types=None):  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
-        self._substrats = []
+    def __init__(self, *substrats: TypeStrategy, replace_types: dict[DataType, DataType] | None = None) -> None:
+        self._substrats: list[TypeStrategy] = []
         self._replace_types = replace_types or {}
         for substrat in substrats or []:
             if isinstance(substrat, DataType):
@@ -99,7 +97,7 @@ class Combined(TypeStrategy):
 class CaseTypeStrategy(DynamicIndexStrategy):
     __slots__ = ()
 
-    def get_indices(self, arg_cnt: int) -> list[Union[int, slice]]:
+    def get_indices(self, arg_cnt: int) -> list[int | slice]:
         if arg_cnt < 2 or arg_cnt % 2 != 0:
             raise exc.TranslationError(f"Invalid number of arguments for CASE: {arg_cnt}")
         num_of_whens = (arg_cnt - 1) // 2  # 1 for main CASE value arg, 2 for each WHEN part
@@ -109,7 +107,7 @@ class CaseTypeStrategy(DynamicIndexStrategy):
 class IfTypeStrategy(DynamicIndexStrategy):
     __slots__ = ()
 
-    def get_indices(self, arg_cnt: int) -> list[Union[int, slice]]:
+    def get_indices(self, arg_cnt: int) -> list[int | slice]:
         if arg_cnt < 3 or arg_cnt % 2 != 1:
             raise exc.TranslationError(f"Invalid number of arguments for IF: {arg_cnt}")
         num_of_if_parts = arg_cnt // 2
@@ -122,7 +120,7 @@ class ParamsEmpty(TypeParamsStrategy):
 
 
 class ParamsCustom(TypeParamsStrategy):
-    def __init__(self, func: Callable[[list[TranslationCtx]], DataTypeParams]):
+    def __init__(self, func: Callable[[list[TranslationCtx]], DataTypeParams]) -> None:
         self._func = func
 
     def get_from_arg_values(self, args: list[TranslationCtx]) -> DataTypeParams:
@@ -130,7 +128,7 @@ class ParamsCustom(TypeParamsStrategy):
 
 
 class ParamsFromArgs(TypeParamsStrategy):
-    def __init__(self, index: int):
+    def __init__(self, index: int) -> None:
         self._index = index
 
     def get_from_arg_values(self, args: list[TranslationCtx]) -> DataTypeParams:

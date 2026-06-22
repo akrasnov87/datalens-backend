@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import (
     Enum,
     unique,
@@ -7,8 +8,6 @@ from enum import (
 from typing import (
     TYPE_CHECKING,
     ClassVar,
-    Optional,
-    Sequence,
 )
 
 import attr
@@ -18,10 +17,9 @@ from sqlalchemy.sql.expression import (
     nullslast,
 )
 
-from dl_constants.enums import OrderDirection
+from dl_constants import OrderDirection
 from dl_core import exc
 from dl_core.query.expression import ExpressionCtx
-
 
 if TYPE_CHECKING:
     from sqlalchemy.engine.default import DefaultDialect
@@ -154,7 +152,7 @@ class QueryCompiler:
 
         return expr
 
-    def compile_select(self, bi_query: BIQuery, sql_source: Optional[SqlSourceType]) -> Select:
+    def compile_select(self, bi_query: BIQuery, sql_source: SqlSourceType | None) -> Select:
         """Compile a ``BIQuery`` object into an SQLAlchemy ``Select``"""
 
         def _unwrap_expressions(ex_list: Sequence) -> list[ClauseElement]:

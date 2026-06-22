@@ -1,9 +1,10 @@
 import asyncio
+from collections.abc import Generator
 import os
-from typing import Generator
 
 from frozendict import frozendict
 import pytest
+import requests
 
 import dl_configs.utils as bi_configs_utils
 from dl_core_testing.testcases.connection import BaseConnectionTestClass
@@ -36,7 +37,7 @@ class BaseClickHouseTestClass(BaseConnectionTestClass[ConnectionClickhouse]):
     def engine_config(self, db_url: str, engine_params: dict) -> ClickhouseDbEngineConfig:
         return ClickhouseDbEngineConfig(url=db_url, engine_params=engine_params)
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def connection_creation_params(self) -> dict:
         return dict(
             db_name=test_config.CoreConnectionSettings.DB_NAME,
@@ -44,7 +45,7 @@ class BaseClickHouseTestClass(BaseConnectionTestClass[ConnectionClickhouse]):
             port=test_config.CoreConnectionSettings.PORT,
             username=test_config.CoreConnectionSettings.USERNAME,
             password=test_config.CoreConnectionSettings.PASSWORD,
-            **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level} if self.raw_sql_level is not None else {}),
         )
 
 
@@ -53,7 +54,7 @@ class BaseClickHouseCH26TestClass(BaseClickHouseTestClass):
     def db_url(self) -> str:
         return test_config.DB_CORE_URL_CH26
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def connection_creation_params(self) -> dict:
         return dict(
             db_name=test_config.CoreConnectionSettingsCH26.DB_NAME,
@@ -61,31 +62,31 @@ class BaseClickHouseCH26TestClass(BaseClickHouseTestClass):
             port=test_config.CoreConnectionSettingsCH26.PORT,
             username=test_config.CoreConnectionSettingsCH26.USERNAME,
             password=test_config.CoreConnectionSettingsCH26.PASSWORD,
-            **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level} if self.raw_sql_level is not None else {}),
         )
 
 
 class BaseClickHouseDefaultUserTestClass(BaseClickHouseTestClass):
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def connection_creation_params(self) -> dict:
-        return dict(
-            db_name=test_config.CoreConnectionSettings.DB_NAME,
-            host=test_config.CoreConnectionSettings.HOST,
-            port=test_config.CoreConnectionSettings.PORT,
-        )
+        return {
+            "db_name": test_config.CoreConnectionSettings.DB_NAME,
+            "host": test_config.CoreConnectionSettings.HOST,
+            "port": test_config.CoreConnectionSettings.PORT,
+        }
 
 
 class BaseClickHouseReadonlyUserTestClass(BaseClickHouseTestClass):
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def connection_creation_params(self) -> dict:
-        return dict(
-            db_name=test_config.CoreReadonlyConnectionSettings.DB_NAME,
-            host=test_config.CoreReadonlyConnectionSettings.HOST,
-            port=test_config.CoreReadonlyConnectionSettings.PORT,
-            username=test_config.CoreReadonlyConnectionSettings.USERNAME,
-            password=test_config.CoreReadonlyConnectionSettings.PASSWORD,
-            readonly=1,
-        )
+        return {
+            "db_name": test_config.CoreReadonlyConnectionSettings.DB_NAME,
+            "host": test_config.CoreReadonlyConnectionSettings.HOST,
+            "port": test_config.CoreReadonlyConnectionSettings.PORT,
+            "username": test_config.CoreReadonlyConnectionSettings.USERNAME,
+            "password": test_config.CoreReadonlyConnectionSettings.PASSWORD,
+            "readonly": 1,
+        }
 
 
 class BaseSslClickHouseTestClass(BaseClickHouseTestClass):
@@ -101,35 +102,48 @@ class BaseSslClickHouseTestClass(BaseClickHouseTestClass):
         assert not os.listdir(bi_configs_utils.get_temp_root_certificates_folder_path())
 
     @pytest.fixture(scope="class")
+    def ssl_ca(self) -> str:
+        uri = f"{test_config.CoreSslConnectionSettings.CERT_PROVIDER_URL}/ca.pem"
+        response = requests.get(uri, timeout=30)
+        assert response.status_code == 200, response.text
+        return response.text
+
+    @pytest.fixture(scope="class")
+    def ssl_ca_path(self, ssl_ca: str, tmp_path_factory: pytest.TempPathFactory) -> str:
+        path = tmp_path_factory.mktemp("ssl") / "ca.pem"
+        path.write_text(ssl_ca)
+        return str(path)
+
+    @pytest.fixture(scope="class")
     def db_url(self) -> str:
         return test_config.DB_CORE_SSL_URL
 
     @pytest.fixture(scope="class")
-    def engine_params(self) -> dict:
+    def engine_params(self, ssl_ca_path: str) -> dict:
         return {
             "connect_args": frozendict(
-                verify=test_config.get_clickhouse_ssl_ca_path(),
+                verify=ssl_ca_path,
             )
         }
 
-    @pytest.fixture(scope="function")
-    def connection_creation_params(self) -> dict:
+    @pytest.fixture
+    def connection_creation_params(self, ssl_ca: str) -> dict:
         return dict(
             db_name=test_config.CoreSslConnectionSettings.DB_NAME,
             host=test_config.CoreSslConnectionSettings.HOST,
             port=test_config.CoreSslConnectionSettings.PORT,
             username=test_config.CoreSslConnectionSettings.USERNAME,
             password=test_config.CoreSslConnectionSettings.PASSWORD,
-            **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level} if self.raw_sql_level is not None else {}),
             secure=True,
-            ssl_ca=test_config.get_clickhouse_ssl_ca(),
+            ssl_ca=ssl_ca,
         )
 
 
 class BaseSslNoVerifyClickHouseTestClass(BaseSslClickHouseTestClass):
     connection_settings = ClickHouseConnectorSettings(ALLOW_SSL_CA_VERIFY_OPTION=True)
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def connection_creation_params(self) -> dict:
         return dict(
             db_name=test_config.CoreSslConnectionSettings.DB_NAME,
@@ -137,7 +151,7 @@ class BaseSslNoVerifyClickHouseTestClass(BaseSslClickHouseTestClass):
             port=test_config.CoreSslConnectionSettings.PORT,
             username=test_config.CoreSslConnectionSettings.USERNAME,
             password=test_config.CoreSslConnectionSettings.PASSWORD,
-            **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level} if self.raw_sql_level is not None else {}),
             secure=True,
             ssl_ca_verify=False,
         )

@@ -7,7 +7,7 @@ from typing import ClassVar
 
 import attr
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_dashsql.formatting.base import (
     JinjaStyleParamMatcher,
     QueryFormatter,
@@ -48,11 +48,10 @@ class DBAPIQueryFormatterFactory(QueryFormatterFactory):
     }
 
     def get_query_formatter(self) -> QueryFormatter:
-        query_formatter = PlaceholderQueryFormatter(
+        return PlaceholderQueryFormatter(
             unknown_param_policy=UnknownParameterPolicy.ignore,
             unconsumed_param_policy=UnconsumedParameterPolicy.ignore,
             param_matcher=JinjaStyleParamMatcher(),
             escapes={":": r"\:"},
             placeholder_style=self._placeholder_style_map[self._paramstyle],
         )
-        return query_formatter

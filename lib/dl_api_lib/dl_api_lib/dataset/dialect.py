@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from dl_constants.enums import SourceBackendType
+from dl_constants import SourceBackendType
 from dl_formula.core.dialect import DialectName
-
 
 _DIALECT_NAMES_FROM_SA: dict[SourceBackendType, DialectName] = {}
 

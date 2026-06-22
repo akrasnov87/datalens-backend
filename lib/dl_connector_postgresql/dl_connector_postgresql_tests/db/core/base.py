@@ -1,8 +1,9 @@
 import asyncio
+from collections.abc import Generator
 import os
-from typing import Generator
 
 import pytest
+import requests
 import shortuuid
 
 import dl_configs.utils as bi_configs_utils
@@ -31,7 +32,7 @@ class BasePostgreSQLTestClass(BaseConnectionTestClass[ConnectionPostgreSQL]):
     def db_url(self) -> str:
         return test_config.DB_CORE_URL
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def connection_creation_params(self) -> dict:
         return dict(
             db_name=test_config.CoreConnectionSettings.DB_NAME,
@@ -39,7 +40,7 @@ class BasePostgreSQLTestClass(BaseConnectionTestClass[ConnectionPostgreSQL]):
             port=test_config.CoreConnectionSettings.PORT,
             username=test_config.CoreConnectionSettings.USERNAME,
             password=test_config.CoreConnectionSettings.PASSWORD,
-            **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level} if self.raw_sql_level is not None else {}),
         )
 
     @pytest.fixture(scope="class")
@@ -80,18 +81,25 @@ class BaseSslPostgreSQLTestClass(BasePostgreSQLTestClass):
         assert not os.listdir(bi_configs_utils.get_temp_root_certificates_folder_path())
 
     @pytest.fixture(scope="class")
+    def ssl_ca(self) -> str:
+        uri = f"{test_config.CoreSslConnectionSettings.CERT_PROVIDER_URL}/ca.pem"
+        response = requests.get(uri, timeout=30)
+        assert response.status_code == 200, response.text
+        return response.text
+
+    @pytest.fixture(scope="class")
     def db_url(self) -> str:
         return test_config.DB_CORE_SSL_URL
 
-    @pytest.fixture(scope="function")
-    def connection_creation_params(self) -> dict:
+    @pytest.fixture
+    def connection_creation_params(self, ssl_ca: str) -> dict:
         return dict(
             db_name=test_config.CoreSslConnectionSettings.DB_NAME,
             host=test_config.CoreSslConnectionSettings.HOST,
             port=test_config.CoreSslConnectionSettings.PORT,
             username=test_config.CoreSslConnectionSettings.USERNAME,
             password=test_config.CoreSslConnectionSettings.PASSWORD,
-            **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level} if self.raw_sql_level is not None else {}),
             ssl_enable=True,
-            ssl_ca=test_config.get_postgres_ssl_ca(),
+            ssl_ca=ssl_ca,
         )

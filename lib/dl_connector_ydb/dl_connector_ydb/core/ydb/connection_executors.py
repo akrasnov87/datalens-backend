@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Sequence,
-)
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import attr
 
@@ -11,7 +9,6 @@ from dl_core.connection_executors.async_sa_executors import DefaultSqlAlchemyCon
 
 from dl_connector_ydb.core.ydb.adapter import YDBAdapter
 from dl_connector_ydb.core.ydb.target_dto import YDBConnTargetDTO
-
 
 if TYPE_CHECKING:
     from dl_connector_ydb.core.ydb.dto import YDBConnDTO

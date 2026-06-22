@@ -1,9 +1,9 @@
-import logging
-from typing import (
-    Any,
+from collections.abc import (
     AsyncIterable,
     Mapping,
 )
+import logging
+from typing import Any
 import uuid
 
 import aiohttp
@@ -12,7 +12,6 @@ import attr
 import dl_api_commons
 import dl_auth
 import dl_constants
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -40,8 +39,8 @@ class Resp:
     headers: Mapping
 
 
-class RequestExecutionException(Exception):
-    def __init__(self, msg: str, content: bytes, status: int, request_id: str):
+class RequestExecutionError(Exception):
+    def __init__(self, msg: str, content: bytes, status: int, request_id: str) -> None:
         super().__init__(msg, content)
         self.status = status
         self.request_id = request_id
@@ -65,7 +64,7 @@ class DLCommonAPIClient:
     ) -> None:
         headers_intersection = acc.keys() & update.keys()
         if headers_intersection:
-            LOGGER.warning(f"Got headers intersection on update on stage {stage!r}: {headers_intersection}")
+            LOGGER.warning("Got headers intersection on update on stage %r: %s", stage, headers_intersection)
         acc.update(update)
 
     # TODO FIX: Check if no overrides (take in account that headers are CI)
@@ -126,9 +125,8 @@ class DLCommonAPIClient:
         else:
             resp_json = None
 
-        if rq.require_ok:
-            if resp.status >= 400:
-                raise RequestExecutionException("Non-ok response", content, status=resp.status, request_id=req_id)
+        if rq.require_ok and resp.status >= 400:
+            raise RequestExecutionError("Non-ok response", content, status=resp.status, request_id=req_id)
 
         return Resp(
             req_id=req_id,

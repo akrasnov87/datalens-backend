@@ -11,7 +11,7 @@ from dl_api_connector.connector import (
     ApiSourceDefinition,
     MQMFactorySettingItem,
 )
-from dl_constants.enums import QueryProcessingMode
+from dl_constants import QueryProcessingMode
 from dl_query_processing.multi_query.factory import NoCompengMultiQueryMutatorFactory
 
 from dl_connector_postgresql.api.api_schema.connection import PostgreSQLConnectionSchema
@@ -52,7 +52,8 @@ class PostgreSQLApiConnectionDefinition(ApiConnectionDefinition):
 class PostgreSQLApiBackendDefinition(ApiBackendDefinition):
     core_backend_definition = PostgreSQLCoreBackendDefinition
     formula_dialect_name = DIALECT_NAME_POSTGRESQL
-    multi_query_mutation_factories = ApiBackendDefinition.multi_query_mutation_factories + (
+    multi_query_mutation_factories = (
+        *ApiBackendDefinition.multi_query_mutation_factories,
         MQMFactorySettingItem(
             query_proc_mode=QueryProcessingMode.native_wf,
             dialects=PostgreSQLDialect.and_above(PostgreSQLDialect.POSTGRESQL_9_4).to_list(),

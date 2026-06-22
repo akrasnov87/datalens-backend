@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Iterable,
+    Sequence,
+)
 import copy
 from copy import deepcopy
 import itertools
@@ -8,12 +12,7 @@ import os
 from typing import (
     Any,
     ClassVar,
-    Generic,
-    Iterable,
-    Optional,
-    Sequence,
     TypeVar,
-    Union,
     final,
 )
 
@@ -31,7 +30,7 @@ from dl_api_connector.api_schema.extras import (
     FieldExtra,
     SchemaKWArgs,
 )
-from dl_constants.enums import (
+from dl_constants import (
     CreateMode,
     EditMode,
     ExportMode,
@@ -48,13 +47,10 @@ from dl_core.base_models import (
 from dl_core.us_entry import USEntry
 from dl_core.us_manager.us_manager import USManagerBase
 
-
 LOGGER = logging.getLogger(__name__)
 
-_TARGET_OBJECT_TV = TypeVar("_TARGET_OBJECT_TV")
 
-
-class BaseTopLevelSchema(Schema, Generic[_TARGET_OBJECT_TV]):
+class BaseTopLevelSchema[TARGET_OBJECT_TV](Schema):
     CTX_KEY_EDITABLE_OBJECT: ClassVar[str] = "editable_object"
     CTX_KEY_OPERATIONS_MODE: ClassVar[str] = "operations_mode"
 
@@ -63,23 +59,23 @@ class BaseTopLevelSchema(Schema, Generic[_TARGET_OBJECT_TV]):
     def __init__(
         self,
         *,
-        only: Optional[Sequence[str]] = None,
+        only: Sequence[str] | None = None,
         exclude: Sequence[str] = (),
         many: bool = False,
-        context: Optional[dict] = None,
+        context: dict | None = None,
         load_only: Sequence[str] = (),
         dump_only: Sequence[str] = (),
-        partial: Union[Sequence[str], bool] = False,
-        unknown: Optional[str] = None,
+        partial: Sequence[str] | bool = False,
+        unknown: str | None = None,
     ) -> None:
         refined_kwargs = self._refine_init_kwargs(
-            dict(
-                only=only,
-                partial=partial,
-                exclude=exclude,
-                load_only=load_only,
-                dump_only=dump_only,
-            ),
+            {
+                "only": only,
+                "partial": partial,
+                "exclude": exclude,
+                "load_only": load_only,
+                "dump_only": dump_only,
+            },
             # Context is not bind to self here
             None if context is None else context.get(self.CTX_KEY_OPERATIONS_MODE),
         )
@@ -87,11 +83,11 @@ class BaseTopLevelSchema(Schema, Generic[_TARGET_OBJECT_TV]):
         super().__init__(many=many, context=context, unknown=unknown, **refined_kwargs)
 
     @staticmethod
-    def get_field_extra(f: ma_fields.Field) -> Optional[FieldExtra]:
+    def get_field_extra(f: ma_fields.Field) -> FieldExtra | None:
         return f.metadata.get("bi_extra", None)
 
     @property
-    def operations_mode(self) -> Optional[CreateMode | ImportMode]:
+    def operations_mode(self) -> CreateMode | ImportMode | None:
         return self.context.get(self.CTX_KEY_OPERATIONS_MODE)
 
     @classmethod
@@ -105,7 +101,7 @@ class BaseTopLevelSchema(Schema, Generic[_TARGET_OBJECT_TV]):
             if extra is not None:
                 yield field_name, field, extra
 
-    def _refine_init_kwargs(self, kw_args: SchemaKWArgs, operations_mode: Optional[OperationsMode]) -> SchemaKWArgs:
+    def _refine_init_kwargs(self, kw_args: SchemaKWArgs, operations_mode: OperationsMode | None) -> SchemaKWArgs:
         if operations_mode is None:
             return kw_args
 
@@ -152,14 +148,14 @@ class BaseTopLevelSchema(Schema, Generic[_TARGET_OBJECT_TV]):
 
         return ret
 
-    def create_object(self, data: dict[str, Any]) -> _TARGET_OBJECT_TV:
+    def create_object(self, data: dict[str, Any]) -> TARGET_OBJECT_TV:
         raise NotImplementedError()
 
-    def update_object(self, obj: _TARGET_OBJECT_TV, data: dict[str, Any]) -> _TARGET_OBJECT_TV:
+    def update_object(self, obj: TARGET_OBJECT_TV, data: dict[str, Any]) -> TARGET_OBJECT_TV:
         raise NotImplementedError()
 
     @post_load(pass_many=False)
-    def post_load(self, data: dict[str, Any], **_: Any) -> Union[_TARGET_OBJECT_TV, dict]:
+    def post_load(self, data: dict[str, Any], **_: Any) -> TARGET_OBJECT_TV | dict:
         if isinstance(self.operations_mode, EditMode):
             editable_object = self.context.get(self.CTX_KEY_EDITABLE_OBJECT)
             if editable_object is None:
@@ -186,12 +182,11 @@ class BaseTopLevelSchema(Schema, Generic[_TARGET_OBJECT_TV]):
             self.operations_mode,
         )
 
-        cleaned_data = {}
-        for field_name, field_value in data.items():
-            if field_name in self.fields and not self.fields[field_name].dump_only:
-                cleaned_data[field_name] = field_value
-
-        return cleaned_data
+        return {
+            field_name: field_value
+            for field_name, field_value in data.items()
+            if field_name in self.fields and not self.fields[field_name].dump_only
+        }
 
     @final
     def handle_unknown_fields(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -214,16 +209,14 @@ class BaseTopLevelSchema(Schema, Generic[_TARGET_OBJECT_TV]):
         refined_data.update(disallowed_unknown_data)
 
         if allowed_unknown_data or disallowed_unknown_data:
-            sorted_all_unknown_keys = list(
-                sorted(
-                    itertools.chain(
-                        allowed_unknown_data.keys(),
-                        disallowed_unknown_data.keys(),
-                    )
+            sorted_all_unknown_keys = sorted(
+                itertools.chain(
+                    allowed_unknown_data.keys(),
+                    disallowed_unknown_data.keys(),
                 )
             )
-            sorted_allowed_unknown_keys = list(sorted(allowed_unknown_data.keys()))
-            sorted_disallowed_unknown_keys = list(sorted(disallowed_unknown_data.keys()))
+            sorted_allowed_unknown_keys = sorted(allowed_unknown_data.keys())
+            sorted_disallowed_unknown_keys = sorted(disallowed_unknown_data.keys())
 
             LOGGER.info(
                 "Got unknown fields for schema %s/%s. Allowed: %s. Disallowed: %s",
@@ -231,26 +224,26 @@ class BaseTopLevelSchema(Schema, Generic[_TARGET_OBJECT_TV]):
                 self.operations_mode,
                 ",".join(sorted_allowed_unknown_keys),
                 ",".join(sorted_disallowed_unknown_keys),
-                extra=dict(
-                    schema_unk_fields=sorted_all_unknown_keys,
-                    schema_unk_fields_allowed=sorted_allowed_unknown_keys,
-                    schema_unk_fields_disallowed=sorted_disallowed_unknown_keys,
-                ),
+                extra={
+                    "schema_unk_fields": sorted_all_unknown_keys,
+                    "schema_unk_fields_allowed": sorted_allowed_unknown_keys,
+                    "schema_unk_fields_disallowed": sorted_disallowed_unknown_keys,
+                },
             )
 
         return refined_data
 
     @pre_load(pass_many=False)
     def pre_load(self, data: dict[str, Any], **_: Any) -> dict[str, Any]:
-        all_data_keys = list(sorted(data.keys()))
+        all_data_keys = sorted(data.keys())
         LOGGER.debug(
             "Got fields for schema %s/%s: %s",
             type(self).__qualname__,
             self.operations_mode,
             ",".join(all_data_keys),
-            extra=dict(
-                schema_input_keys=all_data_keys,
-            ),
+            extra={
+                "schema_input_keys": all_data_keys,
+            },
         )
 
         if isinstance(self.operations_mode, ImportMode):
@@ -343,16 +336,16 @@ class USEntryBaseSchema(BaseTopLevelSchema[_US_ENTRY_TV], USEntryAnnotationMixin
                 "dir_path can not be null if collection_id and workbook_id are null", field_name="dir_path"
             )
 
-        return dict(
-            ds_key=resolve_entry_loc_from_api_req_body(
+        return {
+            "ds_key": resolve_entry_loc_from_api_req_body(
                 name=entry_name,
                 dir_path=entry_dir_path,
                 collection_id=entry_coll_id,
                 workbook_id=entry_wb_id,
             ),
-            us_manager=self.us_manager,
-            annotation=data["annotation"],
-        )
+            "us_manager": self.us_manager,
+            "annotation": data["annotation"],
+        }
 
     # TODO FIX: Find a way to specify return type
     def create_data_model(self, data_attributes: dict[str, Any]) -> Any:
@@ -367,9 +360,9 @@ class USEntryBaseSchema(BaseTopLevelSchema[_US_ENTRY_TV], USEntryAnnotationMixin
                 cause_attribute = f"data.{err.model_field}"
                 cause_field_name = (
                     next(
-                        map(
-                            lambda field: field.name,
-                            filter(lambda field: field.attribute == cause_attribute, self.fields.values()),
+                        (
+                            field.name
+                            for field in filter(lambda field: field.attribute == cause_attribute, self.fields.values())
                         ),
                         None,
                     )
@@ -420,9 +413,9 @@ class USEntryBaseSchema(BaseTopLevelSchema[_US_ENTRY_TV], USEntryAnnotationMixin
 def resolve_entry_loc_from_api_req_body(
     *,
     name: str,
-    dir_path: Optional[str],
-    collection_id: Optional[str],
-    workbook_id: Optional[str],
+    dir_path: str | None,
+    collection_id: str | None,
+    workbook_id: str | None,
 ) -> EntryLocation:
     assert name is not None, "name can not be None"
 
@@ -433,11 +426,10 @@ def resolve_entry_loc_from_api_req_body(
             collection_id=collection_id,
             entry_name=name,
         )
-    elif workbook_id is not None:
+    if workbook_id is not None:
         return WorkbookEntryLocation(
             workbook_id=workbook_id,
             entry_name=name,
         )
-    else:
-        assert dir_path is not None, "dir_path can not be None"
-        return PathEntryLocation(os.path.join(dir_path, name))
+    assert dir_path is not None, "dir_path can not be None"
+    return PathEntryLocation(os.path.join(dir_path, name))

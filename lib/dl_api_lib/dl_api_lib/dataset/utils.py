@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 from collections import defaultdict
-import logging
-from typing import (
+from collections.abc import (
     Generator,
     Iterable,
-    Optional,
 )
+import logging
 
 from dl_api_lib import utils as bi_utils
 from dl_api_lib.enums import USPermissionKind
-from dl_constants.enums import (
+from dl_constants import (
+    ComponentType,
     ConnectionType,
     DataSourceRole,
 )
@@ -25,14 +25,13 @@ from dl_core.us_dataset import Dataset
 from dl_core.us_manager.local_cache import USEntryBuffer
 from dl_core.us_manager.us_manager import USManagerBase
 
-
 LOGGER = logging.getLogger(__name__)
 
 
 def _iter_data_source_collections(
     dataset: Dataset,
     us_entry_buffer: USEntryBuffer,
-    source_ids: Optional[Iterable[str]] = None,
+    source_ids: Iterable[str] | None = None,
 ) -> Generator[DataSourceCollection, None, None]:
     ds_accessor = DatasetComponentAccessor(dataset=dataset)
 
@@ -55,6 +54,7 @@ def _iter_data_source_collections(
         yield dsrc_coll
 
 
+# TODO(DLPROJECTS-749): Verify that permission check works correctly
 def check_permissions_for_origin_sources(
     dataset: Dataset,
     source_ids: Iterable[str],
@@ -71,8 +71,42 @@ def check_permissions_for_origin_sources(
         if data_source is not None:
             try:
                 bi_utils.need_permission_on_entry(data_source.connection, permission_kind)
-            except exc.ReferencedUSEntryNotFound:
-                LOGGER.info(f"Connection for source {data_source.id} not found => skipping permission check")
+            except exc.ReferencedUSEntryNotFoundError:
+                LOGGER.info("Connection for source %s not found => skipping permission check", data_source.id)
+
+
+def validate_dataset_query_settings(
+    dataset: Dataset,
+    us_entry_buffer: USEntryBuffer,
+) -> None:
+    """Validate `dataset.data.query_settings` against each source's origin connection.
+
+    Records any violations as per-source component errors instead of raising, so a dataset with
+    stale or invalid settings can still be saved (and flagged as invalid); the data API layer
+    still enforces the same rules at query-execution time via `ConnectionBase.validate_query_settings`.
+    """
+    for dsrc_coll in _iter_data_source_collections(dataset=dataset, us_entry_buffer=us_entry_buffer):
+        dataset.error_registry.remove_errors(
+            id=dsrc_coll.id,
+            code_prefix=exc.QuerySettingsError.err_code,
+        )
+        data_source = dsrc_coll.get_opt(role=DataSourceRole.origin)
+        if data_source is None:
+            continue
+        try:
+            connection = data_source.connection
+        except exc.ReferencedUSEntryNotFoundError:
+            continue
+        try:
+            connection.validate_query_settings(dataset.data.query_settings)
+        except exc.QuerySettingsError as err:
+            dataset.error_registry.add_error(
+                id=dsrc_coll.id,
+                type=ComponentType.data_source,
+                message=err.message,
+                code=err.err_code,
+                details=err.details,
+            )
 
 
 def log_dataset_field_stats(dataset: Dataset) -> None:
@@ -82,7 +116,7 @@ def log_dataset_field_stats(dataset: Dataset) -> None:
         # We expect no name collisions here
         stats[field.calc_mode.name] += 1
         stats[field.type.name.lower()] += 1
-    LOGGER.info("Dataset field stats", extra=dict(dataset_field_stats=dict(stats)))
+    LOGGER.info("Dataset field stats", extra={"dataset_field_stats": dict(stats)})
 
 
 def allow_rls_for_dataset(dataset: Dataset) -> bool:

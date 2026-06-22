@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    Callable,
-    ClassVar,
-)
+from collections.abc import Callable
+from typing import ClassVar
 
 import attr
 
@@ -78,11 +76,11 @@ class ConnectionSQLBigQuery(ConnectionSQL):
     ) -> list[dict]:
         tables = self.get_tables(conn_executor_factory)
         return [
-            dict(
-                project_id=table_ident.db_name,
-                dataset_name=table_ident.schema_name,
-                table_name=table_ident.table_name,
-            )
+            {
+                "project_id": table_ident.db_name,
+                "dataset_name": table_ident.schema_name,
+                "table_name": table_ident.table_name,
+            }
             for table_ident in tables
         ]
 
@@ -93,6 +91,7 @@ class ConnectionSQLBigQuery(ConnectionSQL):
                 source_type=SOURCE_TYPE_BIGQUERY_SUBSELECT,
                 localizer=localizer,
                 disabled=not self.is_subselect_allowed,
+                disabled_text=self.subselect_disabled_text,
             )
         ]
 

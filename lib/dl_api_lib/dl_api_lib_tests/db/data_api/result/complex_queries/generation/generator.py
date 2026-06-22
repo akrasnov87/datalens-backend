@@ -1,14 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 import random
-from typing import (
-    Any,
-    Sequence,
-)
+from typing import Any
 
 import attr
 
-from dl_constants.enums import WhereClauseOperation
+from dl_constants import WhereClauseOperation
 
 
 @attr.s
@@ -52,7 +50,7 @@ class FormulaRecursionState:
     def pop_dimension(self) -> tuple[FormulaRecursionState, str]:
         assert self.remaining_dims
         chosen_dim = random.choice(self.remaining_dims)
-        new_effective_dims = self.effective_dims + [chosen_dim]
+        new_effective_dims = [*self.effective_dims, chosen_dim]
         new_remaining_dims = [dim for dim in self.remaining_dims if dim != chosen_dim]
         new_state = self.clone(
             remaining_dims=new_remaining_dims,
@@ -118,10 +116,9 @@ class LODTestAutoGenerator:
             lod_str = f" INCLUDE [{chosen_dim}]"
 
         bfb_str: str = ""
-        if bfb and recursion_state.available_filters:
-            if self._match_probability(self.settings.bfb_probability):
-                recursion_state, bfb_field = recursion_state.pop_bfb_field()
-                bfb_str = f" BEFORE FILTER BY [{bfb_field}]"
+        if bfb and recursion_state.available_filters and self._match_probability(self.settings.bfb_probability):
+            recursion_state, bfb_field = recursion_state.pop_bfb_field()
+            bfb_str = f" BEFORE FILTER BY [{bfb_field}]"
 
         add_args_str = (", " + ", ".join(add_args)) if add_args else ""
         formula_tmpl = FormulaTemplate(
@@ -171,8 +168,7 @@ class LODTestAutoGenerator:
 
         formula_tmpl, child_recursion_state = self._generate_formula_iteration(recursion_state=recursion_state)
         nested_formula = self.generate_formula(recursion_state=child_recursion_state)
-        formula = formula_tmpl.wrap(nested_formula)
-        return formula
+        return formula_tmpl.wrap(nested_formula)
 
     def generate_test_settings(self) -> TestSettings:
         dimension_cnt = random.choice(self.settings.dimension_cnts)
@@ -182,10 +178,11 @@ class LODTestAutoGenerator:
         formula_cnt = random.choice(self.settings.formula_cnts)
 
         # Generate filters
-        chosen_filters: dict[str, tuple[WhereClauseOperation, list[str]]] = {}
-        for name, params in self.settings.filters.items():
-            if random.random() <= self.settings.filter_probability:
-                chosen_filters[name] = params
+        chosen_filters: dict[str, tuple[WhereClauseOperation, list[str]]] = {
+            name: params
+            for name, params in self.settings.filters.items()
+            if random.random() <= self.settings.filter_probability
+        }
 
         recursion_state = FormulaRecursionState(
             effective_dims=effective_dims,
@@ -197,12 +194,11 @@ class LODTestAutoGenerator:
 
         measure_formulas = [self.generate_formula(recursion_state=recursion_state) for i in range(formula_cnt)]
 
-        test_settings = TestSettings(
+        return TestSettings(
             base_dimensions=base_dimensions,
             measure_formulas=measure_formulas,
             filters=chosen_filters,
         )
-        return test_settings
 
     def generate_setting_list(self, test_cnt: int) -> list[TestSettings]:
         return [self.generate_test_settings() for i in range(test_cnt)]

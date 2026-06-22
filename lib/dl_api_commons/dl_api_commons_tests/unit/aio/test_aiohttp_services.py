@@ -42,20 +42,24 @@ async def test_service_header_normal_case(aiohttp_client: TestClient) -> None:
     client = await aiohttp_client(app)  # type: ignore[operator]
 
     resp = await client.get("/not_found")
-    assert 404 == resp.status and [server_header] == resp.headers.getall("Server")
+    assert 404 == resp.status
+    assert [server_header] == resp.headers.getall("Server")
 
     resp = await client.get("/simple_view")
-    assert 200 == resp.status and [server_header] == resp.headers.getall("Server")
+    assert 200 == resp.status
+    assert [server_header] == resp.headers.getall("Server")
 
     resp = await client.get("/fail_view")
-    assert 500 == resp.status and [server_header] == resp.headers.getall("Server")
+    assert 500 == resp.status
+    assert [server_header] == resp.headers.getall("Server")
 
     resp = await client.get("/streamed_view")
-    assert 200 == resp.status and [server_header] == resp.headers.getall("Server")
+    assert 200 == resp.status
+    assert [server_header] == resp.headers.getall("Server")
 
 
 def test_service_header_validation_fail() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Server header must have non-zero length"):
         ServerHeader("")
 
     with pytest.raises(TypeError):
@@ -97,8 +101,8 @@ async def test_error_handling_middleware(
     caplog.set_level("INFO")
     log_name = "dl_api_commons.aio.middlewares.error_handling_outer"
 
-    class MyException(Exception):
-        def __init__(self, msg: str, level: str, status_code: int):
+    class MyError(Exception):
+        def __init__(self, msg: str, level: str, status_code: int) -> None:
             super().__init__(msg)
             self.msg = msg
             self.level = level
@@ -106,11 +110,11 @@ async def test_error_handling_middleware(
 
     class ErrorHandler(AIOHTTPErrorHandler):
         def _classify_error(self, err: Exception, request: web.Request) -> ErrorData:
-            if isinstance(err, MyException):
+            if isinstance(err, MyError):
                 return ErrorData(
                     status_code=err.status_code,
                     level=ErrorLevel[err.level],
-                    response_body=dict(msg=err.msg),
+                    response_body={"msg": err.msg},
                 )
             if isinstance(err, web.HTTPException):
                 return ErrorData(
@@ -119,17 +123,16 @@ async def test_error_handling_middleware(
                     response_body={},
                     http_reason=err.reason,
                 )
-            else:
-                raise ValueError("Can not format exception")
+            raise ValueError("Can not format exception")
 
     async def info(request: web.Request) -> web.Response:
-        raise MyException("info_exc", "info", 400)
+        raise MyError("info_exc", "info", 400)
 
     async def warn(request: web.Request) -> web.Response:
-        raise MyException("warn_exc", "warning", 400)
+        raise MyError("warn_exc", "warning", 400)
 
     async def error(request: web.Request) -> web.Response:
-        raise MyException("err_exc", "error", 500)
+        raise MyError("err_exc", "error", 500)
 
     async def fmt_error(request: web.Request) -> web.Response:
         raise ValueError()
@@ -161,26 +164,26 @@ async def test_error_handling_middleware(
 
     caplog.clear()
     assert await get_status_and_body("/info") == (400, {"msg": "info_exc"})
-    log_rec = [r for r in caplog.records if r.message == "Regular exception fired" and r.name == log_name][0]
+    log_rec = next(r for r in caplog.records if r.message == "Regular exception fired" and r.name == log_name)
     assert log_rec.levelname == "INFO"
     assert log_rec.exc_info
 
     caplog.clear()
     assert await get_status_and_body("/warn") == (400, {"msg": "warn_exc"})
-    log_rec = [r for r in caplog.records if r.levelname == "WARNING" and r.name == log_name][0]
+    log_rec = next(r for r in caplog.records if r.levelname == "WARNING" and r.name == log_name)
     assert log_rec.message == "Warning exception fired"
     assert log_rec.exc_info
 
     caplog.clear()
     assert await get_status_and_body("/error") == (500, {"msg": "err_exc"})
-    log_rec = [r for r in caplog.records if r.levelname == "ERROR" and r.name == log_name][0]
+    log_rec = next(r for r in caplog.records if r.levelname == "ERROR" and r.name == log_name)
     assert log_rec.message == "Caught an exception in request handler"
     assert log_rec.exc_info
 
     caplog.clear()
     assert await get_status_and_body("/fmt_error") == (500, {"message": "Internal Server Error"})
-    fmt_log_rec = [r for r in caplog.records if r.levelname == "CRITICAL" and r.name == log_name][0]
-    cause_log_rec = [r for r in caplog.records if r.levelname == "ERROR" and r.name == log_name][0]
+    fmt_log_rec = next(r for r in caplog.records if r.levelname == "CRITICAL" and r.name == log_name)
+    cause_log_rec = next(r for r in caplog.records if r.levelname == "ERROR" and r.name == log_name)
 
     assert fmt_log_rec.message == "Error handler raised an error during creating error response"
     assert fmt_log_rec.exc_info
@@ -194,6 +197,6 @@ async def test_error_handling_middleware(
     resp_json = await resp.json()
     assert resp_json == {}
     assert resp.reason == "Not Found"
-    log_rec = [r for r in caplog.records if r.message == "Regular exception fired" and r.name == log_name][0]
+    log_rec = next(r for r in caplog.records if r.message == "Regular exception fired" and r.name == log_name)
     assert log_rec.levelname == "INFO"
     assert log_rec.exc_info

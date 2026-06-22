@@ -5,7 +5,7 @@ import uuid
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     BinaryJoinOperator,
     DataSourceRole,
     DataSourceType,
@@ -50,11 +50,11 @@ class DefaultDbDatasetSourceGenerator(DatasetSourceGenerator):
     connection: ConnectionBase = attr.ib(kw_only=True)
 
     def _get_table_source_params(self, db_table: DbTable) -> dict:
-        return dict(
-            db_name=db_table.db.name,
-            schema_name=db_table.schema,
-            table_name=db_table.name,
-        )
+        return {
+            "db_name": db_table.db.name,
+            "schema_name": db_table.schema,
+            "table_name": db_table.name,
+        }
 
     def generate_source_params(self) -> DataSourceCreationSpec:
         db_table = make_table(self.db)
@@ -159,7 +159,10 @@ class DatasetBuilder:
         dsrc_creation_spec = self.dsrc_generator.generate_source_params()
         connection_id = dsrc_creation_spec.connection.uuid
         assert connection_id is not None
-        self.sync_us_manager.ensure_entry_preloaded(DefaultConnectionRef(conn_id=connection_id))
+        self.sync_us_manager.ensure_connection_preloaded(
+            conn_ref=DefaultConnectionRef(conn_id=connection_id),
+            referrer=None,
+        )
         self.ds_wrapper.add_data_source(
             source_id=source_id,
             role=role,

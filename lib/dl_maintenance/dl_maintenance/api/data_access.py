@@ -17,11 +17,7 @@ print_result_data(response_json)
 
 """
 
-from typing import (
-    Iterable,
-    Optional,
-    Union,
-)
+from collections.abc import Iterable
 
 import tabulate
 
@@ -51,7 +47,7 @@ from dl_api_lib.query.formalization.raw_specs import (
     RawSelectFieldSpec,
 )
 from dl_api_lib.request_model.normalization.drm_normalizer_pivot import PivotSpecNormalizer
-from dl_constants.enums import PivotRole
+from dl_constants import PivotRole
 from dl_core.us_dataset import Dataset
 from dl_core.us_manager.us_manager import USManagerBase
 from dl_pivot.native.transformer import NativePivotTransformer
@@ -69,19 +65,18 @@ def get_ds_view(
     dataset: Dataset,
     us_manager: USManagerBase,
     block_spec: BlockSpec,
-    rci: Optional[RequestContextInfo] = None,
+    rci: RequestContextInfo | None = None,
 ) -> DatasetView:
-    ds_view = DatasetView(
+    return DatasetView(
         ds=dataset,
         us_manager=us_manager,
         block_spec=block_spec,
         rci=rci or RequestContextInfo.create_empty(),
     )
-    return ds_view
 
 
 def make_query_spec_union(
-    select: Union[list[str], dict[str, int]],
+    select: list[str] | dict[str, int],
     disable_rls: bool = True,
 ) -> RawQuerySpecUnion:
     if not isinstance(select, dict):
@@ -150,7 +145,7 @@ async def get_merged_data_stream(
     us_manager: USManagerBase,
     raw_query_spec_union: RawQuerySpecUnion,
     allow_query_cache_usage: bool = True,
-    reporting_registry: Optional[ReportingRegistry] = None,
+    reporting_registry: ReportingRegistry | None = None,
 ) -> MergedQueryDataStream:
     profiler_prefix = "maintenance-result"
 
@@ -184,8 +179,7 @@ async def get_merged_data_stream(
         limit=raw_query_spec_union.limit,
         offset=raw_query_spec_union.offset,
     )
-    merged_stream = DataStreamMerger().merge(postprocessed_query_union=postprocessed_query_union)
-    return merged_stream
+    return DataStreamMerger().merge(postprocessed_query_union=postprocessed_query_union)
 
 
 async def get_result_data(
@@ -201,10 +195,9 @@ async def get_result_data(
         allow_query_cache_usage=allow_query_cache_usage,
     )
     data_export_info = DataExportInfo()  # TODO: enrich if it needed
-    response_json = DataRequestResponseSerializer.make_data_response_v1(
+    return DataRequestResponseSerializer.make_data_response_v1(
         merged_stream=merged_stream, data_export_info=data_export_info
     )
-    return response_json
 
 
 async def get_pivot_data(
@@ -227,13 +220,12 @@ async def get_pivot_data(
     pivot_transformer = NativePivotTransformer(legend=merged_stream.legend, pivot_legend=pivot_legend)
     pivot_table = pivot_transformer.pivot(rows=merged_stream.rows)
     data_export_info = DataExportInfo()  # TODO: enrich if it needed
-    response_json = PivotDataRequestResponseSerializer.make_pivot_response(
+    return PivotDataRequestResponseSerializer.make_pivot_response(
         merged_stream=merged_stream,
         pivot_table=pivot_table,
         reporting_registry=reporting_registry,
         data_export_info=data_export_info,
     )
-    return response_json
 
 
 def print_result_data(response_json: dict) -> None:

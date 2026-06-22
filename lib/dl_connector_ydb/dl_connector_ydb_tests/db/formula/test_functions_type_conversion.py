@@ -1,10 +1,8 @@
+from collections.abc import Generator
 import contextlib
 import datetime
-from typing import (
-    Generator,
-    Optional,
-)
 
+from frozendict import frozendict
 import pytest
 import sqlalchemy as sa
 
@@ -26,7 +24,6 @@ from dl_formula_testing.util import to_str
 import dl_sqlalchemy_ydb.dialect as ydb_dialect
 
 from dl_connector_ydb_tests.db.formula.base import YQLTestBase
-
 
 # STR
 
@@ -164,7 +161,7 @@ class DbCastTypeFunctionYQLTestSuite(
         # target - target type for cast
         # cast_args - type arguments (for decimal)
         # ok - if no exception should occur
-        "target,cast_args,ok",
+        ("target", "cast_args", "ok"),
         [
             # Bool
             ("Bool", None, True),
@@ -213,7 +210,7 @@ class DbCastTypeFunctionYQLTestSuite(
         # target - target type for cast
         # cast_args - type arguments (for decimal)
         # ok - if no exception should occur
-        "target,cast_args,ok",
+        ("target", "cast_args", "ok"),
         [
             # Bool
             ("Bool", None, True),
@@ -262,7 +259,7 @@ class DbCastTypeFunctionYQLTestSuite(
         # target - target type for cast
         # cast_args - type arguments (for decimal)
         # ok - if no exception should occur
-        "target,cast_args,ok",
+        ("target", "cast_args", "ok"),
         [
             # Bool
             ("Bool", None, True),
@@ -311,7 +308,7 @@ class DbCastTypeFunctionYQLTestSuite(
         # target - target type for cast
         # cast_args - type arguments (for decimal)
         # ok - if no exception should occur
-        "target,cast_args,ok",
+        ("target", "cast_args", "ok"),
         [
             # Bool
             ("Bool", None, True),
@@ -360,7 +357,7 @@ class DbCastTypeFunctionYQLTestSuite(
         # target - target type for cast
         # cast_args - type arguments (for decimal)
         # ok - if no exception should occur
-        "target,cast_args,ok",
+        ("target", "cast_args", "ok"),
         [
             # Bool
             ("Bool", None, False),
@@ -409,7 +406,7 @@ class DbCastTypeFunctionYQLTestSuite(
 class DbCastYQLTestSuiteBase(YQLTestBase):
     @contextlib.contextmanager
     def make_ydb_type_test_data_table(
-        self, dbe: DbEvaluator, table_schema_name: Optional[str]
+        self, dbe: DbEvaluator, table_schema_name: str | None
     ) -> Generator[sa.Table, None, None]:
         db = dbe.db
         table_spec = self.generate_table_spec(table_name_prefix="ydb_type_test_table")
@@ -447,23 +444,25 @@ class DbCastYQLTestSuiteBase(YQLTestBase):
 
     @pytest.fixture(scope="class")
     def ydb_type_test_data_table(
-        self, dbe: DbEvaluator, table_schema_name: Optional[str]
+        self, dbe: DbEvaluator, table_schema_name: str | None
     ) -> Generator[sa.Table, None, None]:
         with self.make_ydb_type_test_data_table(dbe=dbe, table_schema_name=table_schema_name) as table:
             yield table
 
     # YDB-specific field types for formula testing
-    YDB_TYPE_FIELD_TYPES = {
-        "bool_value": DataType.BOOLEAN,
-        "int64_value": DataType.INTEGER,
-        "double_value": DataType.FLOAT,
-        "string_value": DataType.STRING,
-        "timestamp_value": DataType.DATETIME,  # YDB TIMESTAMP maps to DATETIME in formula system
-        "date_value": DataType.DATE,
-        "datetime_value": DataType.DATETIME,
-    }
+    YDB_TYPE_FIELD_TYPES = frozendict(
+        {
+            "bool_value": DataType.BOOLEAN,
+            "int64_value": DataType.INTEGER,
+            "double_value": DataType.FLOAT,
+            "string_value": DataType.STRING,
+            "timestamp_value": DataType.DATETIME,  # YDB TIMESTAMP maps to DATETIME in formula system
+            "date_value": DataType.DATE,
+            "datetime_value": DataType.DATETIME,
+        }
+    )
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def ydb_data_test_table_field_types(self) -> dict[str, DataType]:
         return {**self.YDB_TYPE_FIELD_TYPES}
 

@@ -1,9 +1,11 @@
 import abc
+from collections.abc import Sequence
 import http
 import logging
 from typing import (
     Any,
     ClassVar,
+    Self,
 )
 
 import aiohttp.typedefs as aiohttp_typedefs
@@ -11,11 +13,9 @@ import aiohttp.web
 import aiohttp.web as aiohttp_web
 import attrs
 import pydantic
-from typing_extensions import Self
 
 import dl_json
 import dl_pydantic
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -99,12 +99,10 @@ class Response(aiohttp_web.Response):
         )
 
 
-class ResponseException(Response, Exception):
-    ...
+class ResponseError(Response, Exception): ...
 
 
-class BaseResponseSchema(dl_pydantic.BaseSchema):
-    ...
+class BaseResponseSchema(dl_pydantic.BaseSchema): ...
 
 
 class ErrorResponseSchema(BaseResponseSchema):
@@ -129,8 +127,8 @@ class ErrorResponseSchema(BaseResponseSchema):
     def as_response(self) -> Response:
         return Response.with_data(data=self.as_data(), status=self.status_code)
 
-    def as_exception(self) -> ResponseException:
-        return ResponseException.with_data(data=self.as_data(), status=self.status_code)
+    def as_exception(self) -> ResponseError:
+        return ResponseError.with_data(data=self.as_data(), status=self.status_code)
 
 
 class BadRequestResponseSchema(ErrorResponseSchema):
@@ -169,20 +167,18 @@ class BaseRequestSchema(dl_pydantic.BaseSchema):
     async def try_from_request(cls, request: aiohttp.web.Request) -> Self:
         try:
             return await cls.from_request(request)
-        except ValueError:
+        except ValueError as exc:
             text = await request.text()
-            LOGGER.exception(f"Bad request: {text}")
-            raise BadRequestResponseSchema().as_exception()
+            LOGGER.exception("Bad request: %s", text)
+            raise BadRequestResponseSchema().as_exception() from exc
 
 
 class BaseHandler(abc.ABC):
-    class RequestSchema(BaseRequestSchema):
-        ...
+    class RequestSchema(BaseRequestSchema): ...
 
-    class ResponseSchema(BaseResponseSchema):
-        ...
+    class ResponseSchema(BaseResponseSchema): ...
 
-    OPENAPI_TAGS: ClassVar[list[str]] = []
+    OPENAPI_TAGS: ClassVar[Sequence[str]] = ()
     OPENAPI_DESCRIPTION: ClassVar[str] = ""
     OPENAPI_INCLUDE: ClassVar[bool] = True
 
@@ -198,8 +194,7 @@ class BaseHandler(abc.ABC):
         return self.RequestSchema
 
     @abc.abstractmethod
-    async def process(self, request: aiohttp.web.Request) -> aiohttp.web.StreamResponse:
-        ...
+    async def process(self, request: aiohttp.web.Request) -> aiohttp.web.StreamResponse: ...
 
 
 @attrs.define(frozen=True, kw_only=True)

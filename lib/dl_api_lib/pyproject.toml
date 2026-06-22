@@ -21,6 +21,7 @@ dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
 dl-dashsql = {path = "../../lib/dl_dashsql"}
 dl-dynamic-enum = {path = "../dl_dynamic_enum"}
+dl-extract = {path = "../dl_extract"}
 dl-formula = {path = "../dl_formula"}
 dl-i18n = {path = "../dl_i18n"}
 dl-model-tools = {path = "../dl_model_tools"}
@@ -37,20 +38,19 @@ dl-utils = {path = "../dl_utils"}
 flask = "*"
 flask-marshmallow = "*"
 flask-restx = "*"
+frozendict = "*"
 marshmallow = "*"
 marshmallow-oneofschema = "*"
 pydantic = "*"
 pydantic_settings = "*"
-python = ">=3.10, <3.13"
+python = ">=3.12, <3.13"
 requests = "*"
 statcommons = {path = "../statcommons"}
-typing-extensions = "*"
 werkzeug = "*"
 
 [tool.poetry.group.tests.dependencies]
 dl-api-client = {path = "../dl_api_client"}
 dl-api-lib-testing = {path = "../dl_api_lib_testing"}
-dl-connector-bundle-chs3 = {path = "../dl_connector_bundle_chs3"}
 dl-connector-clickhouse = {path = "../dl_connector_clickhouse"}
 dl-connector-postgresql = {path = "../dl_connector_postgresql"}
 dl-core-testing = {path = "../dl_core_testing"}
@@ -96,12 +96,27 @@ dl_api_lib = [
   {path = "dl_api_lib"},
 ]
 
-[datalens.pytest.db]
+[datalens.pytest.db_control_api]
 root_dir = "dl_api_lib_tests/"
-target_path = "db"
+target_path = "db/control_api"
+
+[datalens.pytest.db_data_api_caches]
+root_dir = "dl_api_lib_tests/"
+target_path = "db/data_api/caches"
+
+[datalens.pytest.db_data_api_general]
+root_dir = "dl_api_lib_tests/"
+target_path = "db/data_api/general"
+
+[datalens.pytest.db_data_api_pivot]
+root_dir = "dl_api_lib_tests/"
+target_path = "db/data_api/pivot"
+
+[datalens.pytest.db_data_api_result]
+root_dir = "dl_api_lib_tests/"
+target_path = "db/data_api/result"
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_api_lib_tests/"
 skip_compose = "true"
 target_path = "unit"

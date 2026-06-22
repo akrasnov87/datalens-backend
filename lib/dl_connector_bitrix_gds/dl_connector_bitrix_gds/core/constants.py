@@ -3,12 +3,11 @@ from enum import (
     unique,
 )
 
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DataSourceType,
     SourceBackendType,
 )
-
 
 BACKEND_TYPE_BITRIX_GDS = SourceBackendType.declare("BITRIX_GDS")
 CONNECTION_TYPE_BITRIX24 = ConnectionType.declare("bitrix24")

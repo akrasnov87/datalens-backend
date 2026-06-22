@@ -5,7 +5,6 @@ import sqlalchemy as sa
 
 from dl_connector_trino.core.adapters import CustomTrinoDialect
 
-
 QUERY_TEMPLATE = """
 SELECT
     t1.int,
@@ -60,7 +59,7 @@ def test_custom_trino_compiler():
         sa.bindparam("timestamp_val", value=datetime.datetime(2025, 6, 18, 15, 40, 3, 123), type_=sa.DateTime),
         sa.bindparam(
             "datetime_utc_val",
-            value=datetime.datetime(2025, 6, 18, 15, 40, 3, tzinfo=datetime.timezone.utc),
+            value=datetime.datetime(2025, 6, 18, 15, 40, 3, tzinfo=datetime.UTC),
             type_=sa.DateTime,
         ),
         sa.bindparam(

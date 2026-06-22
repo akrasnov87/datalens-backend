@@ -5,13 +5,13 @@ Should be placed after ContextVarMiddleware
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import contextlib
 import functools
 import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    Sequence,
 )
 
 import attr
@@ -22,7 +22,6 @@ import opentracing.tags
 from dl_api_commons.flask.middlewares.logging_context import RequestLoggingContextControllerMiddleWare
 from dl_api_commons.flask.middlewares.wsgi_middleware import FlaskWSGIMiddleware
 from dl_api_commons.logging_tracing import OpenTracingLoggingContextController
-
 
 if TYPE_CHECKING:
     from dl_api_commons.flask.types import (
@@ -43,20 +42,16 @@ class TracingMiddleware(FlaskWSGIMiddleware):
     @staticmethod
     def normalize_headers(wsgi_environ: dict[str, str]) -> dict[str, str]:
         prefix = "HTTP_"
-        headers = {
+        return {
             key[len(prefix) :].replace("_", "-").lower(): val
             for (key, val) in wsgi_environ.items()
             if key.startswith(prefix)
         }
-        return headers
 
     def should_create_root_span(self, http_path: str) -> bool:
-        for prefix in self.url_prefix_exclude:
-            if http_path.startswith(prefix):
-                return False
-        return True
+        return all(not http_path.startswith(prefix) for prefix in self.url_prefix_exclude)
 
-    def wsgi_app(self, environ: WSGIEnviron, start_response: WSGIStartResponse) -> WSGIReturn:  # type: ignore  # 2024-01-30 # TODO: Missing return statement  [return]
+    def wsgi_app(self, environ: WSGIEnviron, start_response: WSGIStartResponse) -> WSGIReturn:
         http_path = environ["PATH_INFO"]
         http_method = environ["REQUEST_METHOD"]
         tracer = opentracing.global_tracer()
@@ -82,7 +77,7 @@ class TracingMiddleware(FlaskWSGIMiddleware):
                         scope.span.set_tag(opentracing.tags.HTTP_STATUS_CODE, status_code)
                         if status_code >= 500:
                             scope.span.set_tag(opentracing.tags.ERROR, True)
-                    except Exception:  # noqa
+                    except Exception:
                         LOGGER.exception("Exception during extracting tags from WSGI start_response args")
 
                     return start_response(status, response_headers, exc_info)

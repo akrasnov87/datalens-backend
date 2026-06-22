@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    Optional,
 )
 
 import attr
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 import sqlalchemy.exc as sa_exc
 from sqlalchemy.sql.elements import ClauseElement
 
-from dl_constants.enums import (
+from dl_constants import (
     DashSQLQueryType,
     UserDataType,
 )
@@ -26,7 +26,7 @@ from dl_core.connection_executors.models.db_adapter_data import (
     DBAdapterQuery,
     ExecutionStepCursorInfo,
 )
-from dl_core.exc import WrongQueryParameterization
+from dl_core.exc import WrongQueryParameterizationError
 from dl_dashsql.formatting.base import (
     QueryFormatterFactory,
     QueryIncomingParameter,
@@ -42,9 +42,11 @@ from dl_type_transformer.exc import UnsupportedNativeTypeError
 from dl_type_transformer.native_type import GenericNativeType
 from dl_type_transformer.type_transformer import TypeTransformer
 
-
 if TYPE_CHECKING:
     from dl_core.connection_executors.adapters.async_adapters_base import AsyncDBAdapter
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @attr.s(frozen=True)
@@ -103,14 +105,13 @@ class TypedQueryToDBAQueryConverter:
                 ]
             )
         except sa_exc.ArgumentError as e:
-            raise WrongQueryParameterization() from e
+            raise WrongQueryParameterizationError() from e
 
         return sa_text
 
     def make_dba_query(self, typed_query: TypedQuery) -> DBAdapterQuery:
         sa_query = self._make_sa_query(typed_query=typed_query)
-        dba_query = DBAdapterQuery(query=sa_query, db_name=None)
-        return dba_query
+        return DBAdapterQuery(query=sa_query, db_name=None)
 
 
 @attr.s(frozen=True)
@@ -134,14 +135,14 @@ class AsyncTypedQueryAdapterActionViaStandardExecute(AsyncTypedQueryAdapterActio
             column_count = raw_cursor_info.get("names") or raw_cursor_info.get("db_types") or 0
 
         # Resolve names
-        names: Optional[list[str]] = raw_cursor_info.get("names")
+        names: list[str] | None = raw_cursor_info.get("names")
         if not names:
             names = [f"col_{col_num}" for col_num in range(column_count)]
 
         assert names is not None
 
         # Resolve native types
-        db_types: Optional[list[Optional[GenericNativeType]]] = raw_cursor_info.get("db_types")
+        db_types: list[GenericNativeType | None] | None = raw_cursor_info.get("db_types")
         if not db_types:
             db_types = [None for _ in range(column_count)]
 
@@ -158,7 +159,7 @@ class AsyncTypedQueryAdapterActionViaStandardExecute(AsyncTypedQueryAdapterActio
                 try:
                     user_type = self._type_transformer.type_native_to_user(native_type)
                 except UnsupportedNativeTypeError:
-                    pass
+                    LOGGER.info("Unsupported native type %r, falling back to unsupported", native_type)
 
             headers.append(TypedQueryResultColumnHeader(name=name, user_type=user_type))
 
@@ -175,19 +176,17 @@ class AsyncTypedQueryAdapterActionViaStandardExecute(AsyncTypedQueryAdapterActio
             raw_cursor_info=dba_async_result.raw_cursor_info,
             data=data,
         )
-        result = TypedQueryResult(
+        return TypedQueryResult(
             query_type=typed_query.query_type,
             data_rows=data,
             column_headers=column_headers,
         )
-        return result
 
     async def run_typed_query_action(self, typed_query: TypedQuery) -> TypedQueryResult:
         assert typed_query.query_type is DashSQLQueryType.generic_query
         dba_query = self._query_converter.make_dba_query(typed_query=typed_query)
         dba_async_result = await self._async_adapter.execute(dba_query)
-        result = await self._make_result(typed_query=typed_query, dba_async_result=dba_async_result)
-        return result
+        return await self._make_result(typed_query=typed_query, dba_async_result=dba_async_result)
 
 
 @attr.s(frozen=True)
@@ -219,16 +218,14 @@ class SyncTypedQueryAdapterActionViaLegacyExecute(SyncTypedQueryAdapterAction):
         raw_cursor_info = dba_sync_result.raw_cursor_info
         assert raw_cursor_info is not None
         column_headers = self._resolve_result_column_headers(raw_cursor_info=raw_cursor_info)
-        result = TypedQueryResult(
+        return TypedQueryResult(
             query_type=typed_query.query_type,
             data_rows=data,
             column_headers=column_headers,
         )
-        return result
 
     def run_typed_query_action(self, typed_query: TypedQuery) -> TypedQueryResult:
         assert typed_query.query_type is DashSQLQueryType.generic_query
         dba_query = self._query_converter.make_dba_query(typed_query=typed_query)
         dba_sync_result = self._sync_adapter.execute(dba_query)
-        result = self._make_result(typed_query=typed_query, dba_sync_result=dba_sync_result)
-        return result
+        return self._make_result(typed_query=typed_query, dba_sync_result=dba_sync_result)

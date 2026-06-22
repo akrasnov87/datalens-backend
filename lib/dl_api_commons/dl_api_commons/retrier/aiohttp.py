@@ -1,10 +1,10 @@
 import asyncio
-import logging
-from typing import (
-    Any,
+from collections.abc import (
     Awaitable,
     Callable,
 )
+import logging
+from typing import Any
 
 import aiohttp
 import aiohttp.client_exceptions
@@ -13,7 +13,6 @@ import attr
 from dl_api_commons.aiohttp.aiohttp_client import BaseRetrier
 import dl_retrier
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -21,7 +20,7 @@ class AiohttpRetryError(Exception):
     """Aiohttp retrier failed attempting to retry"""
 
 
-class AiohttpRetryTimeout(aiohttp.client_exceptions.ServerTimeoutError, AiohttpRetryError):
+class AiohttpRetryTimeoutError(aiohttp.client_exceptions.ServerTimeoutError, AiohttpRetryError):
     """Timed out attempting to retry"""
 
 
@@ -67,7 +66,7 @@ class AiohttpPolicyRetrier(BaseRetrier):
             return last_known_result
 
         if isinstance(last_known_result, aiohttp.client_exceptions.ServerTimeoutError):
-            raise AiohttpRetryTimeout() from last_known_result
+            raise AiohttpRetryTimeoutError() from last_known_result
 
         if isinstance(last_known_result, Exception):
             raise AiohttpRetryError() from last_known_result

@@ -1,11 +1,11 @@
-import abc
-import asyncio
+from collections.abc import (
+    Callable,
+    Iterable,
+)
 import re
 from typing import (
     Any,
-    Callable,
     ClassVar,
-    Iterable,
     TypedDict,
 )
 
@@ -24,7 +24,7 @@ class DBExcKWArgs(TypedDict, total=False):
     details: dict[str, Any]
 
 
-class DbErrorTransformer(abc.ABC):
+class DbErrorTransformer:
     _DEFAULT_EXC_CLS: ClassVar[type[exc.DatabaseQueryError]] = exc.DatabaseQueryError
 
     def make_bi_error_parameters(
@@ -60,7 +60,7 @@ ExcMatchCondition = Callable[[Exception], bool]
 
 
 @attr.s(frozen=True, kw_only=True)
-class ErrorTransformerRule(abc.ABC):
+class ErrorTransformerRule:
     """Definition of a rule for transforming exceptions raised by a connector
     to their BI-domain exception counterparts. See `ChainedDbErrorTransformer` for more details.
 
@@ -79,8 +79,7 @@ class ErrorTransformerRule(abc.ABC):
     ) -> type[exc.DatabaseQueryError] | None:
         if self.when(wrapper_exc):
             return self.then_raise
-        else:
-            return None
+        return None
 
 
 def wrapper_exc_is(wrapper_exc_cls: type[Exception]) -> ExcMatchCondition:
@@ -165,22 +164,22 @@ class ChainedDbErrorTransformer(DbErrorTransformer):
         wrapper_exc: Exception,
         inspector_query: str | None,
     ) -> DBExcKWArgs:
-        return dict(
-            db_message=str(orig_exc) if orig_exc else str(wrapper_exc),
-            query=debug_query,
-            inspector_query=inspector_query,
-            orig=orig_exc,
-            details={},
-        )
+        return {
+            "db_message": str(orig_exc) if orig_exc else str(wrapper_exc),
+            "query": debug_query,
+            "inspector_query": inspector_query,
+            "orig": orig_exc,
+            "details": {},
+        }
 
 
 default_error_transformer_rules = (
     ErrorTransformerRule(
         when=orig_exc_is(sa_exc.NoSuchTableError),  # FIXME: not an exc.DatabaseQueryError
-        then_raise=exc.SourceDoesNotExist,
+        then_raise=exc.SourceDoesNotExistError,
     ),
     ErrorTransformerRule(when=wrapper_exc_is(sa_exc.OperationalError), then_raise=exc.DatabaseOperationalError),
-    ErrorTransformerRule(when=wrapper_exc_is(asyncio.TimeoutError), then_raise=exc.SourceTimeout),
+    ErrorTransformerRule(when=wrapper_exc_is(TimeoutError), then_raise=exc.SourceTimeoutError),
 )
 
 
@@ -192,10 +191,9 @@ def make_rule_from_descr(
     descr: tuple[
         tuple[type[Exception], str | None],
         type[exc.DatabaseQueryError],
-    ]
+    ],
 ) -> ErrorTransformerRule:
     (wrapper_exc, re_pattern), then_raise = descr
     if re_pattern is None:
         return ErrorTransformerRule(when=wrapper_exc_is(wrapper_exc), then_raise=then_raise)
-    else:
-        return ErrorTransformerRule(when=wrapper_exc_is_and_matches_re(wrapper_exc, re_pattern), then_raise=then_raise)
+    return ErrorTransformerRule(when=wrapper_exc_is_and_matches_re(wrapper_exc, re_pattern), then_raise=then_raise)

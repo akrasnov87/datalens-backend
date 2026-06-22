@@ -14,7 +14,7 @@ from dl_api_lib_tests.db.config import (
     DB_CORE_URL,
     CoreConnectionSettings,
 )
-from dl_constants.enums import RawSQLLevel
+from dl_constants import RawSQLLevel
 
 from dl_connector_clickhouse.core.clickhouse.constants import SOURCE_TYPE_CH_TABLE
 from dl_connector_clickhouse.core.clickhouse_base.constants import CONNECTION_TYPE_CLICKHOUSE
@@ -41,31 +41,31 @@ class DefaultApiTestBase(DataApiTestBase, DatasetTestBase, ConnectionTestBase):
     def engine_config(self, db_url: str, engine_params: dict) -> ClickhouseDbEngineConfig:
         return ClickhouseDbEngineConfig(url=db_url, engine_params=engine_params)
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def environment_readiness(self, enable_all_connectors) -> None:
         pass
 
     @pytest.fixture(scope="class")
     def connection_params(self) -> dict:
-        return dict(
-            db_name=CoreConnectionSettings.DB_NAME,
-            host=CoreConnectionSettings.HOST,
-            port=CoreConnectionSettings.PORT,
-            username=CoreConnectionSettings.USERNAME,
-            password=CoreConnectionSettings.PASSWORD,
-            raw_sql_level=self.raw_sql_level.value,
-        )
+        return {
+            "db_name": CoreConnectionSettings.DB_NAME,
+            "host": CoreConnectionSettings.HOST,
+            "port": CoreConnectionSettings.PORT,
+            "username": CoreConnectionSettings.USERNAME,
+            "password": CoreConnectionSettings.PASSWORD,
+            "raw_sql_level": self.raw_sql_level.value,
+        }
 
     @pytest.fixture(scope="class")
     def dataset_params(self, sample_table) -> dict:
-        return dict(
-            source_type=SOURCE_TYPE_CH_TABLE.name,
-            parameters=dict(
-                db_name=sample_table.db.name,
-                table_name=sample_table.name,
-            ),
-        )
+        return {
+            "source_type": SOURCE_TYPE_CH_TABLE.name,
+            "parameters": {
+                "db_name": sample_table.db.name,
+                "table_name": sample_table.name,
+            },
+        }
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def dataset_id(self, saved_dataset: Dataset) -> str:
         return saved_dataset.id

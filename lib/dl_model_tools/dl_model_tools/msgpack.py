@@ -1,8 +1,6 @@
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any
 
+from frozendict import frozendict
 import msgpack
 
 from dl_model_tools.serialization import (
@@ -15,10 +13,10 @@ from dl_type_transformer.native_type import GenericNativeType
 
 
 class DLMessagePackSerializer:
-    JSONABLERS_MAP = {cls.typeobj(): cls for cls in COMMON_SERIALIZERS}
-    DEJSONABLERS_MAP = {cls.typename: cls for cls in COMMON_SERIALIZERS}
+    JSONABLERS_MAP = frozendict({cls.typeobj(): cls for cls in COMMON_SERIALIZERS})
+    DEJSONABLERS_MAP = frozendict({cls.typename: cls for cls in COMMON_SERIALIZERS})
 
-    def _get_preprocessor(self, typeobj: type) -> Optional[type[TypeSerializer]]:
+    def _get_preprocessor(self, typeobj: type) -> type[TypeSerializer] | None:
         if issubclass(typeobj, GenericNativeType):
             return NativeTypeSerializer
         return self.JSONABLERS_MAP.get(typeobj)
@@ -27,7 +25,7 @@ class DLMessagePackSerializer:
         typeobj = type(obj)
         preprocessor = self._get_preprocessor(typeobj)
         if preprocessor is not None:
-            return dict(__dl_type__=preprocessor.typename, value=preprocessor.to_jsonable(obj))
+            return {"__dl_type__": preprocessor.typename, "value": preprocessor.to_jsonable(obj)}
         raise TypeError(f"Object of type {obj.__class__.__name__} is not MessagePack serializable")
 
     def dumps(self, value: Any) -> bytes:
@@ -48,7 +46,7 @@ class DLMessagePackSerializer:
 
 
 class DLSafeMessagePackSerializer(DLMessagePackSerializer):
-    def _get_preprocessor(self, typeobj: type) -> Optional[type[TypeSerializer]]:
+    def _get_preprocessor(self, typeobj: type) -> type[TypeSerializer] | None:
         if (preprocessor := super()._get_preprocessor(typeobj)) is not None:
             return preprocessor
         return UnsupportedSerializer  # don't raise a TypeError and log warning

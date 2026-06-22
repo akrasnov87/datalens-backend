@@ -1,4 +1,4 @@
-from typing import Callable
+from collections.abc import Callable
 
 import sqlalchemy as sa
 from sqlalchemy.sql.elements import (
@@ -16,7 +16,6 @@ import dl_formula.definitions.functions_array as base
 import dl_sqlalchemy_ydb.dialect as ydb_dialect
 
 from dl_connector_ydb.formula.constants import YqlDialect as D
-
 
 V = TranslationVariant.make
 

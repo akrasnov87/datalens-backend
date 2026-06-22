@@ -1,4 +1,7 @@
-from typing import MutableMapping
+from collections.abc import (
+    Mapping,
+    MutableMapping,
+)
 
 import attr
 
@@ -21,7 +24,6 @@ from dl_formula_ref.registry.base import FunctionDocRegistryItem
 from dl_formula_ref.registry.example import SimpleExample
 from dl_formula_ref.registry.note import Note
 from dl_i18n.localizer_base import Translatable as BaseTranslatable
-
 
 _ = get_gettext()
 
@@ -290,10 +292,9 @@ FUNCTION_GEOPOLYGON = FunctionDocRegistryItem(
 def _make_type_macro_from_dtype_spec(data_type_spec: DataTypeSpec) -> str:
     if isinstance(data_type_spec, DataType):
         return f"{{type:{data_type_spec.name}}}"
-    elif isinstance(data_type_spec, tuple):
+    if isinstance(data_type_spec, tuple):
         return f'{{type:{"|".join([sub_data_type_spec.name for sub_data_type_spec in data_type_spec])}}}'
-    else:
-        raise TypeError(type(data_type_spec))
+    raise TypeError(type(data_type_spec))
 
 
 def _get_comment_for_type(dialect: DialectCombo, native_type_name: str) -> str | BaseTranslatable:
@@ -302,7 +303,9 @@ def _get_comment_for_type(dialect: DialectCombo, native_type_name: str) -> str |
 
 @attr.s
 class DbCastExtension:
-    type_whitelists: dict[DialectCombo, dict[DataType, list[WhitelistTypeSpec]]] = attr.ib(kw_only=True, factory=dict)
+    type_whitelists: Mapping[DialectCombo, dict[DataType, list[WhitelistTypeSpec]]] = attr.ib(
+        kw_only=True, factory=dict
+    )
     type_comments: dict[tuple[DialectCombo, str], str | BaseTranslatable] = attr.ib(kw_only=True, factory=dict)
 
 
@@ -317,7 +320,7 @@ def register_db_cast_extension(extension: DbCastExtension) -> None:
 
 class DbCastWhiteListAliasedResourceRegistry(AliasedResourceRegistryBase):
     def get_resources(self) -> MutableMapping[str, AliasedResource]:
-        resources = {
+        return {
             "supported_native_types": AliasedTableResource(
                 table_body=[
                     [
@@ -344,7 +347,6 @@ class DbCastWhiteListAliasedResourceRegistry(AliasedResourceRegistryBase):
                 ]
             ),
         }
-        return resources  # type: ignore  # 2024-01-24 # TODO: Incompatible return value type (got "dict[str, AliasedTableResource]", expected "MutableMapping[str, AliasedResource]")  [return-value]
 
 
 FUNCTION_DB_CAST = FunctionDocRegistryItem(

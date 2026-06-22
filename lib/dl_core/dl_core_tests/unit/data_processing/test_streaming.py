@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Generator
+from collections.abc import Generator
 
 import pytest
 
@@ -41,13 +41,16 @@ async def test_async_chunked_limited():
     chunked = AsyncChunkedLimited(
         chunked=AsyncChunked.from_chunked_iterable(chunked_range(97, 10)),
         max_count=53,
-        limit_exc_to_raise=exc.ResultRowCountLimitExceeded,
+        limit_exc_to_raise=exc.ResultRowCountLimitExceededError,
     )
-    data = []
-    with pytest.raises(exc.ResultRowCountLimitExceeded):
+    data: list[int] = []
+
+    async def _consume_chunks() -> None:
         async for chunk in chunked.chunks:
-            for item in chunk:
-                data.append(item)
+            data.extend(chunk)
+
+    with pytest.raises(exc.ResultRowCountLimitExceededError):
+        await _consume_chunks()
     # Data is appended in whole chunks,
     # so the chunk that reaches the limit is never returned,
     # which is why we have only 50
@@ -57,21 +60,25 @@ async def test_async_chunked_limited():
     chunked = AsyncChunkedLimited(
         chunked=AsyncChunked.from_chunked_iterable(chunked_range(97, 10)),
         max_count=53,
-        limit_exc_to_raise=exc.ResultRowCountLimitExceeded,
+        limit_exc_to_raise=exc.ResultRowCountLimitExceededError,
     )
-    data = []
-    with pytest.raises(exc.ResultRowCountLimitExceeded):
+    data: list[int] = []
+
+    async def _consume_items() -> None:
         async for item in chunked.items:
             data.append(item)
+
+    with pytest.raises(exc.ResultRowCountLimitExceededError):
+        await _consume_items()
     assert data == list(range(53))
 
     # all
     chunked = AsyncChunkedLimited(
         chunked=AsyncChunked.from_chunked_iterable(chunked_range(97, 10)),
         max_count=53,
-        limit_exc_to_raise=exc.ResultRowCountLimitExceeded,
+        limit_exc_to_raise=exc.ResultRowCountLimitExceededError,
     )
-    with pytest.raises(exc.ResultRowCountLimitExceeded):
+    with pytest.raises(exc.ResultRowCountLimitExceededError):
         await chunked.all()
 
 

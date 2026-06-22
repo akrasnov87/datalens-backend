@@ -12,7 +12,6 @@ from dl_connector_trino.core.constants import (
 )
 from dl_connector_trino.formula.constants import TrinoDialect as D
 
-
 CORE_TEST_CONFIG = CoreTestEnvironmentConfiguration(
     host_us_http=get_test_container_hostport("us", fallback_port=21133).host,
     port_us_http=get_test_container_hostport("us", fallback_port=21133).port,
@@ -46,9 +45,9 @@ class CoreSslConnectionSettings(BaseConnectionSettings):
     PORT: ClassVar[int] = get_test_container_hostport("trino-tls-nginx", fallback_port=21124).port
     USERNAME: ClassVar[str] = "trino_user"
     SSL_ENABLE: ClassVar[bool] = True
-    CERT_PROVIDER_URL: ClassVar[
-        str
-    ] = f"http://{get_test_container_hostport('ssl-provider', fallback_port=26002).as_pair()}"
+    CERT_PROVIDER_URL: ClassVar[str] = (
+        f"http://{get_test_container_hostport('ssl-provider', fallback_port=26002).as_pair()}"
+    )
 
 
 class CorePasswordConnectionSettings(CoreSslConnectionSettings):

@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Generator,
+    Iterable,
+)
 import contextlib
 import logging
 from pathlib import Path
-from typing import (
-    Any,
-    Generator,
-    Iterable,
-    Optional,
-)
+from typing import Any
 
 import attr
 import tomlkit
@@ -20,7 +19,6 @@ from dl_repmanager.toml_tools import (
     TOMLReaderBase,
     TOMLWriter,
 )
-
 
 log = logging.getLogger(__name__)
 
@@ -50,12 +48,11 @@ class PackageMetaReader:
         return package_reg_name
 
     def get_package_module_names(self) -> tuple[str, ...]:
-        module_names = tuple(pkg["include"] for pkg in self._get_main_section()["packages"])
-        return module_names
+        return tuple(pkg["include"] for pkg in self._get_main_section()["packages"])
 
     def get_package_type(
         self,
-    ) -> Optional[str]:  # FIXME: remove `Optional` after it is added to all toml files
+    ) -> str | None:  # FIXME: remove `Optional` after it is added to all toml files
         package_reg_name = self._get_meta_section().get("package_type")
         assert package_reg_name is None or isinstance(package_reg_name, str)
         return package_reg_name
@@ -77,24 +74,19 @@ class PackageMetaReader:
         result: set[LocaleDomainSpec] = set()
         for domain, item_data in self._toml_reader.iter_section_items(self._SECTION_NAME_I18N_DOMAINS, strict=False):
             domain_str = str(domain).strip()
-            paths: list[Path] = []
-            for path_data in item_data:
-                paths.append(Path(str(path_data["path"]).strip()))
+            paths = tuple(Path(str(path_data["path"]).strip()) for path_data in item_data)
 
-            result.add(LocaleDomainSpec(domain_name=domain_str, scan_paths=tuple(paths)))
+            result.add(LocaleDomainSpec(domain_name=domain_str, scan_paths=paths))
 
         return tuple(result)
 
     def get_implicit_dependencies(self) -> list[str]:
         meta_section = self._toml_reader.get_section(self._SECTION_NAME_META, strict=False)
         implicit_deps = meta_section.get("implicit_dependencies", ())
-        return [item for item in implicit_deps]
+        return list(implicit_deps)
 
     def get_mypy_stubs_overrides(self) -> dict:
         return dict(self._toml_reader.get_section(f"{self._SECTION_NAME_META}.mypy_stubs_packages_override"))
-
-    def get_mypy_common(self) -> dict:
-        return dict(self._toml_reader.get_section(f"{self._SECTION_NAME_META}.mypy_common", strict=False))
 
     def get_mypy_overrides_modules(self) -> list[dict]:
         section = self._toml_reader.get_section("tool.mypy", strict=False)
@@ -113,7 +105,7 @@ class PackageMetaWriter(PackageMetaReader):
             section = self.toml_writer.get_editable_section(section_name)
             section.remove(item_name)
 
-    def _get_item_opt(self, section_name: str, item_name: str) -> Optional[dict[str, Any]]:
+    def _get_item_opt(self, section_name: str, item_name: str) -> dict[str, Any] | None:
         items = [item for item in self.iter_requirement_items(section_name=section_name) if item["name"] == item_name]
         if not items:
             return None
@@ -143,22 +135,6 @@ class PackageMetaWriter(PackageMetaReader):
                 override = tomlkit.inline_table()
                 override.add("ignore", True)
                 section.add(name, override)
-
-    def update_mypy_common(self, to_update: dict[str, str]) -> bool:
-        changes = False
-        with self.toml_writer.suppress_non_existent_key():
-            key = "tools.mypy"
-            try:
-                section = self.toml_writer.get_editable_section(key)
-            except Exception as err:
-                print(err)
-                section = self.toml_writer.add_section(key)
-
-            for k, v in to_update.items():
-                if section[k] != v:
-                    changes = True
-                section[k] = v
-        return changes
 
     def update_package_name(self, new_name: str) -> None:
         self.toml_writer.set_text_value(section_name=self._SECTION_NAME_MAIN, key="name", value=new_name)

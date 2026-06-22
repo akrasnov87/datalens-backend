@@ -9,13 +9,14 @@ import subprocess
 import sys
 import time
 from types import TracebackType
-from typing import Optional
+from typing import (
+    Any,
+    Self,
+)
 
 import attr
 import requests
 from statcommons.log_config import deconfigure_logging
-from typing_extensions import Self
-
 
 LOGGER = logging.getLogger()
 
@@ -23,11 +24,11 @@ LOGGER = logging.getLogger()
 class ForkPopenHack(subprocess.Popen):
     """Execute `func` in a forked process"""
 
-    def __init__(self, target, **kwargs):  # type: ignore  # TODO: fix
+    def __init__(self, target: Any, **kwargs: Any) -> None:
         self._target = target
         super().__init__(args=(), **kwargs)
 
-    def _execute_child(self, *args, **kwargs):  # type: ignore  # TODO: fix
+    def _execute_child(self, *args: Any, **kwargs: Any) -> None:
         # Most of the arguments are ignored,
         # unix-only version
         # skipping: errpipe.
@@ -53,7 +54,7 @@ class ProcessPopenDuck(multiprocessing.Process):
 
     _retcode = 0
 
-    def __init__(self, *args, **kwargs):  # type: ignore  # TODO: fix
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.start()
 
@@ -74,17 +75,17 @@ class WSGIRunner:
     _module: str = attr.ib()
     _callable: str = attr.ib()
     _ping_path: str = attr.ib()
-    _bind_port: Optional[int] = attr.ib(default=None)
+    _bind_port: int | None = attr.ib(default=None)
     _bind_addr: str = attr.ib(default="127.0.0.1")
     _wait_time: float = attr.ib(default=15.0)
     _poll_time: float = attr.ib(default=0.5)
     _wait_term_time: float = attr.ib(default=5.0)
-    _env: Optional[dict[str, str]] = attr.ib(default=None)
+    _env: dict[str, str] | None = attr.ib(default=None)
 
     _proc: subprocess.Popen = attr.ib(init=False, default=None)
 
-    def _debug(self, message, *args):  # type: ignore  # TODO: fix
-        sys.stderr.write("{} @ {}: ".format(self.__class__.__name__, os.getpid()))
+    def _debug(self, message: str, *args: Any) -> None:
+        sys.stderr.write(f"{self.__class__.__name__} @ {os.getpid()}: ")
         sys.stderr.write(message % args)
         sys.stderr.write("\n")
         sys.stderr.flush()
@@ -137,7 +138,11 @@ class WSGIRunner:
             if now > max_time:
                 raise Exception(
                     f"Timed out waiting for WSGI to come up at {url}",
-                    dict(last_error=last_error, last_resp=resp, last_resp_text=resp.text if resp is not None else None),
+                    {
+                        "last_error": last_error,
+                        "last_resp": resp,
+                        "last_resp_text": resp.text if resp is not None else None,
+                    },
                 )
             sleep_time = next_attempt_time - now
             if sleep_time > 0.001:
@@ -175,19 +180,19 @@ class WSGIRunner:
         )
 
     def _run_subproc(self) -> None:
-        cmd = ["uwsgi"] + list(self._make_uwsgi_params())
+        cmd = ["uwsgi", *list(self._make_uwsgi_params())]
         env = {
             **(self._env or {}),
             **os.environ,
         }
-        self._proc = subprocess.Popen(cmd, env=env)
+        self._proc = subprocess.Popen(cmd, env=env)  # noqa: S603
 
     def _run_fork_child_code(self) -> None:
         self._debug("child: running uwsgi")
         os.environ.update(self._env or {})
-        import pyuwsgi  # noqa
+        import pyuwsgi
 
-        cmd = [sys.argv[0]] + list(self._make_uwsgi_params())
+        cmd = [sys.argv[0], *list(self._make_uwsgi_params())]
         sys.argv = cmd
         self._debug("child: cmd: %r", cmd)
         deconfigure_logging()  # so that postfork configure_logging doesn't fail
@@ -201,7 +206,7 @@ class WSGIRunner:
             self._proc.terminate()
             exit_code = self._proc.wait(self._wait_term_time)
             LOGGER.debug("Test fixture worker on port %s was terminated. Exit code: %s", self._bind_port, exit_code)
-        except Exception:  # noqa
+        except Exception:
             LOGGER.exception("Exception during test worker graceful shutdown. Going to kill...")
             self._proc.kill()
 
@@ -211,8 +216,8 @@ class WSGIRunner:
 
     def __exit__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         self.shutdown()

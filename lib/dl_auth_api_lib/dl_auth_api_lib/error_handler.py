@@ -14,7 +14,6 @@ from dl_api_commons.aio.middlewares.error_handling_outer import (
 )
 from dl_auth_api_lib import exc
 
-
 STATUS_CODES: dict[type[exc.DLAuthAPIBaseError], HTTPStatus] = {
     exc.UnexpectedResponseError: HTTPStatus.BAD_REQUEST,
 }
@@ -26,36 +25,35 @@ class OAuthApiErrorHandler(AIOHTTPErrorHandler):
             return ErrorData(
                 status_code=err.status,
                 http_reason=err.reason,
-                response_body=dict(message=err.reason),
+                response_body={"message": err.reason},
                 level=ErrorLevel.info,
             )
-        elif isinstance(
+        if isinstance(
             err,
             (client_exceptions.ClientResponseError, client_exceptions.ClientConnectorCertificateError),
         ):
             return ErrorData(
                 status_code=HTTPStatus.BAD_REQUEST,
-                response_body=dict(message=str(err)),
+                response_body={"message": str(err)},
                 level=ErrorLevel.info,
             )
-        elif isinstance(err, MValidationError):
+        if isinstance(err, MValidationError):
             return ErrorData(
                 status_code=HTTPStatus.BAD_REQUEST,
-                response_body=dict(message=str(err)),
+                response_body={"message": str(err)},
                 level=ErrorLevel.info,
             )
-        elif isinstance(err, exc.DLAuthAPIBaseError):
+        if isinstance(err, exc.DLAuthAPIBaseError):
             status_code = STATUS_CODES.get(err.__class__, HTTPStatus.INTERNAL_SERVER_ERROR)
-            body = dict(
-                message=err.message,
-                code=exc.make_err_code(err),
-                debug=err.debug_info,
-                details=err.details,
-            )
+            body = {
+                "message": err.message,
+                "code": exc.make_err_code(err),
+                "debug": err.debug_info,
+                "details": err.details,
+            }
             return ErrorData(
                 status_code=status_code,
                 response_body=body,
                 level=ErrorLevel.info,
             )
-        else:
-            return DEFAULT_INTERNAL_SERVER_ERROR_DATA
+        return DEFAULT_INTERNAL_SERVER_ERROR_DATA

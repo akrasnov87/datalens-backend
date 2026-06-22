@@ -5,21 +5,17 @@ import attrs
 
 import dl_temporal.base as base
 
-
 LOGGER = logging.getLogger(__name__)
 
 
 class _ScheduleSyncServiceProtocol(Protocol):
-    async def sync(self) -> None:
-        ...
+    async def sync(self) -> None: ...
 
 
-class SyncSchedulesFromDynconfigActivityParams(base.BaseActivityParams):
-    ...
+class SyncSchedulesFromDynconfigActivityParams(base.BaseActivityParams): ...
 
 
-class SyncSchedulesFromDynconfigActivityResult(base.BaseActivityResult):
-    ...
+class SyncSchedulesFromDynconfigActivityResult(base.BaseActivityResult): ...
 
 
 @base.define_activity

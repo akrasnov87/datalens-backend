@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Generic,
-    Iterable,
-    Optional,
-    TypeVar,
-)
+from collections.abc import Iterable
+from typing import Any
 
 import attr
 
@@ -24,7 +19,7 @@ def validate_node_is_extractable(node: nodes.FormulaItem) -> nodes.NodeExtract:
 class NodeSet:
     __slots__ = ("_data_set",)
 
-    def __init__(self, nodes: Iterable[nodes.FormulaItem] = ()):
+    def __init__(self, nodes: Iterable[nodes.FormulaItem] = ()) -> None:
         self._data_set: set[NodeExtract] = set()
         for node in nodes:
             self.add(node)
@@ -64,18 +59,15 @@ class NodeSet:
         return len(self._data_set)
 
 
-_MAP_VALUE_TV = TypeVar("_MAP_VALUE_TV")
-
-
 @attr.s
-class NodeValueMap(Generic[_MAP_VALUE_TV]):
-    _data: dict[NodeExtract, _MAP_VALUE_TV] = attr.ib(factory=dict)
+class NodeValueMap[MAP_VALUE_TV]:
+    _data: dict[NodeExtract, MAP_VALUE_TV] = attr.ib(factory=dict)
 
-    def add(self, node: nodes.FormulaItem, value: _MAP_VALUE_TV) -> None:
+    def add(self, node: nodes.FormulaItem, value: MAP_VALUE_TV) -> None:
         extract = validate_node_is_extractable(node)
         self._data[extract] = value
 
-    def get(self, node: nodes.FormulaItem) -> Optional[_MAP_VALUE_TV]:
+    def get(self, node: nodes.FormulaItem) -> MAP_VALUE_TV | None:
         if node.extract is None:
             return None
         return self._data.get(node.extract)

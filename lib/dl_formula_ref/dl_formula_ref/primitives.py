@@ -4,11 +4,10 @@ Generate structures used for creating documentation
 
 from __future__ import annotations
 
-from typing import (
+from collections.abc import (
     Callable,
     Collection,
     Iterable,
-    Optional,
     Sequence,
 )
 
@@ -28,12 +27,11 @@ from dl_formula_ref.registry.note import (
 from dl_formula_ref.registry.signature_base import FunctionSignatureCollection
 from dl_formula_ref.registry.text import ParameterizedText
 
-
-TOP_NOTE_LEVELS: Collection[tuple[Optional[NoteType], Optional[NoteLevel]]] = [
+TOP_NOTE_LEVELS: Collection[tuple[NoteType | None, NoteLevel | None]] = [
     (NoteType.REGULAR, NoteLevel.alert),
     (NoteType.REGULAR, NoteLevel.warning),
 ]
-BOTTOM_NOTE_LEVELS: Collection[tuple[Optional[NoteType], Optional[NoteLevel]]] = [
+BOTTOM_NOTE_LEVELS: Collection[tuple[NoteType | None, NoteLevel | None]] = [
     (NoteType.REGULAR, NoteLevel.info),
     (NoteType.ARG_RESTRICTION, None),
 ]
@@ -112,7 +110,7 @@ class RawFunc:
     def _filter_notes(
         self,
         notes: Iterable[ParameterizedNote],
-        levels: Collection[tuple[Optional[NoteType], Optional[NoteLevel]]],
+        levels: Collection[tuple[NoteType | None, NoteLevel | None]],
     ) -> list[ParameterizedNote]:
         result: list[ParameterizedNote] = []
         for note in notes or ():
@@ -153,7 +151,7 @@ class RawMultiAudienceFunc:
     def values(self) -> Iterable[RawFunc]:
         return self._aud_dict.values()
 
-    def get(self, audience: Audience, default: Optional[RawFunc] = None) -> Optional[RawFunc]:
+    def get(self, audience: Audience, default: RawFunc | None = None) -> RawFunc | None:
         return self._aud_dict.get(audience, default)
 
     def get_title(self, locale: str) -> str:
@@ -166,7 +164,7 @@ class RawMultiAudienceFunc:
     def from_aud_dict(cls, aud_dict: dict[Audience, RawFunc]) -> RawMultiAudienceFunc:
         names: set[str] = set()
         internal_names: set[str] = set()
-        for _audience, raw_func in aud_dict.items():
+        for raw_func in aud_dict.values():
             names.add(raw_func.name)
             internal_names.add(raw_func.internal_name)
 

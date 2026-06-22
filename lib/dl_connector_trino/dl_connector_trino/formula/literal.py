@@ -1,8 +1,5 @@
 import datetime
-from typing import (
-    Union,
-    cast,
-)
+from typing import cast
 
 import sqlalchemy as sa
 import trino.sqlalchemy.datatype as tsa
@@ -30,7 +27,7 @@ class TrinoLiteralizer(Literalizer):
                 tsa.TIMESTAMP(precision=precision),
             )
 
-        if value.tzinfo == datetime.timezone.utc:
+        if value.tzinfo == datetime.UTC:
             timezone_repr = "UTC"
 
         elif hasattr(value.tzinfo, "zone"):
@@ -55,5 +52,5 @@ class TrinoLiteralizer(Literalizer):
             tsa.TIMESTAMP(timezone=True, precision=precision),
         )
 
-    def literal_array(self, value: Union[tuple, list], dialect: DialectCombo) -> Literal:
+    def literal_array(self, value: tuple | list, dialect: DialectCombo) -> Literal:
         return cast(Literal, TrinoArray(*value))

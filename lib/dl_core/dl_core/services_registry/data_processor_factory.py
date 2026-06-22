@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import logging
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     DataSourceRole,
     ProcessorType,
 )
@@ -18,7 +15,6 @@ from dl_core.data_processing.processing.source_db.processor import SourceDbOpera
 from dl_core.services_registry.data_processor_factory_base import BaseClosableDataProcessorFactory
 from dl_core.us_dataset import Dataset
 from dl_core.us_manager.local_cache import USEntryBuffer
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -36,7 +32,7 @@ class SourceDataProcessorFactory(BaseClosableDataProcessorFactory):
         allow_cache_usage: bool = True,
         reporting_enabled: bool = True,
         # SOURCE_DB-specific
-        role: Optional[DataSourceRole] = None,
+        role: DataSourceRole | None = None,
         **kwargs: Any,
     ) -> ExecutorBasedOperationProcessor:
         assert role is not None

@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-    Sequence,
-)
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import attr
 
@@ -23,7 +20,6 @@ from dl_formula_ref.registry.return_extractor import DefaultReturnTypeExtractor
 from dl_formula_ref.registry.scopes import SCOPES_DEFAULT
 from dl_formula_ref.registry.signature_gen import DefaultSignatureGenerator
 from dl_formula_ref.registry.text import ParameterizedText
-
 
 if TYPE_CHECKING:
     import dl_formula_ref.registry.arg_base as _arg_base
@@ -145,7 +141,7 @@ class FunctionDocRegistryItem:
     def get_dialects(self, env: GenerationEnvironment) -> set[DialectCombo]:
         return self._dialect_extractor.get_dialects(item=self, env=env)
 
-    def _get_one_implementation_spec(self, env: GenerationEnvironment) -> Optional[FunctionImplementationSpec]:
+    def _get_one_implementation_spec(self, env: GenerationEnvironment) -> FunctionImplementationSpec | None:
         implementations = self.get_implementation_specs(env=env)
         if implementations:
             return implementations[0]

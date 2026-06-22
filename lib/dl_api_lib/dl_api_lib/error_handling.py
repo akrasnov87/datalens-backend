@@ -4,10 +4,7 @@ import http
 import inspect
 import itertools
 import logging
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any
 
 import attr
 from marshmallow import Schema
@@ -16,17 +13,13 @@ from marshmallow import fields
 
 from dl_api_commons import exc as api_commons_exc
 from dl_api_lib import exc
-from dl_constants.exc import (
-    DEFAULT_ERR_CODE_API_PREFIX,
-    GLOBAL_ERR_PREFIX,
-)
+from dl_constants.exc import DEFAULT_GLOBAL_ERR_CODE_API_PREFIX
 from dl_core import exc as common_exc
 from dl_dashsql import exc as dashsql_exc
 from dl_formula.core import exc as formula_exc
 import dl_query_processing.exc
 import dl_rls.exc
 import dl_type_transformer.exc
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -36,70 +29,75 @@ EXCEPTION_CODES = {
     dl_query_processing.exc.DatasetError: status.BAD_REQUEST,
     formula_exc.FormulaError: status.BAD_REQUEST,
     common_exc.DatabaseQueryError: status.BAD_REQUEST,
-    common_exc.SourceAccessDenied: status.FORBIDDEN,
+    common_exc.DatabaseReadOnlyTransactionError: status.BAD_REQUEST,
+    common_exc.SourceAccessDeniedError: status.FORBIDDEN,
     common_exc.DataSourceErrorFromComponentError: status.BAD_REQUEST,
-    common_exc.DatabaseUnavailable: status.BAD_REQUEST,
+    common_exc.DatabaseUnavailableError: status.BAD_REQUEST,
     common_exc.DatasetConfigurationError: status.BAD_REQUEST,
     common_exc.ConnectionConfigurationError: status.BAD_REQUEST,
-    common_exc.USAccessDeniedException: status.FORBIDDEN,
-    common_exc.USWorkbookIsolationInterruptionException: status.FORBIDDEN,
-    common_exc.USObjectNotFoundException: status.NOT_FOUND,
+    common_exc.USAccessDeniedError: status.FORBIDDEN,
+    common_exc.USWorkbookIsolationInterruptionError: status.FORBIDDEN,
+    common_exc.USObjectNotFoundError: status.NOT_FOUND,
     common_exc.USPermissionCheckError: 530,
-    common_exc.USLockUnacquiredException: status.LOCKED,
-    common_exc.USBadRequestException: status.BAD_REQUEST,
-    common_exc.USValidationException: status.BAD_REQUEST,
-    common_exc.USConnectionAccessDenied: status.FORBIDDEN,
-    common_exc.USConnectionNotFound: status.NOT_FOUND,
-    common_exc.USInvalidConnectionID: status.BAD_REQUEST,
-    common_exc.USReadOnlyModeEnabledException: status.UNAVAILABLE_FOR_LEGAL_REASONS,
-    common_exc.USIncorrectTenantIdException: status.CONFLICT,
+    common_exc.USLockUnacquiredError: status.LOCKED,
+    common_exc.USBadRequestError: status.BAD_REQUEST,
+    common_exc.USValidationError: status.BAD_REQUEST,
+    common_exc.USConnectionAccessDeniedError: status.FORBIDDEN,
+    common_exc.USConnectionNotFoundError: status.NOT_FOUND,
+    common_exc.USInvalidConnectionIDError: status.BAD_REQUEST,
+    common_exc.USReadOnlyModeEnabledError: status.UNAVAILABLE_FOR_LEGAL_REASONS,
+    common_exc.USIncorrectTenantIdError: status.CONFLICT,
     common_exc.QueryConstructorError: status.BAD_REQUEST,
-    common_exc.ResultRowCountLimitExceeded: status.BAD_REQUEST,
+    common_exc.ResultRowCountLimitExceededError: status.BAD_REQUEST,
     common_exc.TableNameNotConfiguredError: status.BAD_REQUEST,
     common_exc.MalformedCredentialsError: status.BAD_REQUEST,
     common_exc.NotAvailableError: status.BAD_REQUEST,
     common_exc.InvalidFieldError: status.BAD_REQUEST,
-    common_exc.FieldNotFound: status.BAD_REQUEST,
-    common_exc.USPermissionRequired: status.FORBIDDEN,
+    common_exc.FieldNotFoundError: status.BAD_REQUEST,
+    common_exc.USPermissionRequiredError: status.FORBIDDEN,
     dl_rls.exc.RLSError: status.BAD_REQUEST,
-    exc.FeatureNotAvailable: status.BAD_REQUEST,
+    exc.FeatureNotAvailableError: status.BAD_REQUEST,
     dl_query_processing.exc.FilterError: status.BAD_REQUEST,
-    exc.UnsupportedForEntityType: status.BAD_REQUEST,
-    exc.BadConnectionType: status.BAD_REQUEST,
-    common_exc.SourceAvatarNotFound: status.BAD_REQUEST,
-    common_exc.ReferencedUSEntryNotFound: status.BAD_REQUEST,
-    common_exc.ReferencedUSEntryAccessDenied: status.FORBIDDEN,
-    common_exc.DataSourceTitleConflict: status.BAD_REQUEST,
-    common_exc.DataSourcesInconsistent: status.BAD_REQUEST,
+    exc.UnsupportedForEntityTypeError: status.BAD_REQUEST,
+    exc.BadConnectionTypeError: status.BAD_REQUEST,
+    common_exc.SourceAvatarNotFoundError: status.BAD_REQUEST,
+    common_exc.ReferencedUSEntryNotFoundError: status.BAD_REQUEST,
+    common_exc.ReferencedUSEntryAccessDeniedError: status.FORBIDDEN,
+    common_exc.DataSourceTitleConflictError: status.BAD_REQUEST,
+    common_exc.DataSourcesInconsistentError: status.BAD_REQUEST,
     common_exc.TemplateInvalidError: status.BAD_REQUEST,
     common_exc.ParameterValueInvalidError: status.BAD_REQUEST,
     common_exc.ConnectionTemplateDisabledError: status.BAD_REQUEST,
-    dl_query_processing.exc.EmptyQuery: status.BAD_REQUEST,
-    dl_query_processing.exc.InvalidQueryStructure: status.BAD_REQUEST,
-    common_exc.PlatformPermissionRequired: status.FORBIDDEN,
-    exc.DatasetRevisionMismatch: status.BAD_REQUEST,
-    common_exc.EntityUsageNotAllowed: status.BAD_REQUEST,
+    dl_query_processing.exc.EmptyQueryError: status.BAD_REQUEST,
+    dl_query_processing.exc.InvalidQueryStructureError: status.BAD_REQUEST,
+    common_exc.PlatformPermissionRequiredError: status.FORBIDDEN,
+    exc.DatasetRevisionMismatchError: status.BAD_REQUEST,
+    common_exc.EntityUsageNotAllowedError: status.BAD_REQUEST,
     exc.DatasetActionNotAllowedError: status.BAD_REQUEST,
     dl_query_processing.exc.LegendError: status.BAD_REQUEST,
     dl_query_processing.exc.PivotError: status.BAD_REQUEST,
-    dl_type_transformer.exc.TypeCastFailed: status.BAD_REQUEST,
+    dl_type_transformer.exc.TypeCastFailedError: status.BAD_REQUEST,
     dl_query_processing.exc.BlockSpecError: status.BAD_REQUEST,
     dl_query_processing.exc.TreeError: status.BAD_REQUEST,
     dashsql_exc.DashSQLError: status.BAD_REQUEST,
     dl_query_processing.exc.GenericInvalidRequestError: status.BAD_REQUEST,
-    dl_query_processing.exc.InvalidGroupByConfiguration: status.BAD_REQUEST,
-    common_exc.WrongQueryParameterization: status.BAD_REQUEST,
+    dl_query_processing.exc.InvalidGroupByConfigurationError: status.BAD_REQUEST,
+    common_exc.WrongQueryParameterizationError: status.BAD_REQUEST,
     api_commons_exc.RequestTimeoutError: status.FAILED_DEPENDENCY,
-    exc.ConnectorIconNotFoundException: status.NOT_FOUND,
-    api_commons_exc.FailedDependencyException: status.FAILED_DEPENDENCY,
-    common_exc.UnknownEntryMigration: status.NOT_IMPLEMENTED,
-    common_exc.FailedToLoadSchema: status.BAD_REQUEST,
+    exc.ConnectorIconNotFoundError: status.NOT_FOUND,
+    api_commons_exc.FailedDependencyError: status.FAILED_DEPENDENCY,
+    common_exc.UnknownEntryMigrationError: status.NOT_IMPLEMENTED,
+    common_exc.FailedToLoadSchemaError: status.BAD_REQUEST,
     common_exc.InvalidRequestError: status.BAD_REQUEST,
     exc.WorkbookImportError: status.BAD_REQUEST,
     exc.WorkbookExportError: status.BAD_REQUEST,
-    common_exc.DataSourceNotFound: status.BAD_REQUEST,
+    common_exc.DataSourceNotFoundError: status.BAD_REQUEST,
     exc.CacheInvalidationTestNotEditorError: status.FORBIDDEN,
+    exc.CacheInvalidationTestConnectionViewRequiredError: status.FORBIDDEN,
     exc.CacheInvalidationTestError: status.BAD_REQUEST,
+    exc.ConnectionTemplateNotFoundError: status.BAD_REQUEST,
+    exc.PreviewSourceModificationNotAllowedError: status.FORBIDDEN,
+    common_exc.UnexpectedUSEntryTypeError: status.BAD_REQUEST,
 }
 
 
@@ -111,7 +109,7 @@ class BIError:
      Is used for metrics collection and forming API error responses.
     """
 
-    http_code: Optional[int]
+    http_code: int | None
     application_code_stack: tuple[str, ...]
     forward_for_anonymous: bool
 
@@ -123,8 +121,8 @@ class BIError:
 
     @staticmethod
     def get_default_error_code(
-        err: Exception, exc_code_mapping: Optional[dict[type[Exception], int]] = None
-    ) -> Optional[int]:
+        err: Exception, exc_code_mapping: dict[type[Exception], int] | None = None
+    ) -> int | None:
         """
         :param err: Exception to map to HTTP status code
         :param exc_code_mapping: Override for default `EXCEPTION_CODES` exception to HTTP status code mapping
@@ -144,9 +142,9 @@ class BIError:
     def from_exception(
         cls,
         ex: Exception,
-        default_message: Optional[str] = None,
-        exc_code_mapping: Optional[dict[type[Exception], int]] = None,
-    ) -> "BIError":
+        default_message: str | None = None,
+        exc_code_mapping: dict[type[Exception], int] | None = None,
+    ) -> BIError:
         """
         Creates BIError from exception
         :param ex: Exception to create BIError from
@@ -162,9 +160,9 @@ class BIError:
         debug: dict[str, Any] = {}
         application_code_stack: tuple[str, ...] = ()
         forward_for_anonymous = False
-        http_code: Optional[int] = cls.get_default_error_code(ex, exc_code_mapping)
+        http_code: int | None = cls.get_default_error_code(ex, exc_code_mapping)
 
-        if isinstance(ex, common_exc.DLBaseException):
+        if isinstance(ex, common_exc.DLBaseError):
             message = ex.message
             details = ex.details
             debug = ex.debug_info
@@ -211,7 +209,7 @@ class RegularAPIErrorSchema(Schema):
     def serialize_error_code(self, data: BIError) -> str:
         return ".".join(
             itertools.chain(
-                (GLOBAL_ERR_PREFIX, DEFAULT_ERR_CODE_API_PREFIX),
+                DEFAULT_GLOBAL_ERR_CODE_API_PREFIX,
                 data.application_code_stack,
             )
         )

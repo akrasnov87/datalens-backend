@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import (
+    AsyncIterable,
+    Awaitable,
+    Callable,
+    Iterable,
+)
 from concurrent.futures import ThreadPoolExecutor
 import contextvars
 from functools import partial
@@ -11,11 +17,6 @@ import typing
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncIterable,
-    Awaitable,
-    Callable,
-    Iterable,
-    Optional,
     TypeVar,
     cast,
 )
@@ -23,19 +24,16 @@ import weakref
 
 from async_timeout import Timeout as VanillaTimeout
 
-
 if TYPE_CHECKING:
     from concurrent.futures import Future
 
 
 LOGGER = logging.getLogger(__name__)
 
-_CORO_TV = TypeVar("_CORO_TV")
 
-
-async def shield_wait_for_complete(
-    coro: Awaitable[_CORO_TV], log_msg_on_cancel: str = "CancelledError during critical section execution"
-) -> _CORO_TV:
+async def shield_wait_for_complete[CORO_TV](
+    coro: Awaitable[CORO_TV], log_msg_on_cancel: str = "CancelledError during critical section execution"
+) -> CORO_TV:
     """
     Shields coroutine from cancellation and waits until it finished.
     If execution was cancelled - raise CancelledError after coroutine done.
@@ -44,8 +42,7 @@ async def shield_wait_for_complete(
     :param log_msg_on_cancel: message to log in case of cancellation (will be logged exactly when cancellation occurs)
     :return: shielded coroutine result
     """
-    loop = asyncio.get_event_loop()
-    real_task = loop.create_task(coro)  # type: ignore  # 2024-01-24 # TODO: Need type annotation for "real_task"  [var-annotated]
+    real_task = asyncio.get_running_loop().create_task(coro)  # type: ignore  # 2024-01-24 # TODO: Need type annotation for "real_task"  [var-annotated]
 
     try:
         return await asyncio.shield(real_task)
@@ -56,7 +53,7 @@ async def shield_wait_for_complete(
         try:
             await real_task
         except Exception as e:  # noqa
-            logging.exception("Error during awaiting critical section after cancellation")
+            LOGGER.exception("Error during awaiting critical section after cancellation")
 
         # Raising original exception to meet
         raise
@@ -68,7 +65,7 @@ _SUBMIT_RT = TypeVar("_SUBMIT_RT")
 class ContextVarExecutor(ThreadPoolExecutor):
     """Bug in Python: default TPE does not propagate ContextVars in running thread."""
 
-    def __init__(self, *args, **kwargs):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._futures_set = weakref.WeakSet()  # type: ignore  # 2024-01-30 # TODO: Need type annotation for "_futures_set"  [var-annotated]
 
@@ -86,15 +83,29 @@ class ContextVarExecutor(ThreadPoolExecutor):
 _WRAPPED_RT = TypeVar("_WRAPPED_RT")
 
 
-def await_sync(coro: Awaitable[_WRAPPED_RT], loop: Optional[asyncio.AbstractEventLoop] = None) -> _WRAPPED_RT:
-    if loop is None:
-        loop = asyncio.get_event_loop()
+_thread_loop_holder = threading.local()
 
+
+def get_thread_loop() -> asyncio.AbstractEventLoop:
+    # Per-thread persistent event loop for sync->async bridges. Mirrors pre-3.12
+    # asyncio.get_event_loop() semantics so long-lived async resources (arq's redis
+    # pool, GRPC channels, etc.) initialized on one bridged call stay valid across
+    # subsequent calls.
+    loop = getattr(_thread_loop_holder, "loop", None)
+    if loop is None or loop.is_closed():
+        loop = asyncio.new_event_loop()
+        _thread_loop_holder.loop = loop
+    return loop
+
+
+def await_sync[WRAPPED_RT](coro: Awaitable[WRAPPED_RT], loop: asyncio.AbstractEventLoop | None = None) -> WRAPPED_RT:
+    if loop is None:
+        loop = get_thread_loop()
     return loop.run_until_complete(coro)
 
 
 class RunThread(threading.Thread):
-    def __init__(self, coro: typing.Coroutine[typing.Any, typing.Any, _WRAPPED_RT]):
+    def __init__(self, coro: typing.Coroutine[typing.Any, typing.Any, _WRAPPED_RT]) -> None:
         self.coro = coro
         self.result: _WRAPPED_RT | None = None
         super().__init__()
@@ -108,13 +119,13 @@ class RunThread(threading.Thread):
 # Should be avoided by making context async and using await_sync on higher level of sync counterparts.
 # USE IT ONLY IN THE RAREST OF OCCASIONS, WHEN YOU HAVE NO OTHER CHOICE.
 # Please, lord, have mercy on my soul, for I have sinned.
-def async_run(
-    coro: typing.Coroutine[typing.Any, typing.Any, _WRAPPED_RT],
-    loop: typing.Optional[asyncio.AbstractEventLoop] = None,
-) -> _WRAPPED_RT:
+def async_run[WRAPPED_RT](
+    coro: typing.Coroutine[typing.Any, typing.Any, WRAPPED_RT],
+    loop: asyncio.AbstractEventLoop | None = None,
+) -> WRAPPED_RT:
     if loop is None:
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = None
 
@@ -129,19 +140,16 @@ def async_run(
     thread.join()
 
     assert thread.result is not None
-    return thread.result
+    return thread.result  # type: ignore[return-value]  # 26.05.2026 mypy bump 1.20.2
 
 
-_ITERABLE_T = TypeVar("_ITERABLE_T")
+def to_sync_iterable[ITERABLE_T](
+    async_iterable: AsyncIterable[ITERABLE_T],
+    loop: asyncio.AbstractEventLoop | None = None,
+) -> Iterable[ITERABLE_T]:
+    actual_loop = get_thread_loop() if loop is None else loop
 
-
-def to_sync_iterable(
-    async_iterable: AsyncIterable[_ITERABLE_T],
-    loop: Optional[asyncio.AbstractEventLoop] = None,
-) -> Iterable[_ITERABLE_T]:
-    actual_loop = asyncio.get_event_loop() if loop is None else loop
-
-    def wrapper() -> Iterable[_ITERABLE_T]:
+    def wrapper() -> Iterable[ITERABLE_T]:
         aiter = async_iterable.__aiter__()
         while True:
             try:
@@ -152,12 +160,9 @@ def to_sync_iterable(
     return wrapper()
 
 
-async def alist(aiterable: AsyncIterable[_ITERABLE_T]) -> list[_ITERABLE_T]:
+async def alist[ITERABLE_T](aiterable: AsyncIterable[ITERABLE_T]) -> list[ITERABLE_T]:
     """Gather an async iterable into a single list"""
-    result = []
-    async for item in aiterable:
-        result.append(item)
-    return result
+    return [item async for item in aiterable]
 
 
 class BIAsyncTimeout:
@@ -170,7 +175,7 @@ class BIAsyncTimeout:
         return instance
 
     @classmethod
-    def from_params(cls, deadline: Optional[float], loop: asyncio.AbstractEventLoop) -> BIAsyncTimeout:
+    def from_params(cls, deadline: float | None, loop: asyncio.AbstractEventLoop) -> BIAsyncTimeout:
         return cls.from_vanilla(VanillaTimeout(deadline, loop))
 
     async def __aenter__(self) -> BIAsyncTimeout:
@@ -178,17 +183,17 @@ class BIAsyncTimeout:
 
     async def __aexit__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> Optional[bool]:
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> bool | None:
         return await self.vanilla_timeout.__aexit__(exc_type, exc_val, exc_tb)
 
 
-def timeout(delay: Optional[float]) -> BIAsyncTimeout:
+def timeout(delay: float | None) -> BIAsyncTimeout:
     loop = asyncio.get_running_loop()
     if delay is not None:
-        deadline = loop.time() + delay  # type: Optional[float]
+        deadline = loop.time() + delay  # type: float | None
     else:
         deadline = None
     return BIAsyncTimeout.from_params(deadline, loop)

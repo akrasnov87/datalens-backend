@@ -2,17 +2,15 @@ from __future__ import annotations
 
 import abc
 from collections import ChainMap
+from collections import ChainMap as ChainMapGeneric
 from functools import reduce
 import logging
 from typing import (
+    TYPE_CHECKING,
+    Any,
     ClassVar,
     Union,
 )
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
-from typing import ChainMap as ChainMapGeneric
 
 import attr
 import marshmallow
@@ -31,7 +29,6 @@ from dl_utils.utils import (
     AddressableData,
     DataKey,
 )
-
 
 if TYPE_CHECKING:
     from dl_core.us_manager.us_manager import USManagerBase
@@ -57,7 +54,7 @@ class USDataPack:
 
 class USEntrySerializer(abc.ABC):
     _MAP_TYPE_TO_SCHEMA: ClassVar[ChainMapGeneric[type[BaseAttrsDataModel], type[marshmallow.Schema]]] = ChainMap(
-        MAP_TYPE_TO_SCHEMA_MAP_TYPE_TO_SCHEMA,  # type: ignore  # 2024-01-30 # TODO: Argument 1 to "ChainMap" has incompatible type "dict[type[DataModel], type[Schema]]"; expected "MutableMapping[type[BaseAttrsDataModel], type[Schema]]"  [arg-type]
+        MAP_TYPE_TO_SCHEMA_MAP_TYPE_TO_SCHEMA,
         {
             Dataset.DataModel: DatasetStorageSchema,
         },
@@ -201,9 +198,7 @@ class USEntrySerializer(abc.ABC):
 class USEntrySerializerMarshmallow(USEntrySerializer):
     def serialize_raw(self, entry: USEntry) -> dict[str, Any]:
         dump_schema = self.get_dump_storage_schema(type(entry.data))
-        data_dict = dump_schema.dump(entry.data)
-
-        return data_dict
+        return dump_schema.dump(entry.data)
 
     def deserialize_raw(
         self,
@@ -215,11 +210,12 @@ class USEntrySerializerMarshmallow(USEntrySerializer):
         data_strict: bool = True,
     ) -> USEntry:
         data_cls = cls.DataModel
-        assert data_cls is not None and issubclass(data_cls, BaseAttrsDataModel)
+        assert data_cls is not None
+        assert issubclass(data_cls, BaseAttrsDataModel)
         schema = self.get_load_storage_schema(data_cls)
 
         data = schema.load(raw_data)
-        entry = cls(
+        return cls(
             uuid=entry_id,
             us_manager=us_manager,
             data=data,
@@ -227,16 +223,16 @@ class USEntrySerializerMarshmallow(USEntrySerializer):
             **common_properties,
         )
 
-        return entry
-
     def get_secret_keys(self, cls: type[USEntry]) -> set[DataKey]:
         data_cls = cls.DataModel
-        assert data_cls is not None and issubclass(data_cls, BaseAttrsDataModel)
+        assert data_cls is not None
+        assert issubclass(data_cls, BaseAttrsDataModel)
         return data_cls.get_secret_keys()
 
     def get_unversioned_keys(self, cls: type[USEntry]) -> set[DataKey]:
         data_cls = cls.DataModel
-        assert data_cls is not None and issubclass(data_cls, BaseAttrsDataModel)
+        assert data_cls is not None
+        assert issubclass(data_cls, BaseAttrsDataModel)
         return data_cls.get_unversioned_keys()
 
     def set_data_attr(self, entry: USEntry, key: DataKey, value: Any) -> None:

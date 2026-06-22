@@ -1,24 +1,26 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import (
+    Callable,
+    Generator,
+)
 import contextlib
 import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
-    Generator,
-    Optional,
     TypeVar,
-    Union,
+    cast,
+    final,
 )
 
 import attr
 import sqlalchemy as sa
 from sqlalchemy import event
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.engine.base import Engine
-from typing_extensions import final
 
 from dl_app_tools.profiling_base import (
     GenericProfiler,
@@ -66,9 +68,8 @@ from dl_core.db_session_utils import db_session_context
 from dl_type_transformer.native_type import CommonNativeType
 from dl_utils.utils import get_type_full_name
 
-
 if TYPE_CHECKING:
-    from dl_core.connection_executors.models.connection_target_dto_base import ConnTargetDTO  # noqa: F401
+    from dl_core.connection_executors.models.connection_target_dto_base import ConnTargetDTO
 
 
 LOGGER = logging.getLogger(__name__)
@@ -101,7 +102,7 @@ class BaseSAAdapter(
     _target_dto: _DBA_SA_DTO_TV = attr.ib()
     _req_ctx_info: DBAdapterScopedRCI = attr.ib()
     # Internals
-    _engine_cache: dict[tuple[Optional[str], bool], Engine] = attr.ib(init=False, factory=lambda: {})
+    _engine_cache: dict[tuple[str | None, bool], Engine] = attr.ib(init=False, factory=dict)
     _error_transformer: ClassVar[DbErrorTransformer] = make_default_transformer_with_custom_rules()
 
     _COMMON_ENGINE_EVENT_LISTENERS: ClassVar[list[EventListenerSpec]] = [
@@ -116,24 +117,24 @@ class BaseSAAdapter(
         return cls(target_dto=target_dto, default_chunk_size=default_chunk_size, req_ctx_info=req_ctx_info)
 
     @property
-    def conn_id(self) -> Optional[str]:
+    def conn_id(self) -> str | None:
         return self._target_dto.conn_id
 
     @property
     def default_chunk_size(self) -> int:
         return self._default_chunk_size
 
-    def get_target_host(self) -> Optional[str]:
+    def get_target_host(self) -> str | None:
         return self._target_dto.get_effective_host()
 
     def get_extra_engine_event_listeners(self) -> list[EventListenerSpec]:
         return []
 
     @final
-    def get_db_engine(self, db_name: Optional[str], disable_streaming: bool = False) -> Engine:
+    def get_db_engine(self, db_name: str | None, disable_streaming: bool = False) -> Engine:
         effective_db_name = self.get_db_name_for_query(db_name_from_query=db_name)
 
-        cache_key: tuple[Optional[str], bool] = effective_db_name, disable_streaming
+        cache_key: tuple[str | None, bool] = effective_db_name, disable_streaming
 
         if cache_key not in self._engine_cache:
             new_engine = self._get_db_engine(db_name=effective_db_name, disable_streaming=disable_streaming)
@@ -172,7 +173,7 @@ class BaseSAAdapter(
         )
 
         # Use literal binds for all queries or for dashsql queries only
-        if self.use_literal_binds or self.use_literal_binds_for_dashsql and db_adapter_query.is_dashsql_query:
+        if self.use_literal_binds or (self.use_literal_binds_for_dashsql and db_adapter_query.is_dashsql_query):
             query = compile_query_with_literal_binds_if_possible(query, engine.dialect)
 
         with (
@@ -181,15 +182,30 @@ class BaseSAAdapter(
             self.execution_context(),
         ):
             with GenericProfiler("db-exec"):
-                result = db_session.execute(
-                    query,
-                    # *args,
-                    # **kwargs,
+                result = cast(
+                    CursorResult,
+                    db_session.execute(
+                        query,
+                        # *args,
+                        # **kwargs,
+                    ),
                 )
 
+            # Modifying / no-result-set statements (INSERT/UPDATE/DELETE/DDL/SET) have no cursor
+            # description, and SQLAlchemy drops the cursor (`result.cursor` becomes None). There are
+            # no columns to describe and no rows to fetch, so emit empty cursor info and stop instead
+            # of crashing while building cursor info.
+            if not result.returns_rows:
+                yield ExecutionStepCursorInfo(
+                    cursor_info=self._make_empty_cursor_info(),
+                    raw_cursor_description=[],
+                    raw_engine=engine,
+                )
+                return
+
             cursor_info = ExecutionStepCursorInfo(
-                cursor_info=self._make_cursor_info(result.cursor, db_session=db_session),  # type: ignore  # 2024-01-24 # TODO: "Result" has no attribute "cursor"  [attr-defined]
-                raw_cursor_description=list(result.cursor.description),  # type: ignore  # 2024-01-24 # TODO: "Result" has no attribute "cursor"  [attr-defined]
+                cursor_info=self._make_cursor_info(result.cursor, db_session=db_session),
+                raw_cursor_description=list(result.cursor.description),
                 raw_engine=engine,
             )
             yield cursor_info
@@ -222,7 +238,7 @@ class BaseSAAdapter(
             self._test()
 
     @final
-    def get_db_version(self, db_ident: DBIdent) -> Optional[str]:
+    def get_db_version(self, db_ident: DBIdent) -> str | None:
         with self.handle_execution_error(
             debug_query=f"<get_db_version({db_ident})>", inspector_query=f"<get_db_version({db_ident})>"
         ):  # TODO: BI-6448
@@ -251,7 +267,7 @@ class BaseSAAdapter(
     @final
     def get_table_info(self, table_def: TableDefinition, fetch_idx_info: bool) -> RawSchemaInfo:
         debug_compiled_query: str
-        exc_post_processor: Optional[Callable[[exc.DatabaseQueryError], None]] = None
+        exc_post_processor: Callable[[exc.DatabaseQueryError], None] | None = None
 
         if isinstance(table_def, TableIdent):
             debug_compiled_query = f"<get_columns({table_def})>"
@@ -265,7 +281,7 @@ class BaseSAAdapter(
             # A catch-point intended for adding `query` and `db_message` only for subselect-schema errors.
             def exc_post_processor(db_exc: exc.DatabaseQueryError) -> None:
                 assert isinstance(db_exc, exc.DatabaseQueryError)  # TODO: BI-6448 is any transformations needed?
-                db_exc.query = "SELECT * FROM {}".format(table_def.text)
+                db_exc.query = f"SELECT * FROM {table_def.text}"
                 db_exc.details.setdefault("query", db_exc.query)
                 db_exc.details.setdefault("db_message", db_exc.db_message)
 
@@ -284,39 +300,41 @@ class BaseSAAdapter(
         ):
             if isinstance(table_def, TableIdent):
                 columns = self._get_raw_columns_info(table_def)
-                indexes: Optional[tuple[RawIndexInfo, ...]] = None
+                indexes: tuple[RawIndexInfo, ...] | None = None
 
                 if fetch_idx_info and isinstance(table_def, TableIdent):
                     try:
                         with GenericProfiler("db-idx-fetch"):
                             indexes = self._get_table_indexes(table_def)
 
-                    except Exception:  # noqa
+                    except Exception:
                         LOGGER.exception("Indexes fetching fail for %s", table_def)
 
                 return RawSchemaInfo(columns=columns, indexes=indexes)
 
-            elif isinstance(table_def, SATextTableDefinition):
+            if isinstance(table_def, SATextTableDefinition):
                 return self._get_subselect_table_info(table_def)
 
-            else:
-                raise TypeError(
-                    f"Unsupported type of table table definition to get info: {get_type_full_name(type(table_def))}"
-                )
+            raise TypeError(
+                f"Unsupported type of table table definition to get info: {get_type_full_name(type(table_def))}"
+            )
 
         raise AssertionError("Non handled case of get_table_info()")
 
     @final
     def is_table_exists(self, table_ident: TableIdent) -> bool:
-        with self.handle_execution_error(
-            debug_query=f"<exists({table_ident})>", inspector_query=f"<exists({table_ident})>"
-        ), self.execution_context():  # TODO: BI-6448
+        with (
+            self.handle_execution_error(
+                debug_query=f"<exists({table_ident})>", inspector_query=f"<exists({table_ident})>"
+            ),
+            self.execution_context(),
+        ):  # TODO: BI-6448
             return self._is_table_exists(table_ident)
 
     def _test(self) -> None:
         self.execute(DBAdapterQuery("select 1")).get_all()
 
-    def _get_db_version(self, db_ident: DBIdent) -> Optional[str]:
+    def _get_db_version(self, db_ident: DBIdent) -> str | None:
         """Return database version string for this connection"""
         return self.execute(get_db_version_query(db_ident)).get_all()[0][0]
 
@@ -342,7 +360,7 @@ class BaseSAAdapter(
 
     def _get_sa_table_columns(self, table_def: TableDefinition) -> list[dict[str, Any]]:
         db_engine: sa.engine.Engine
-        columns_source: Union[str, sa.sql.elements.TextClause]
+        columns_source: str | sa.sql.elements.TextClause
         if isinstance(table_def, TableIdent):
             columns_source = table_def.table_name
             db_schema = table_def.schema_name
@@ -359,8 +377,7 @@ class BaseSAAdapter(
 
         inspection = sa.inspect(db_engine)
         table_columns = inspection.get_columns(columns_source, schema=db_schema)
-        table_columns = list(table_columns)
-        return table_columns
+        return list(table_columns)
 
     def _get_raw_columns_info(self, table_def: TableDefinition) -> tuple[RawColumnInfo, ...]:
         table_columns = self._get_sa_table_columns(table_def)

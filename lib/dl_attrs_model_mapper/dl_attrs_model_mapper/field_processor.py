@@ -1,9 +1,8 @@
 import abc
+from collections.abc import Sequence
 from typing import (
     Any,
-    Generic,
     Optional,
-    Sequence,
     TypeVar,
     cast,
 )
@@ -17,9 +16,7 @@ from dl_attrs_model_mapper.utils import (
     unwrap_container_stack_with_single_type,
 )
 
-
 _TARGET_TV = TypeVar("_TARGET_TV", bound=attr.AttrsInstance)
-_PROCESSING_OBJECT_TV = TypeVar("_PROCESSING_OBJECT_TV")
 
 
 @attr.s(frozen=True)
@@ -27,7 +24,7 @@ class FieldMeta:
     clz: type = attr.ib()
     attrib_name: str = attr.ib()
     container_stack: Sequence[Any] = attr.ib()
-    attrib_descriptor: Optional[AttribDescriptor] = attr.ib()
+    attrib_descriptor: AttribDescriptor | None = attr.ib()
 
     def pop_container(self) -> tuple[Any, "FieldMeta"]:
         if len(self.container_stack) == 0:
@@ -36,7 +33,7 @@ class FieldMeta:
 
 
 # TODO FIX: Split into planing & execution
-class Processor(Generic[_PROCESSING_OBJECT_TV]):
+class Processor[PROCESSING_OBJECT_TV]:
     """
     This generic is intended for creation of processor class,
      with a `.process` method which recursively (w.r.t. class structure defined by attrs.ib)
@@ -47,7 +44,7 @@ class Processor(Generic[_PROCESSING_OBJECT_TV]):
      and evolves instance with replaced attr value
 
     Parametrized by:
-        _PROCESSING_OBJECT_TV: type of the attribute value which should be processed
+        PROCESSING_OBJECT_TV: type of the attribute value which should be processed
     """
 
     @abc.abstractmethod
@@ -55,7 +52,7 @@ class Processor(Generic[_PROCESSING_OBJECT_TV]):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def _process_single_object(self, obj: _PROCESSING_OBJECT_TV, meta: FieldMeta) -> Optional[_PROCESSING_OBJECT_TV]:
+    def _process_single_object(self, obj: PROCESSING_OBJECT_TV, meta: FieldMeta) -> PROCESSING_OBJECT_TV | None:
         raise NotImplementedError()
 
     @classmethod
@@ -83,19 +80,17 @@ class Processor(Generic[_PROCESSING_OBJECT_TV]):
         if container_type is None:
             if do_processing:
                 return self._process_single_object(value, target_meta)
-            else:
-                effective_nested_type = target_meta.clz
-                if isinstance(effective_nested_type, type) and attr.has(effective_nested_type):
-                    if value is not None:
-                        # Recursively call entry point for nested object
-                        return self.process(value)
+            effective_nested_type = target_meta.clz
+            if isinstance(effective_nested_type, type) and attr.has(effective_nested_type) and value is not None:
+                # Recursively call entry point for nested object
+                return self.process(value)
 
-                return value
+            return value
 
-        elif container_type is Optional:
+        if container_type is Optional:
             return self._process_attr_ib_value(value, target_meta, do_processing)
 
-        elif is_sequence(container_type):
+        if is_sequence(container_type):
             if value is None:
                 return None
 
@@ -114,7 +109,7 @@ class Processor(Generic[_PROCESSING_OBJECT_TV]):
                 return tuple(processed_values_sequence)
             return value
 
-        elif is_str_mapping(container_type):
+        if is_str_mapping(container_type):
             if do_processing:
                 raise NotImplementedError("Processing of string mappings is not yet supported")
             return value
@@ -137,5 +132,4 @@ class Processor(Generic[_PROCESSING_OBJECT_TV]):
 
         if changes:
             return attr.evolve(target, **changes)  # type: ignore  # 2024-01-29 # TODO: Argument 1 to "evolve" has a variable type "_TARGET_TV" not bound to an attrs class  [misc]
-        else:
-            return target
+        return target

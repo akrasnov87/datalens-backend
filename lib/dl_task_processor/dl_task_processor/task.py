@@ -3,9 +3,7 @@ from collections.abc import Iterable
 import enum
 from typing import (
     ClassVar,
-    Generic,
     NewType,
-    Optional,
     TypeVar,
 )
 import uuid
@@ -13,7 +11,6 @@ import uuid
 import attr
 
 from dl_task_processor.context import BaseContext
-
 
 TaskName = NewType("TaskName", str)
 
@@ -52,7 +49,7 @@ class TaskInstance:
     name: TaskName = attr.ib()
     params: dict = attr.ib()
     attempt: int = attr.ib(default=0)
-    request_id: Optional[str] = attr.ib(default=None)
+    request_id: str | None = attr.ib(default=None)
 
 
 @attr.s
@@ -88,10 +85,6 @@ class BaseTaskMeta(metaclass=abc.ABCMeta):
         ]
 
 
-_BASE_TASK_META_TV = TypeVar("_BASE_TASK_META_TV", bound=BaseTaskMeta)
-_BASE_TASK_CONTEXT_TV = TypeVar("_BASE_TASK_CONTEXT_TV", bound=BaseContext)
-
-
 @attr.s(frozen=True, eq=True)
 class TaskResult(metaclass=abc.ABCMeta):  # noqa: B024
     pass
@@ -114,23 +107,23 @@ class Retry(TaskResult):
 
 
 @attr.s
-class BaseExecutorTask(Generic[_BASE_TASK_META_TV, _BASE_TASK_CONTEXT_TV], metaclass=abc.ABCMeta):
-    cls_meta: ClassVar[type[_BASE_TASK_META_TV]]  # type: ignore  # 2024-01-24 # TODO: ClassVar cannot contain type variables  [misc]
-    meta: _BASE_TASK_META_TV = attr.ib()
-    _ctx: _BASE_TASK_CONTEXT_TV = attr.ib()
+class BaseExecutorTask[BASE_TASK_META_TV: BaseTaskMeta, BASE_TASK_CONTEXT_TV: BaseContext](metaclass=abc.ABCMeta):
+    cls_meta: ClassVar[type[BASE_TASK_META_TV]]
+    meta: BASE_TASK_META_TV = attr.ib()
+    _ctx: BASE_TASK_CONTEXT_TV = attr.ib()
     _instance_id: InstanceID = attr.ib()
     _run_id: RunID = attr.ib()
-    _request_id: Optional[str] = attr.ib(default=None)
+    _request_id: str | None = attr.ib(default=None)
 
     @classmethod
     def from_params(
         cls,
         instance_id: InstanceID,
         run_id: RunID,
-        ctx: _BASE_TASK_CONTEXT_TV,
+        ctx: BASE_TASK_CONTEXT_TV,
         params: dict,
-        request_id: Optional[str] = None,
-    ) -> "BaseExecutorTask":
+        request_id: str | None = None,
+    ) -> "BaseExecutorTask[BASE_TASK_META_TV, BASE_TASK_CONTEXT_TV]":
         return cls(
             meta=cls.cls_meta(**params),
             ctx=ctx,
@@ -156,7 +149,7 @@ class TaskRegistry:
     def create(cls, tasks: Iterable[type[BaseExecutorTask]]) -> "TaskRegistry":
         assert sorted(
             [t.name() for t in tasks],
-        ) == sorted(list(set([t.name() for t in tasks]))), "Some tasks has the same name"
+        ) == sorted({t.name() for t in tasks}), "Some tasks has the same name"
         return cls(tasks={task.name(): task for task in tasks})
 
     def get_task(self, name: TaskName) -> type[BaseExecutorTask]:

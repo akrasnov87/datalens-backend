@@ -1,7 +1,9 @@
-from typing import Sequence
+from collections.abc import Sequence
 
 import clickhouse_sqlalchemy.types as ch_types
+from frozendict import frozendict
 import sqlalchemy as sa
+from sqlalchemy.sql.elements import ClauseElement
 from sqlalchemy.types import TypeEngine
 
 from dl_formula.core.datatype import DataType
@@ -24,24 +26,21 @@ from dl_formula.translation.context import TranslationCtx
 
 from dl_connector_clickhouse.formula.constants import ClickHouseDialect as D
 
-
 V = TranslationVariant.make
 VW = TranslationVariantWrapped.make
 
 
 class FuncDate2FromNumber(base.FuncDate2):
-    variants = [
-        V(D.CLICKHOUSE, lambda expr, tz: sa.func.toDate(expr, tz)),
-    ]
-    argument_types = [
+    variants = (V(D.CLICKHOUSE, lambda expr, tz: sa.func.toDate(expr, tz)),)
+    argument_types = (
         ArgTypeSequence([DataType.FLOAT, DataType.CONST_STRING]),
         ArgTypeSequence([DataType.INTEGER, DataType.CONST_STRING]),
-    ]
+    )
 
 
 class FuncDatetimeTZCH(SingleVariantTranslationBase, base.FuncDatetimeTZ):
     dialects = D.CLICKHOUSE
-    argument_types = [
+    argument_types = (
         ArgTypeSequence(
             [
                 {
@@ -56,10 +55,10 @@ class FuncDatetimeTZCH(SingleVariantTranslationBase, base.FuncDatetimeTZ):
                 DataType.CONST_STRING,
             ]
         ),
-    ]
+    )
 
     @classmethod
-    def _translate_main(cls, value_ctx, tz_ctx):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def _translate_main(cls, value_ctx: TranslationCtx, tz_ctx: TranslationCtx) -> ClauseElement:
         # NOTE: Tricky point:
         # in CH, converting all aware datetimes to UTC,
         # primarily for the correct output.
@@ -76,40 +75,39 @@ class FuncDatetimeTZCH(SingleVariantTranslationBase, base.FuncDatetimeTZ):
             # rather than re-interpret it at the specified timezone.
             expr = sa.func.formatDateTime(expr, "%Y-%m-%d %H:%M:%S")
         expr = sa.func.toDateTime(expr, tz_ctx.expression)  # 'interpret in', effectively
-        expr = sa.func.toDateTime(expr, "UTC")
-        return expr
+        return sa.func.toDateTime(expr, "UTC")
 
 
 class FuncDatetimeTZToNaiveCH(base.FuncDatetimeTZToNaive):
     dialects = D.CLICKHOUSE
 
     @classmethod
-    def _translate_main(cls, value_ctx):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def _translate_main(cls, value_ctx: TranslationCtx) -> ClauseElement:
         expr = value_ctx.expression
+        assert value_ctx.data_type_params is not None
         tz = value_ctx.data_type_params.timezone
         assert tz
         # use cases: datepart, grouping (tz transitions should actually group into one value)
         expr = sa.func.toDateTime(expr, tz)
         # TODO: find a better way to tz-shift the value in CH: https://github.com/ClickHouse/ClickHouse/issues/19768
-        expr = sa.func.toDateTime(sa.func.formatDateTime(expr, "%Y-%m-%d %H:%M:%S"), "UTC")
-        return expr
+        return sa.func.toDateTime(sa.func.formatDateTime(expr, "%Y-%m-%d %H:%M:%S"), "UTC")
 
 
 # Note: `SingleVariantTranslationBase` here essentially acts as a mixin, providing
 # custom `get_variants` implementation that plugs into `cls.dialects` and `cls._translate_main`.
 class FuncTypeGenericDatetime2CHImpl(SingleVariantTranslationBase, base.FuncTypeGenericDatetime2Impl):
     dialects = D.CLICKHOUSE
-    argument_types = [
+    argument_types = (
         ArgTypeSequence(
             [
                 {DataType.DATETIME, DataType.GENERICDATETIME, DataType.INTEGER, DataType.FLOAT, DataType.STRING},
                 DataType.CONST_STRING,
             ]
         ),
-    ]
+    )
 
     @classmethod
-    def _translate_main(cls, expr, tz):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def _translate_main(cls, expr: TranslationCtx, tz: TranslationCtx) -> ClauseElement:
         return sa.func.toDateTime(expr.expression, tz.expression)
 
 
@@ -123,33 +121,35 @@ class FuncGenericDatetime2CH(FuncTypeGenericDatetime2CHImpl):
 
 
 class FuncDbCastClickHouseBase(base.FuncDbCastBase):
-    WHITELISTS = {
-        D.CLICKHOUSE: {
-            DataType.INTEGER: [
-                base.WhitelistTypeSpec(name="Int8", sa_type=ch_types.Int8),
-                base.WhitelistTypeSpec(name="Int16", sa_type=ch_types.Int16),
-                base.WhitelistTypeSpec(name="Int32", sa_type=ch_types.Int32),
-                base.WhitelistTypeSpec(name="Int64", sa_type=ch_types.Int64),
-                base.WhitelistTypeSpec(name="UInt8", sa_type=ch_types.UInt8),
-                base.WhitelistTypeSpec(name="UInt16", sa_type=ch_types.UInt16),
-                base.WhitelistTypeSpec(name="UInt32", sa_type=ch_types.UInt32),
-                base.WhitelistTypeSpec(name="UInt64", sa_type=ch_types.UInt64),
-            ],
-            DataType.FLOAT: [
-                base.WhitelistTypeSpec(name="Float32", sa_type=ch_types.Float32),
-                base.WhitelistTypeSpec(name="Float64", sa_type=ch_types.Float64),
-                base.WhitelistTypeSpec(name="Decimal", sa_type=ch_types.Decimal, arg_types=base.DECIMAL_CAST_ARG_T),
-            ],
-            DataType.STRING: [
-                base.WhitelistTypeSpec(name="String", sa_type=ch_types.String),
-                # TODO: FixedString
-            ],
-            DataType.DATE: [
-                base.WhitelistTypeSpec(name="Date", sa_type=ch_types.Date),
-                base.WhitelistTypeSpec(name="Date32", sa_type=ch_types.Date32),
-            ],
+    WHITELISTS = frozendict(
+        {
+            D.CLICKHOUSE: {
+                DataType.INTEGER: [
+                    base.WhitelistTypeSpec(name="Int8", sa_type=ch_types.Int8),
+                    base.WhitelistTypeSpec(name="Int16", sa_type=ch_types.Int16),
+                    base.WhitelistTypeSpec(name="Int32", sa_type=ch_types.Int32),
+                    base.WhitelistTypeSpec(name="Int64", sa_type=ch_types.Int64),
+                    base.WhitelistTypeSpec(name="UInt8", sa_type=ch_types.UInt8),
+                    base.WhitelistTypeSpec(name="UInt16", sa_type=ch_types.UInt16),
+                    base.WhitelistTypeSpec(name="UInt32", sa_type=ch_types.UInt32),
+                    base.WhitelistTypeSpec(name="UInt64", sa_type=ch_types.UInt64),
+                ],
+                DataType.FLOAT: [
+                    base.WhitelistTypeSpec(name="Float32", sa_type=ch_types.Float32),
+                    base.WhitelistTypeSpec(name="Float64", sa_type=ch_types.Float64),
+                    base.WhitelistTypeSpec(name="Decimal", sa_type=ch_types.Decimal, arg_types=base.DECIMAL_CAST_ARG_T),
+                ],
+                DataType.STRING: [
+                    base.WhitelistTypeSpec(name="String", sa_type=ch_types.String),
+                    # TODO: FixedString
+                ],
+                DataType.DATE: [
+                    base.WhitelistTypeSpec(name="Date", sa_type=ch_types.Date),
+                    base.WhitelistTypeSpec(name="Date32", sa_type=ch_types.Date32),
+                ],
+            }
         }
-    }
+    )
 
     @classmethod
     def generate_cast_type(
@@ -157,8 +157,7 @@ class FuncDbCastClickHouseBase(base.FuncDbCastBase):
     ) -> TypeEngine:
         # Add Nullable wrapper
         type_ = super().generate_cast_type(dialect=dialect, wr_name=wr_name, value=value, type_args=type_args)
-        type_ = ch_types.Nullable(type_)
-        return type_
+        return ch_types.Nullable(type_)
 
 
 class FuncDbCastClickHouse2(FuncDbCastClickHouseBase, base.FuncDbCast2):

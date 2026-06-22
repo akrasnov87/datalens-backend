@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-)
+from typing import TYPE_CHECKING
 
 import attr
 
@@ -13,7 +10,6 @@ from dl_api_lib.query.formalization.raw_specs import (
     TitleFieldRef,
 )
 import dl_core.exc
-
 
 if TYPE_CHECKING:
     from dl_api_lib.query.formalization.raw_specs import FieldRef
@@ -29,12 +25,12 @@ class FieldResolver:
     def _find_field_by_id_or_title(self, id_or_title: str) -> BIField:
         try:
             field = self._dataset.result_schema.by_guid(id_or_title)
-        except dl_core.exc.FieldNotFound:
+        except dl_core.exc.FieldNotFoundError:
             field = self._dataset.result_schema.by_title(id_or_title)
-            # if it still raises `FieldNotFound`, well, then it raises
+            # if it still raises `FieldNotFoundError`, well, then it raises
         return field
 
-    def field_id_from_spec(self, field_ref: Optional[FieldRef]) -> FieldId:
+    def field_id_from_spec(self, field_ref: FieldRef | None) -> FieldId:
         if isinstance(field_ref, IdFieldRef):
             # Run the search against `result_schema` to make sure the field exists
             # And that the correct exception is thrown if it doesn't

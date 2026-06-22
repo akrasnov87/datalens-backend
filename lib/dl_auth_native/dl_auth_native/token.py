@@ -24,7 +24,7 @@ class PayloadSchema(dl_pydantic.BaseModel):
     def to_dataclass(self) -> Payload:
         return Payload(
             user_id=self.user_id,
-            expires_at=datetime.datetime.fromtimestamp(self.exp),
+            expires_at=datetime.datetime.fromtimestamp(self.exp, tz=datetime.UTC).replace(tzinfo=None),
             roles=self.roles,
         )
 
@@ -42,13 +42,12 @@ class ValidationError(TokenError):
 
 
 class DecoderProtocol(typing.Protocol):
-    def decode(self, token: str) -> Payload:
-        ...
+    def decode(self, token: str) -> Payload: ...
 
 
 @attr.s(frozen=True)
 class Decoder:
-    _key: str = attr.ib()
+    _key: str = attr.ib(repr=False)
     _algorithms: list[str] = attr.ib()
 
     def decode(self, token: str) -> Payload:

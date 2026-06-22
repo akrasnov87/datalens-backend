@@ -16,7 +16,6 @@ from dl_formula.definitions.functions_aggregation import AggregationFunctionBase
 from dl_formula.definitions.type_strategy import Fixed
 from dl_formula.translation.context import TranslationCtx
 
-
 VW = TranslationVariantWrapped.make
 
 
@@ -33,11 +32,9 @@ def _call_native_impl(func_name_ctx: TranslationCtx, *args: TranslationCtx) -> C
 
 class DBCall(Function):
     arg_cnt = None
-    arg_names = ["db_function_name"]
-    argument_types = [
-        ArgTypeSequenceThenForAll(fixed_arg_types=[DataType.CONST_STRING], for_all_types=set(DataType)),
-    ]
-    variants = [VW(D.DUMMY, _call_native_impl)]
+    arg_names = ("db_function_name",)
+    argument_types = (ArgTypeSequenceThenForAll(fixed_arg_types=[DataType.CONST_STRING], for_all_types=set(DataType)),)
+    variants = (VW(D.DUMMY, _call_native_impl),)
 
 
 class DBCallInt(DBCall):
@@ -77,11 +74,9 @@ class DBCallArrayString(DBCall):
 
 class DBCallAgg(AggregationFunctionBase):
     arg_cnt = None
-    arg_names = ["db_agg_function_name"]
-    argument_types = [
-        ArgTypeSequenceThenForAll(fixed_arg_types=[DataType.CONST_STRING], for_all_types=set(DataType)),
-    ]
-    variants = [VW(D.DUMMY, _call_native_impl)]
+    arg_names = ("db_agg_function_name",)
+    argument_types = (ArgTypeSequenceThenForAll(fixed_arg_types=[DataType.CONST_STRING], for_all_types=set(DataType)),)
+    variants = (VW(D.DUMMY, _call_native_impl),)
 
 
 class DBCallAggInt(DBCallAgg):

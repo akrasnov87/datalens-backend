@@ -9,13 +9,7 @@ from enum import (
     auto,
     unique,
 )
-from typing import (
-    Generic,
-    Optional,
-    TypeVar,
-    Union,
-    cast,
-)
+from typing import cast
 
 from dl_dynamic_enum import (
     AutoEnumValue,
@@ -23,14 +17,11 @@ from dl_dynamic_enum import (
 )
 
 
-_ENUM_TYPE = TypeVar("_ENUM_TYPE", bound=Enum)
-
-
-class _Normalizable(Generic[_ENUM_TYPE]):
+class _Normalizable[ENUM_TYPE: Enum]:
     @classmethod
-    def normalize(cls, value: Union[_ENUM_TYPE, str, None]) -> Optional[_ENUM_TYPE]:
+    def normalize(cls, value: ENUM_TYPE | str | None) -> ENUM_TYPE | None:
         if isinstance(value, str):
-            value = cast(type[_ENUM_TYPE], cls)[value]
+            value = cast(type[ENUM_TYPE], cls)[value]
         return value
 
 
@@ -235,7 +226,7 @@ class WhereClauseOperation(Enum):
 
 class DataSourceType(DynamicEnum):
     @classmethod
-    def normalize(cls, value: DataSourceType | str | None) -> Optional[DataSourceType]:
+    def normalize(cls, value: DataSourceType | str | None) -> DataSourceType | None:
         # FIXME: Remove this hack (used only in dsmaker)
         if isinstance(value, str):
             value = DataSourceType(value)
@@ -266,6 +257,19 @@ class RLSPatternType(Enum):
     value = "value"
     all = "all"
     userid = "userid"
+
+
+class CLSMode(Enum):
+    # Masking modes, increasing strictness (`hash` reserved for later). Strictness lives in a map in dl_cls, not enum order.
+    none = "none"
+    partial = "partial"
+    full = "full"
+
+
+class CLSSubjectType(Enum):
+    # `user`/`group` only — no `all` (CLS "everyone" is the field's default rule, not a subject).
+    user = "user"
+    group = "group"
 
 
 class ReportingQueryType(Enum):
@@ -307,11 +311,15 @@ class ComponentType(Enum):
     field = "field"
     obligatory_filter = "obligatory_filter"
     result_schema = "result_schema"
+    extract_filter = "extract_filter"
+    extract_sorting = "extract_sorting"
+    extract_properties = "extract_properties"
 
 
 @unique
 class TopLevelComponentId(Enum):
     result_schema = "__result_schema__"
+    extract_properties = "__extract_properties__"
 
 
 @unique
@@ -344,6 +352,7 @@ class RawSQLLevel(Enum):
     subselect = "subselect"  # wrapped raw SQL with `edit` permissions
     template = "template"  # wrapped raw SQL with `edit` and parameterized `execute` permissions
     dashsql = "dashsql"  # unwrapped raw SQL with `execute` permissions
+    readwrite = "readwrite"  # unwrapped raw SQL with `execute` and `write` permissions
 
 
 RAW_SQL_LEVEL_SORTED = [
@@ -351,6 +360,7 @@ RAW_SQL_LEVEL_SORTED = [
     RawSQLLevel.subselect,
     RawSQLLevel.template,
     RawSQLLevel.dashsql,
+    RawSQLLevel.readwrite,
 ]
 
 
@@ -363,11 +373,10 @@ def sort_raw_sql_levels(
     if not raw_sql_levels:
         return []
 
-    raw_sql_levels = sorted(
+    return sorted(
         raw_sql_levels,
         key=lambda x: RAW_SQL_LEVEL_SORTED.index(x),
     )
-    return raw_sql_levels
 
 
 def is_raw_sql_level_subselect_allowed(raw_sql_level: RawSQLLevel) -> bool:
@@ -375,6 +384,7 @@ def is_raw_sql_level_subselect_allowed(raw_sql_level: RawSQLLevel) -> bool:
         RawSQLLevel.subselect,
         RawSQLLevel.template,
         RawSQLLevel.dashsql,
+        RawSQLLevel.readwrite,
     )
 
 
@@ -382,11 +392,19 @@ def is_raw_sql_level_template_allowed(raw_sql_level: RawSQLLevel) -> bool:
     return raw_sql_level in (
         RawSQLLevel.template,
         RawSQLLevel.dashsql,
+        RawSQLLevel.readwrite,
     )
 
 
 def is_raw_sql_level_dashsql_allowed(raw_sql_level: RawSQLLevel) -> bool:
-    return raw_sql_level in (RawSQLLevel.dashsql,)
+    return raw_sql_level in (
+        RawSQLLevel.dashsql,
+        RawSQLLevel.readwrite,
+    )
+
+
+def is_raw_sql_level_readwrite_allowed(raw_sql_level: RawSQLLevel) -> bool:
+    return raw_sql_level == RawSQLLevel.readwrite
 
 
 class DashSQLQueryType(DynamicEnum):
@@ -397,7 +415,6 @@ class DashSQLQueryType(DynamicEnum):
     # More specific than `generic_distinct` for connectors that have the concept of labels
     generic_label_names = AutoEnumValue()
     generic_label_values = AutoEnumValue()
-    generic_label_names = AutoEnumValue()
     # Type for queries with only json body
     raw_query = AutoEnumValue()
 
@@ -485,3 +502,32 @@ class EditMode(OperationsMode):
 
 class ExportMode(OperationsMode):
     export = auto()
+
+
+class ExtractMode(Enum):
+    disabled = "disabled"
+    manual = "manual"
+    schedule = "schedule"
+
+
+class ExtractStatus(Enum):
+    disabled = "disabled"
+
+    pending = "pending"
+    """Enabled, but not started yet"""
+
+    error = "error"
+    running = "running"
+    completed = "completed"
+
+
+@unique
+class USEntryMode(Enum):
+    publish = "publish"
+    save = "save"
+
+
+@unique
+class USEntryBranch(Enum):
+    published = "published"
+    saved = "saved"

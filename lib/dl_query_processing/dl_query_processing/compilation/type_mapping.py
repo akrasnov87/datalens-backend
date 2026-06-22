@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_formula.core.datatype import DataType
-
 
 BI_TO_FORMULA_TYPES = {
     UserDataType.integer: DataType.INTEGER,

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import attr
 import shortuuid
 
-from dl_constants.enums import (
+from dl_constants import (
     AggregationFunction,
     BinaryJoinOperator,
     FieldType,
@@ -58,7 +56,7 @@ def make_shallow() -> ShallowInfo:
     return shallow_info
 
 
-def make_direct_field(field_id: FieldId, avatar_id: Optional[AvatarId]) -> BIField:
+def make_direct_field(field_id: FieldId, avatar_id: AvatarId | None) -> BIField:
     return BIField.make(
         guid=field_id,
         title=shortuuid.uuid(),

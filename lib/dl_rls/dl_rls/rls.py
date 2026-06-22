@@ -8,13 +8,12 @@ from __future__ import annotations
 
 from typing import (
     NamedTuple,
-    Optional,
     cast,
 )
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     RLSPatternType,
     RLSSubjectType,
 )
@@ -38,7 +37,7 @@ class RLS:
 
     @property
     def fields_with_rls(self) -> list[str]:
-        return list(set(item.field_guid for item in self.items))
+        return list({item.field_guid for item in self.items})
 
     def get_entries(self, field_guid: str, user_id: str) -> list[RLSEntry]:
         return [
@@ -70,7 +69,7 @@ class RLS:
             return FieldRestrictions(allow_all_values=True, allow_userid=False, allowed_values=[])
 
         # Pick out userid-entry, if any
-        userid_entry: Optional[RLSEntry] = None
+        userid_entry: RLSEntry | None = None
         for rls_entry in rls_entries:
             if rls_entry.pattern_type != RLSPatternType.userid:
                 continue
@@ -110,7 +109,7 @@ class RLS:
 
             # For `userid: userid`, add the subject id to the values.
             if allow_userid:
-                allowed_values = list(allowed_values) + [user_id]
+                allowed_values = [*list(allowed_values), user_id]
 
             result[field_guid] = allowed_values
 

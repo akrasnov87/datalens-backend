@@ -1,14 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import (
     Enum,
     unique,
 )
-from typing import (
-    NamedTuple,
-    Optional,
-    Sequence,
-)
+from typing import NamedTuple
 
 from dl_formula.core.position import Position
 
@@ -23,7 +20,7 @@ class FormulaErrorCtx(NamedTuple):
     message: str
     level: MessageLevel
     position: Position = Position()
-    token: Optional[str] = None
+    token: str | None = None
     code: tuple[str, ...] = ()
 
     def is_error(self) -> bool:
@@ -36,7 +33,7 @@ class FormulaErrorCtx(NamedTuple):
         return self.message
 
     @property
-    def coords(self) -> tuple[Optional[int], Optional[int]]:
+    def coords(self) -> tuple[int | None, int | None]:
         """Convert position to 2-dimensional coords"""
         return self.position.start_row, self.position.start_col
 

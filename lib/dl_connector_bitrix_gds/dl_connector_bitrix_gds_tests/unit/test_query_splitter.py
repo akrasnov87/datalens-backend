@@ -1,8 +1,11 @@
-from datetime import date
+from datetime import (
+    UTC,
+    datetime,
+)
 
 import pytest
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_core.fields import (
     BIField,
     DirectCalculationSpec,
@@ -14,7 +17,6 @@ from dl_query_processing.compilation.primitives import CompiledFormulaInfo
 from dl_query_processing.enums import ExecutionLevel
 
 from dl_connector_bitrix_gds.api.multi_query import BitrixGDSMultiQuerySplitter
-
 
 RESULT_SCHEMA = ResultSchema(
     [
@@ -41,15 +43,15 @@ RESULT_SCHEMA = ResultSchema(
 
 
 @pytest.mark.parametrize(
-    "formula_obj, original_field_id, expected",
+    ("formula_obj", "original_field_id", "expected"),
     [
         pytest.param(
             n.formula(
                 n.ternary(
                     "between",
                     first=n.field("valid_date"),
-                    second=n.lit(date.today()),
-                    third=n.lit(date.today()),
+                    second=n.lit(datetime.now(UTC).date()),
+                    third=n.lit(datetime.now(UTC).date()),
                 )
             ),
             "valid_date",
@@ -61,7 +63,7 @@ RESULT_SCHEMA = ResultSchema(
                 n.binary(
                     "==",
                     left=n.field("valid_date"),
-                    right=n.lit(date.today()),
+                    right=n.lit(datetime.now(UTC).date()),
                 )
             ),
             "valid_date",
@@ -73,7 +75,7 @@ RESULT_SCHEMA = ResultSchema(
                 n.binary(
                     "==",
                     left=n.field("user_date"),
-                    right=n.lit(date.today()),
+                    right=n.lit(datetime.now(UTC).date()),
                 )
             ),
             "user_date",
@@ -97,7 +99,7 @@ RESULT_SCHEMA = ResultSchema(
                 n.binary(
                     "==",
                     left=n.field("valid_date"),
-                    right=n.lit(date.today()),
+                    right=n.lit(datetime.now(UTC).date()),
                 )
             ),
             None,
@@ -109,7 +111,7 @@ RESULT_SCHEMA = ResultSchema(
                 n.binary(
                     "==",
                     left=n.func.DATEADD(n.field("valid_date")),
-                    right=n.lit(date.today()),
+                    right=n.lit(datetime.now(UTC).date()),
                 ),
             ),
             "valid_date",

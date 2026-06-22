@@ -1,10 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from itertools import chain
-from typing import (
-    ClassVar,
-    Sequence,
-)
+from typing import ClassVar
 
 import attr
 
@@ -48,8 +46,7 @@ class AggregationChecker(Checker):
         Cache the results in ``self._valid_env``.
         """
 
-        dim_bound = dl_formula.inspect.expression.is_bound_only_to(node, allow_nodes=dimension_set)
-        return dim_bound
+        return dl_formula.inspect.expression.is_bound_only_to(node, allow_nodes=dimension_set)
 
     def perform_node_check(
         self,
@@ -63,10 +60,7 @@ class AggregationChecker(Checker):
             return
 
         def _aggregation_in_stack(node_stack: Sequence[nodes.FormulaItem]) -> bool:
-            for wrapping_node in node_stack:
-                if dl_formula.inspect.node.is_aggregate_function(wrapping_node):
-                    return True
-            return False
+            return any(dl_formula.inspect.node.is_aggregate_function(wrapping_node) for wrapping_node in node_stack)
 
         not_agg_children = False
         agg_children = False
@@ -106,12 +100,11 @@ class AggregationChecker(Checker):
                             position=child.position,
                         )
 
-        if not self._allow_nested_agg and dl_formula.inspect.node.is_aggregate_function(node):
-            # function is an aggregation and some of its arguments are already aggregated -> double aggregation
-            if agg_children:
-                with validator.handle_error(node=node):
-                    raise exc.DoubleAggregationError(
-                        "Double aggregation is forbidden",
-                        token=dl_formula.inspect.node.get_token(node),
-                        position=node.position,
-                    )
+        # function is an aggregation and some of its arguments are already aggregated -> double aggregation
+        if not self._allow_nested_agg and dl_formula.inspect.node.is_aggregate_function(node) and agg_children:
+            with validator.handle_error(node=node):
+                raise exc.DoubleAggregationError(
+                    "Double aggregation is forbidden",
+                    token=dl_formula.inspect.node.get_token(node),
+                    position=node.position,
+                )

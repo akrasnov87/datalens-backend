@@ -16,7 +16,8 @@ dl-connector-postgresql = {path = "../dl_connector_postgresql"}
 dl-constants = {path = "../dl_constants"}
 dl-core = {path = "../dl_core"}
 dl-i18n = {path = "../dl_i18n"}
-python = ">=3.10, <3.13"
+dl-sqlalchemy-postgres = {path = "../dl_sqlalchemy_postgres"}
+python = ">=3.12, <3.13"
 sqlalchemy = "*"
 
 [tool.poetry.group.tests.dependencies]
@@ -66,7 +67,6 @@ root_dir = "dl_connector_greenplum_tests/"
 target_path = "db"
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_connector_greenplum_tests/"
 skip_compose = "true"
 target_path = "unit"

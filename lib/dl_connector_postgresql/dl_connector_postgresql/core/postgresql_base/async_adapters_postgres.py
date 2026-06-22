@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import (
+    AsyncIterator,
+    Callable,
+    Iterable,
+)
 import contextlib
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -8,14 +13,9 @@ import logging
 import typing
 from typing import (
     Any,
-    AsyncIterator,
-    Callable,
     ClassVar,
-    Iterable,
-    Optional,
     TypeVar,
 )
-from urllib.parse import quote
 import uuid
 
 import asyncpg
@@ -70,7 +70,6 @@ from dl_connector_postgresql.core.postgresql_base.error_transformer import make_
 from dl_connector_postgresql.core.postgresql_base.target_dto import PostgresConnTargetDTO
 from dl_connector_postgresql.core.postgresql_base.utils import compile_pg_query
 
-
 _DBA_ASYNC_POSTGRES_TV = TypeVar("_DBA_ASYNC_POSTGRES_TV", bound="AsyncPostgresAdapter")
 
 LOGGER = logging.getLogger(__name__)
@@ -95,7 +94,7 @@ class AsyncPostgresAdapter(
     _conn_pools: AsyncCache[asyncpg.Pool] = attr.ib(default=attr.Factory(AsyncCache))
 
     _error_transformer = make_async_pg_error_transformer()
-    __dialect: Optional[AsyncBIPGDialect] = None
+    __dialect: AsyncBIPGDialect | None = None
 
     EXTRA_EXC_CLS: ClassVar[tuple[type[Exception], ...]] = (
         exc.DataStreamValidationError,
@@ -103,7 +102,7 @@ class AsyncPostgresAdapter(
         # but there are about 40 different types of exceptions for every case of error
         # I hope private type will work for a long time and we won't put all ~40 exceptions here
         asyncpg.exceptions._base.PostgresError,
-        asyncio.TimeoutError,
+        TimeoutError,
         # invalid/not available cluster provokes it
         # not connection/timeout error
         OSError,
@@ -123,7 +122,7 @@ class AsyncPostgresAdapter(
             self.__dialect = AsyncBIPGDialect()
         return self.__dialect
 
-    def get_conn_line(self, db_name: Optional[str] = None, params: dict[str, Any] = None) -> str:  # type: ignore  # 2024-01-24 # TODO: Incompatible default for argument "params" (default has type "None", argument has type "dict[str, Any]")  [assignment]
+    def get_conn_line(self, db_name: str | None = None, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         params["sslrootcert"] = self.get_ssl_cert_path(self._target_dto.ssl_ca)
         return AsyncPGConnLineConstructor(
@@ -132,17 +131,17 @@ class AsyncPostgresAdapter(
             dialect_name="postgres",
         ).make_conn_line(db_name=db_name, params=params)
 
-    def get_default_db_name(self) -> Optional[str]:
+    def get_default_db_name(self) -> str | None:
         return self._target_dto.db_name
 
-    def get_target_host(self) -> Optional[str]:
+    def get_target_host(self) -> str | None:
         return self._target_dto.host
 
     def _convert_date(self, s: str, ignoretz: bool) -> datetime:
         try:
             d = dateutil_parser.parse(s, ignoretz=ignoretz)
         except (dateutil_parser.ParserError, OverflowError) as e:
-            LOGGER.info(f"Can't parse date {s} by {ignoretz}")
+            LOGGER.info("Can't parse date %s by %s", s, ignoretz)
             # its impossible to get extra info about the position in stream
             # because it's a callback for asyncpg
             raise exc.DataStreamValidationError(value=s) from e
@@ -211,10 +210,10 @@ class AsyncPostgresAdapter(
         await self.execute(DBAdapterQuery("select 1"))
 
     def _make_cursor_info(self, query_attrs: Iterable[asyncpg.Attribute]) -> dict:
-        return dict(
-            names=[str(a.name) for a in query_attrs],
-            driver_types=[self._cursor_type_to_str(a.type.oid) for a in query_attrs],
-            db_types=[
+        return {
+            "names": [str(a.name) for a in query_attrs],
+            "driver_types": [self._cursor_type_to_str(a.type.oid) for a in query_attrs],
+            "db_types": [
                 self._cursor_column_to_native_type(
                     (
                         a.name,
@@ -224,21 +223,19 @@ class AsyncPostgresAdapter(
                 )
                 for a in query_attrs
             ],
-            columns=[
-                dict(
-                    name=str(a.name),
-                    postgresql_oid=a.type.oid,
-                    postgresql_typname=OID_KNOWLEDGE.get(a.type.oid),
-                )
+            "columns": [
+                {
+                    "name": str(a.name),
+                    "postgresql_oid": a.type.oid,
+                    "postgresql_typname": OID_KNOWLEDGE.get(a.type.oid),
+                }
                 for a in query_attrs
             ],
             # dashsql convenience:
-            postgresql_typnames=[OID_KNOWLEDGE.get(a.type.oid) for a in query_attrs],
-        )
+            "postgresql_typnames": [OID_KNOWLEDGE.get(a.type.oid) for a in query_attrs],
+        }
 
-    def _get_row_converters(
-        self, query_attrs: Iterable[asyncpg.Attribute]
-    ) -> tuple[Optional[Callable[[Any], Any]], ...]:
+    def _get_row_converters(self, query_attrs: Iterable[asyncpg.Attribute]) -> tuple[Callable[[Any], Any] | None, ...]:
         return tuple(self._convert_bytea if a.type.oid == 17 else None for a in query_attrs)  # `bytea`
 
     @contextlib.contextmanager
@@ -257,6 +254,13 @@ class AsyncPostgresAdapter(
     async def _query_preparation_context(self, connection: asyncpg.Connection) -> AsyncIterator[None]:
         yield
 
+    def _pg_compile_exclude_types(self) -> frozenset:
+        # exclude ENUM because of
+        # https://github.com/sqlalchemy/sqlalchemy/blob/rel_1_4/lib/sqlalchemy/dialects/postgresql/asyncpg.py#L345
+        # and exclude STRINGS because of our BI ENUMS (it's strings)
+        # in asyncpg we can skip type annotations for strings, it should work like in psycopg
+        return frozenset({DBAPIMock.ENUM, DBAPIMock.STRING})
+
     async def _execute_by_step(self, query: DBAdapterQuery) -> AsyncIterator[ExecutionStep]:
         def make_record(raw_rec: asyncpg.Record, query_attrs: Iterable[asyncpg.Attribute]) -> TBIDataRow:
             row_converters = self._get_row_converters(query_attrs=query_attrs)
@@ -267,11 +271,7 @@ class AsyncPostgresAdapter(
             )
 
         q = query.query
-        # exclude ENUM because of
-        # https://github.com/sqlalchemy/sqlalchemy/blob/rel_1_4/lib/sqlalchemy/dialects/postgresql/asyncpg.py#L345
-        # and exclude STRINGS because of our BI ENUMS (it's strings)
-        # in asyncpg we can skip type annotations for strings, it should work like in psycopg
-        compiled_query, params = compile_pg_query(q, self._dialect, exclude_types={DBAPIMock.ENUM, DBAPIMock.STRING})
+        compiled_query, params = compile_pg_query(q, self._dialect, exclude_types=self._pg_compile_exclude_types())
         inspector_query = None
         debug_query = None
         if self._target_dto.pass_db_query_to_user:
@@ -280,13 +280,13 @@ class AsyncPostgresAdapter(
                 query.debug_compiled_query or inspector_query
             )  # TODO: BI-6448 move out the if; make query if query.debug_compiled_query is None
 
-        with self.handle_execution_error(
-            debug_query=debug_query, inspector_query=inspector_query
-        ), self.execution_context():
+        with (
+            self.handle_execution_error(debug_query=debug_query, inspector_query=inspector_query),
+            self.execution_context(),
+        ):
             async with self._get_connection(query.db_name) as conn:  # type: ignore  # 2024-01-24 # TODO: Argument 1 to "_get_connection" of "AsyncPostgresAdapter" has incompatible type "str | None"; expected "str"  [arg-type]
                 # prepare works only inside a transaction
-                async with conn.transaction(readonly=self._target_dto.read_only):
-                    # TODO ^ make up a new DL exc and wrap asyncpg.exceptions.ReadOnlySQLTransactionError
+                async with conn.transaction(readonly=not query.allow_write):
                     async with self._query_preparation_context(conn):
                         prepared_query = await conn.prepare(compiled_query)
                     cursor_info = self._make_cursor_info(prepared_query.get_attributes())
@@ -321,11 +321,7 @@ class AsyncPostgresAdapter(
 
     async def get_schema_names(self, db_ident: DBIdent) -> list[str]:
         result = await self.execute(DBAdapterQuery(self.get_list_schema_names_query()))
-        schema_names = []
-        async for row in result.get_all_rows():
-            for value in row:
-                schema_names.append(str(value))
-        return schema_names
+        return [str(value) async for row in result.get_all_rows() for value in row]
 
     async def _get_relation_names(self, schema_ident: SchemaIdent, get_query: str) -> list[TableIdent]:
         query = sa.text(get_query).bindparams(
@@ -336,9 +332,7 @@ class AsyncPostgresAdapter(
             )
         )
         result = await self.execute(DBAdapterQuery(query))
-        relations = []
-        async for row in result.get_all_rows():
-            relations.append(str(row[0]))
+        relations = [str(row[0]) async for row in result.get_all_rows()]
         return [
             TableIdent(
                 db_name=schema_ident.db_name,
@@ -361,9 +355,7 @@ class AsyncPostgresAdapter(
             offset=page_ident.offset,
         )
         result = await self.execute(DBAdapterQuery(table_and_view_query))
-        table_and_view_names = []
-        async for row in result.get_all_rows():
-            table_and_view_names.append(str(row[0]))
+        table_and_view_names = [str(row[0]) async for row in result.get_all_rows()]
         return [
             TableIdent(
                 db_name=schema_ident.db_name,
@@ -467,18 +459,3 @@ class AsyncPGConnLineConstructor(ClassicSQLConnLineConstructor[PostgresConnTarge
         return {
             "sslmode": "require" if self._target_dto.ssl_enable else "prefer",
         }
-
-    def _get_dsn_params(
-        self,
-        safe_db_symbols: tuple[str, ...] = (),
-        db_name: Optional[str] = None,
-        standard_auth: Optional[bool] = True,
-    ) -> dict:
-        return dict(
-            dialect=self._dialect_name,
-            user=quote(self._target_dto.username, safe="") if standard_auth else None,
-            passwd=quote(self._target_dto.password, safe="") if standard_auth else None,
-            host=quote(self._target_dto.host, safe=""),
-            port=quote(str(self._target_dto.port), safe=""),
-            db_name=db_name or quote(self._target_dto.db_name or "", safe="".join(safe_db_symbols)),
-        )

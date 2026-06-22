@@ -2,24 +2,23 @@ from __future__ import annotations
 
 import abc
 import asyncio
+from collections.abc import (
+    Callable,
+    Sequence,
+)
 import functools
 import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
-    Generic,
-    Optional,
-    Sequence,
-    TypeVar,
+    final,
 )
 
 import attr
-from typing_extensions import final
 
 from dl_api_commons.base_models import RequestContextInfo
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_core import exc
 from dl_core.connection_executors.adapters.adapters_base import SyncDirectDBAdapter
 from dl_core.connection_executors.adapters.async_adapters_base import (
@@ -44,9 +43,9 @@ from dl_core.connection_executors.models.db_adapter_data import DBAdapterQuery
 from dl_core.connection_executors.models.scoped_rci import DBAdapterScopedRCI
 from dl_core.connection_models.common_models import TableDefinition
 from dl_core.db import SchemaInfo
+from dl_obfuscator import get_secret_strings
 from dl_type_transformer.exc import UnsupportedNativeTypeError
 from dl_utils.aio import ContextVarExecutor
-
 
 if TYPE_CHECKING:
     from dl_constants.types import TBIChunksGen
@@ -67,12 +66,24 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 
-_DBA_TV = TypeVar("_DBA_TV", bound=CommonBaseDirectAdapter)
+
+def _populate_keeper_from_target_dto_pool(
+    req_ctx_info: RequestContextInfo | None,
+    target_dto_pool: Sequence[ConnTargetDTO],
+) -> None:
+    if req_ctx_info is None:
+        return
+    keeper = req_ctx_info.secret_keeper
+    # ConnTargetDTO is not a BaseAttrsDataModel and has no get_secret_keys(); its secret fields are
+    # marked solely via repr= (e.g. repr=secrepr), which the walker already treats as secret
+    # (field.repr is not True). No extra resolver needed.
+    for target_dto in target_dto_pool:
+        keeper.add_secrets(get_secret_strings(target_dto), prefix="target_dto")
 
 
 def _dba_pool_revolver_wrapper(func: Callable) -> Callable:
     @functools.wraps(func)
-    async def method_wrapper(self: DefaultSqlAlchemyConnExecutor, *args, **kwargs):  # type: ignore  # TODO: fix
+    async def method_wrapper(self: DefaultSqlAlchemyConnExecutor, *args: Any, **kwargs: Any) -> Any:
         # Not sure do we have to reset index on every call
         # self._dba_attempt_index = 0
 
@@ -91,13 +102,14 @@ def _dba_pool_revolver_wrapper(func: Callable) -> Callable:
             except Exception as ex:
                 LOGGER.info("Non-retriable dba exception %s: %s", type(ex), ex, exc_info=True)
                 raise
+        raise RuntimeError("DBA pool is empty")
 
     return method_wrapper
 
 
 def _postprocess_db_excs_wrapper(func: Callable) -> Callable:
     @functools.wraps(func)
-    async def method_wrapper(self: DefaultSqlAlchemyConnExecutor, *args, **kwargs):  # type: ignore  # TODO: fix
+    async def method_wrapper(self: DefaultSqlAlchemyConnExecutor, *args: Any, **kwargs: Any) -> Any:
         with self._postprocess_db_excs():
             return await func(self, *args, **kwargs)
 
@@ -106,13 +118,12 @@ def _postprocess_db_excs_wrapper(func: Callable) -> Callable:
 
 def _common_exec_wrapper(func: Callable) -> Callable:
     func = _dba_pool_revolver_wrapper(func)
-    func = _postprocess_db_excs_wrapper(func)
-    return func
+    return _postprocess_db_excs_wrapper(func)
 
 
 # TODO FIX: Encapsulate STRAIGHTFORWARD/WRAPPED state to single object to simplify code
 @attr.s(cmp=False, hash=False)
-class DefaultSqlAlchemyConnExecutor(AsyncConnExecutorBase, Generic[_DBA_TV], metaclass=abc.ABCMeta):
+class DefaultSqlAlchemyConnExecutor[DBA_TV: CommonBaseDirectAdapter](AsyncConnExecutorBase, metaclass=abc.ABCMeta):
     """
     Base class that use SA adapter. To execute queries.
     Executor has 2 use cases in DIRECT execution mode (in RQE execution mode this is not true):
@@ -127,15 +138,15 @@ class DefaultSqlAlchemyConnExecutor(AsyncConnExecutorBase, Generic[_DBA_TV], met
     Why do we need it: to keep initialization creation of DBA in one place for sync and async environments.
     """
 
-    TARGET_ADAPTER_CLS: ClassVar[type[_DBA_TV]]  # type: ignore  # 2024-01-24 # TODO: ClassVar cannot contain type variables  [misc]
-    REMOTE_ADAPTER_CLS: ClassVar[Optional[type[RemoteAsyncAdapter]]] = None
+    TARGET_ADAPTER_CLS: ClassVar[type[DBA_TV]]
+    REMOTE_ADAPTER_CLS: ClassVar[type[RemoteAsyncAdapter] | None] = None
 
     # Constructor attributes
-    _tpe: Optional[ContextVarExecutor] = attr.ib()
+    _tpe: ContextVarExecutor | None = attr.ib()
 
     # Internals
-    _async_dba_pool: Optional[list[AsyncDBAdapter]] = attr.ib(init=False, default=None)
-    _sync_dba: Optional[SyncDirectDBAdapter] = attr.ib(init=False, default=None)
+    _async_dba_pool: list[AsyncDBAdapter] | None = attr.ib(init=False, default=None)
+    _sync_dba: SyncDirectDBAdapter | None = attr.ib(init=False, default=None)
     _initialization_lock = attr.ib(init=False, factory=asyncio.Lock)
     _dba_attempt_index: int = attr.ib(init=False, default=0)
 
@@ -151,7 +162,7 @@ class DefaultSqlAlchemyConnExecutor(AsyncConnExecutorBase, Generic[_DBA_TV], met
             raise ValueError("Executor created in WRAPPED mode (no TPE was provided). Async DBA was not created.")
         return self._async_dba_pool[self._dba_attempt_index]
 
-    def _get_sync_sa_adapter(self) -> Optional[SyncDirectDBAdapter]:
+    def _get_sync_sa_adapter(self) -> SyncDirectDBAdapter | None:
         """Method for sync conn executor wrapper. Please do not use it in other places."""
         if not self._is_initialized:
             raise ValueError("Connection executor was not initiated")
@@ -170,14 +181,15 @@ class DefaultSqlAlchemyConnExecutor(AsyncConnExecutorBase, Generic[_DBA_TV], met
         async with self._initialization_lock:
             if self._is_initialized:
                 return
-            else:
-                await self._initialize()
-                self._is_initialized = True
+            await self._initialize()
+            self._is_initialized = True
 
     @final
     async def _initialize(self) -> None:
         target_conn_dto_pool = await self._make_target_conn_dto_pool()
         assert target_conn_dto_pool
+
+        _populate_keeper_from_target_dto_pool(self._req_ctx_info, target_conn_dto_pool)
 
         req_ctx_info = self._req_ctx_info or RequestContextInfo.create_empty()
 
@@ -243,13 +255,17 @@ class DefaultSqlAlchemyConnExecutor(AsyncConnExecutorBase, Generic[_DBA_TV], met
             trusted_query=conn_exec_query.trusted_query,
             is_ddl_dml_query=conn_exec_query.is_ddl_dml_query,
             is_dashsql_query=conn_exec_query.is_dashsql_query,
+            allow_write=conn_exec_query.allow_write,
+            limit=conn_exec_query.limit,
+            offset=conn_exec_query.offset,
+            query_settings=conn_exec_query.query_settings,
         )
 
     @_common_exec_wrapper
     async def _execute_query(self, query: DBAdapterQuery) -> AsyncRawExecutionResult | AsyncRawJsonExecutionResult:
         return await self._target_dba.execute(query)
 
-    def _autodetect_user_types(self, raw_cursor_info: dict) -> Optional[list[UserDataType]]:
+    def _autodetect_user_types(self, raw_cursor_info: dict) -> list[UserDataType] | None:
         db_types = raw_cursor_info.get("db_types")
         if not db_types:
             return None
@@ -263,7 +279,7 @@ class DefaultSqlAlchemyConnExecutor(AsyncConnExecutorBase, Generic[_DBA_TV], met
                 try:
                     bi_type = tt.type_native_to_user(native_type)
                 except UnsupportedNativeTypeError:
-                    pass
+                    LOGGER.info("Unsupported native type %r, falling back to unsupported", native_type)
 
             result.append(bi_type)
 
@@ -300,7 +316,7 @@ class DefaultSqlAlchemyConnExecutor(AsyncConnExecutorBase, Generic[_DBA_TV], met
         await self._target_dba.test()
 
     @_common_exec_wrapper
-    async def _get_db_version(self, db_ident: DBIdent) -> Optional[str]:
+    async def _get_db_version(self, db_ident: DBIdent) -> str | None:
         return await self._target_dba.get_db_version(db_ident)
 
     @_common_exec_wrapper

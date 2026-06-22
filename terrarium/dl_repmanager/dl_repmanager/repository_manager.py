@@ -1,13 +1,12 @@
+from collections.abc import (
+    Callable,
+    Mapping,
+    Sequence,
+)
 import itertools
 import os
 from pathlib import Path
 import re
-from typing import (
-    Callable,
-    Mapping,
-    Optional,
-    Sequence,
-)
 
 import attr
 
@@ -37,8 +36,7 @@ class PackageGenerator:
 
     @staticmethod
     def generate_new_package_reg_name(package_name: str) -> str:
-        internal_name = package_name.replace("_", "-").replace("dl-", "datalens-")
-        return internal_name
+        return package_name.replace("_", "-").replace("dl-", "datalens-")
 
     @staticmethod
     def generate_default_test_dir_name(package_name: str) -> str:
@@ -62,7 +60,7 @@ class PackageGenerator:
             )
             package_test_dirs.append(package_test_dir)
 
-        generated_package_info = PackageInfo(
+        return PackageInfo(
             package_type=package_type,
             package_reg_name=self.generate_new_package_reg_name(package_module_name),
             module_names=(package_module_name,),  # FIXME: define in template
@@ -72,7 +70,6 @@ class PackageGenerator:
             ),
             test_dirs=tuple(package_test_dirs),
         )
-        return generated_package_info
 
 
 @attr.s
@@ -173,14 +170,13 @@ class RepositoryManager:
         # Generate new path
         new_package_abs_path = old_package_info.abs_path.parent / new_package_module_name
 
-        new_package_info = old_package_info.clone(
+        return old_package_info.clone(
             package_reg_name=self.package_generator.generate_new_package_reg_name(new_package_module_name),
             module_names=(new_package_module_name,),
             test_dirs=(self.package_generator.generate_default_test_dir_name(new_package_module_name),),
             abs_path=new_package_abs_path,
             i18n_domains=tuple(new_i18n_domain_list),
         )
-        return new_package_info
 
     def rename_package(self, old_package_module_name: str, new_package_module_name: str) -> PackageInfo:
         old_package_info = self.package_index.get_package_info_from_module_name(old_package_module_name)
@@ -250,7 +246,8 @@ class RepositoryManager:
 
         regex: re.Pattern
         if allow_dash:
-            assert "-" not in old_str and "-" not in new_str
+            assert "-" not in old_str
+            assert "-" not in new_str
             regex = re.compile(rf"(^|[^\w])(?P<mod_name>{re.escape(old_str)})($|[^\w])")
         else:
             regex = re.compile(rf"(^|[^\w\-])(?P<mod_name>{re.escape(old_str)})($|[^\w\-])")
@@ -279,8 +276,8 @@ class RepositoryManager:
                 old_path_base = locales_path / locale_dir.name / "LC_MESSAGES" / old_domain_spec.domain_name
                 new_path_base = locales_path / locale_dir.name / "LC_MESSAGES" / new_domain_spec.domain_name
                 for ext in ("po", "mo"):
-                    old_path = Path(f"{str(old_path_base)}.{ext}")
-                    new_path = Path(f"{str(new_path_base)}.{ext}")
+                    old_path = Path(f"{old_path_base!s}.{ext}")
+                    new_path = Path(f"{new_path_base!s}.{ext}")
                     self.fs_editor.move_path(old_path=old_path, new_path=new_path)
 
     def _rename_in_dependent_meta_files(self, old_package_info: PackageInfo, new_package_info: PackageInfo) -> None:
@@ -414,7 +411,7 @@ class RepositoryManager:
     def compare_imports_and_requirements(
         self,
         package_module_name: str,
-        ignore_prefix: Optional[str] = None,
+        ignore_prefix: str | None = None,
         tests: bool = False,
     ) -> tuple[list[ReqPackageSpec], list[ReqPackageSpec]]:
         # TODO: Add support for namespace packages (e.g. google-api-core, google-auth)
@@ -431,7 +428,7 @@ class RepositoryManager:
             )
         except KeyError:
             if not (package_info_from_toml := self.get_package_name_from_toml(package_module_name)):
-                raise ValueError(f"Can`t find {package_module_name} or it may be incorrectly configured.")
+                raise ValueError(f"Can`t find {package_module_name} or it may be incorrectly configured.") from None
             package_info = package_info_from_toml
 
         def _get_imports(scan_modules: Sequence[str]) -> dict[str, ReqPackageSpec]:

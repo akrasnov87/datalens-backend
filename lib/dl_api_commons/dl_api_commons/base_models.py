@@ -1,17 +1,20 @@
 import abc
-from typing import Any
+from typing import (
+    Any,
+    Self,
+)
 
 import attr
 from multidict import (
     CIMultiDict,
     CIMultiDictProxy,
 )
-from typing_extensions import Self
 
 import dl_auth
 import dl_constants
 from dl_obfuscator.engine import ObfuscationEngine
 from dl_obfuscator.secret_keeper import SecretKeeper
+from dl_obfuscator.secret_walker import get_secret_strings
 
 
 @attr.s()
@@ -28,9 +31,9 @@ class TenantDef(metaclass=abc.ABCMeta):
         raise NotImplementedError()
 
     def get_reporting_extra(self) -> dict[str, str | int | None]:
-        return dict(
-            billing_folder_id=self.get_tenant_id(),
-        )
+        return {
+            "billing_folder_id": self.get_tenant_id(),
+        }
 
 
 @attr.s(frozen=True)
@@ -99,9 +102,8 @@ class RequestContextInfo:
             ip_list = [ip.strip() for ip in forwarded_for.split(",")]
             if len(ip_list) > 1:
                 return ip_list[-2]
-            else:
-                # unlikely to happen
-                return ip_list[0]
+            # unlikely to happen
+            return ip_list[0]
         return None
 
     @property
@@ -160,12 +162,17 @@ class RequestContextInfo:
     def clone(self, **kwargs: Any) -> Self:
         return attr.evolve(self, **kwargs)
 
+    def populate_secret_keeper(self) -> None:
+        self.secret_keeper.add_secrets(self.secret_headers, prefix="header")
+        if self.auth_data is not None:
+            self.secret_keeper.add_secrets(get_secret_strings(self.auth_data), prefix="auth_data")
+
     def get_reporting_extra(self) -> dict[str, str | int | None]:
-        reporting_extra: dict[str, str | int | None] = dict(
-            user_id=self.user_id,
-            source=self.endpoint_code,
-            username=self.user_name,
-        )
+        reporting_extra: dict[str, str | int | None] = {
+            "user_id": self.user_id,
+            "source": self.endpoint_code,
+            "username": self.user_name,
+        }
         if self.tenant is not None:
             reporting_extra.update(self.tenant.get_reporting_extra())
         return reporting_extra

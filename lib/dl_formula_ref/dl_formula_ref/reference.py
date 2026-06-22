@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Collection,
-    Optional,
-)
+from collections.abc import Collection
+from typing import Any
 
 from dl_formula.core.dialect import (
     DialectCombo,
@@ -27,7 +24,7 @@ from dl_formula_ref.registry.tools import populate_registry_from_definitions
 
 
 class FuncReference:  # TODO: Merge with FunctionReferenceRegistry
-    def __init__(self, funcs_by_key: Optional[dict[RefFunctionKey, RawMultiAudienceFunc]] = None):
+    def __init__(self, funcs_by_key: dict[RefFunctionKey, RawMultiAudienceFunc] | None = None) -> None:
         self._funcs_by_key = funcs_by_key or {}
 
     def __contains__(self, key: RefFunctionKey) -> bool:
@@ -40,10 +37,10 @@ class FuncReference:  # TODO: Merge with FunctionReferenceRegistry
     def get_func(self, func_key: RefFunctionKey) -> RawMultiAudienceFunc:
         return self._funcs_by_key[func_key]
 
-    def filter(self, category: Optional[str] = None, name: Optional[str] = None) -> list[RawMultiAudienceFunc]:
+    def filter(self, category: str | None = None, name: str | None = None) -> list[RawMultiAudienceFunc]:
         result = []
         for func in self._funcs_by_key.values():
-            if category is not None and func.category.name != category or name is not None and func.name != name:
+            if (category is not None and func.category.name != category) or (name is not None and func.name != name):
                 continue
             result.append(func)
         return result
@@ -55,14 +52,11 @@ class FuncReference:  # TODO: Merge with FunctionReferenceRegistry
 def _is_deprecated(defn: type[MultiVariantTranslation]) -> bool:
     if not defn.return_flags:
         return False
-    for dialect in get_all_basic_dialects():
-        if defn._get_return_flags(dialect) & ContextFlag.DEPRECATED:
-            return True
-    return False
+    return any(defn._get_return_flags(dialect) & ContextFlag.DEPRECATED for dialect in get_all_basic_dialects())
 
 
 def _make_raw_func(item: FunctionDocRegistryItem, env: GenerationEnvironment) -> RawFunc:
-    raw_func = RawFunc(
+    return RawFunc(
         name=item.name,
         title_factory=item.get_title,
         short_title_factory=item.get_short_title,
@@ -77,7 +71,6 @@ def _make_raw_func(item: FunctionDocRegistryItem, env: GenerationEnvironment) ->
         resources=item.all_resources,
         examples=item.get_examples(env=env),
     )
-    return raw_func
 
 
 def _all_same(items: Collection[Any]) -> bool:
@@ -102,7 +95,7 @@ def load_func_reference_from_registry(
     }
 
     func_ref = FuncReference()
-    for _key, item in FUNC_REFERENCE_REGISTRY.items():
+    for item in FUNC_REFERENCE_REGISTRY.values():
         aud_func_dict: dict[Audience, RawFunc] = {}
         for audience, env in env_by_audience.items():
             if item.is_supported(env=env):

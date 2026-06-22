@@ -1,18 +1,15 @@
 import asyncio
+from collections.abc import Iterable
 import logging
 import os
 import sys
-from typing import (
-    Any,
-    Iterable,
-)
+from typing import Any
 
 import aiohttp.web
 import gunicorn.workers.base
 
 import dl_app_api_base.app as app
 import dl_app_base
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -109,14 +106,13 @@ class GunicornWorker(gunicorn.workers.base.Worker):
                 LOGGER.error("Task %s finished unexpectedly", task.get_name())
                 self.exit_code = os.EX_SOFTWARE
                 raise dl_app_base.UnexpectedFinishError
-            elif task.cancelled():
+            if task.cancelled():
                 LOGGER.error("Task %s was cancelled", task.get_name())
                 self.exit_code = os.EX_SOFTWARE
                 raise exception
-            else:
-                LOGGER.error("Task %s finished with exception", task.get_name())
-                self.exit_code = os.EX_SOFTWARE
-                raise dl_app_base.RunError from exception
+            LOGGER.error("Task %s finished with exception", task.get_name())
+            self.exit_code = os.EX_SOFTWARE
+            raise dl_app_base.RunError from exception
 
     async def _cleanup(self) -> None:
         await self._cleanup_non_aiohttp_main_tasks()

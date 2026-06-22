@@ -1,17 +1,15 @@
 from collections import defaultdict
-import logging
-from typing import (
-    TYPE_CHECKING,
+from collections.abc import (
     Iterable,
-    Optional,
     Sequence,
-    Union,
 )
+import logging
+from typing import TYPE_CHECKING
 
 import attr
 import pandas as pd
 
-from dl_constants.enums import PivotRole
+from dl_constants import PivotRole
 from dl_pivot.base.transformer import PivotTransformer
 from dl_pivot.empty.facade import EmptyDataFrameFacade
 from dl_pivot.primitives import (
@@ -30,7 +28,6 @@ from dl_pivot_pandas.pandas.facade import (
 )
 import dl_query_processing.exc
 from dl_query_processing.merging.primitives import MergedQueryDataRow
-
 
 if TYPE_CHECKING:
     from dl_pivot.base.facade import TableDataFacade
@@ -61,7 +58,7 @@ class PdPivotTransformer(PivotTransformer):
 
         fake_measure_piid_str = str(self._pivot_legend.get_unused_pivot_item_id())
 
-        data: dict[str, list[Optional[DataCellVector]]] = defaultdict(list)
+        data: dict[str, list[DataCellVector | None]] = defaultdict(list)
         for dim_vectors, value_vector in transp_stream:
             for dim_vector in dim_vectors:
                 base_dim_cell = dim_vector.cells[0]
@@ -80,18 +77,18 @@ class PdPivotTransformer(PivotTransformer):
         column_ids = [str(item.pivot_item_id) for item in self._pivot_legend.list_for_role(PivotRole.pivot_column)]
         row_ids = [str(item.pivot_item_id) for item in self._pivot_legend.list_for_role(PivotRole.pivot_row)]
 
-        pd_pivot_res: Union[pd.DataFrame, pd.Series]
+        pd_pivot_res: pd.DataFrame | pd.Series
         facade: TableDataFacade
 
         pd_series: pd.Series
         pd_df: pd.DataFrame
 
-        def wrapped_pivot(columns: Sequence[str], index: Sequence[str]) -> Union[pd.Series, pd.DataFrame]:
+        def wrapped_pivot(columns: Sequence[str], index: Sequence[str]) -> pd.Series | pd.DataFrame:
             try:
                 return raw_pd_df.pivot(columns=columns, index=index)
             except ValueError as err:
                 if str(err).startswith("Index contains duplicate entries"):
-                    raise dl_query_processing.exc.PivotDuplicateDimensionValue() from err
+                    raise dl_query_processing.exc.PivotDuplicateDimensionValueError() from err
 
                 raise
 
@@ -111,11 +108,13 @@ class PdPivotTransformer(PivotTransformer):
             )
 
         elif column_ids:
-            pd_pivot_res = wrapped_pivot(columns=column_ids, index=row_ids)
-            assert isinstance(pd_pivot_res, pd.Series)
-            pd_series = pd_pivot_res
-            # Drop `fake_measure_liid_str` from the index:
-            pd_series = pd_series.set_axis(labels=pd_series.index.droplevel(0), copy=False)
+            # row_ids is empty here. Pandas 2.2's pivot delegates to
+            # unstack(future_stack=True), which crashes on the empty-index
+            # corner case. Construct the Series directly via set_index;
+            # equivalent to the pre-2.2 pivot output for this branch.
+            if raw_pd_df.duplicated(subset=column_ids).any():
+                raise dl_query_processing.exc.PivotDuplicateDimensionValueError()
+            pd_series = raw_pd_df.set_index(column_ids)[fake_measure_piid_str]
             facade = PdHSeriesDataFrameFacade(
                 pd_series=pd_series,
                 legend=self._legend,
@@ -123,14 +122,11 @@ class PdPivotTransformer(PivotTransformer):
             )
 
         elif row_ids:
-            # Fool pandas into thinking columns are rows and vice-versa.
-            # Otherwise it creates a DataFrame with an empty index for columns,
-            # which does not behave the way a "normal" DataFrame should
-            pd_pivot_res = wrapped_pivot(columns=row_ids, index=column_ids)
-            assert isinstance(pd_pivot_res, pd.Series)
-            pd_series = pd_pivot_res
-            # Drop `fake_measure_liid_str` from the index:
-            pd_series = pd_series.set_axis(labels=pd_series.index.droplevel(0), copy=False)
+            # column_ids is empty. Same pandas 2.2 unstack regression as above —
+            # use set_index to build the Series directly.
+            if raw_pd_df.duplicated(subset=row_ids).any():
+                raise dl_query_processing.exc.PivotDuplicateDimensionValueError()
+            pd_series = raw_pd_df.set_index(row_ids)[fake_measure_piid_str]
             facade = PdVSeriesDataFrameFacade(
                 pd_series=pd_series,
                 legend=self._legend,
@@ -140,11 +136,10 @@ class PdPivotTransformer(PivotTransformer):
         else:
             raise TypeError("Invalid pivot configuration")
 
-        LOGGER.info(f"Using {type(facade)} for pivot table")
+        LOGGER.info("Using %s for pivot table", type(facade))
 
-        table = PivotTable(
+        return PivotTable(
             facade=facade,
             pivot_legend=self._pivot_legend,
             cell_packer=self._cell_packer,
         )
-        return table

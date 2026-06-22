@@ -27,7 +27,7 @@ def test_declaration() -> None:
     class Size(DynamicEnum):
         pass
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"with undeclared value"):
         Size("medium")  # value 'medium' has not been declared yet
 
     medium_size = Size.declare("medium")
@@ -37,7 +37,7 @@ def test_declaration() -> None:
     medium_size = Size("medium")
     assert medium_size.value == "medium"
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"has already been declared"):
         Size.declare("medium")  # value 'medium' has already been declared
 
 
@@ -125,6 +125,6 @@ class Picklable(DynamicEnum):
 
 def test_pickle() -> None:
     data = pickle.dumps(Picklable.thing)
-    loaded = pickle.loads(data)
+    loaded = pickle.loads(data)  # noqa: S301
 
     assert loaded is Picklable.thing

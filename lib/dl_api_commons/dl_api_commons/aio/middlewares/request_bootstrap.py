@@ -1,19 +1,16 @@
 from __future__ import annotations
 
-import asyncio
 import contextlib
 from http import HTTPStatus
 import json
 import logging
 import time
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any
 
 from aiohttp import web
 from aiohttp.typedefs import Handler
 import attr
+from frozendict import frozendict
 import sentry_sdk
 
 from dl_api_commons.aio.middlewares.commons import (
@@ -27,7 +24,6 @@ from dl_api_commons.exc import RequestTimeoutError
 from dl_api_commons.logging import RequestLoggingContextController
 from dl_api_commons.reporting.records import RequestResultReportingRecord
 from dl_utils.aio import timeout
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -50,14 +46,14 @@ class SentryRequestLoggingContextController(RequestLoggingContextController):
         )
     )
 
-    user_info_remap = {"user_name": "username", "user_id": "id"}
+    user_info_remap = frozendict({"user_name": "username", "user_id": "id"})
 
     def put_to_context(self, key: str, value: Any) -> None:
         val_to_write: Any
         try:
             json.dumps(value)
             val_to_write = value
-        except Exception:  # noqa
+        except Exception:
             LOGGER.exception("Attempt to put to context non-jsonable value")
             try:
                 val_to_write = str(value)
@@ -77,14 +73,14 @@ class SentryRequestLoggingContextController(RequestLoggingContextController):
 @attr.s
 class RequestBootstrap:
     req_id_service: RequestId = attr.ib()
-    error_handler: Optional[AIOHTTPErrorHandler] = attr.ib(default=None)
-    timeout_sec: Optional[float] = attr.ib(default=None)
+    error_handler: AIOHTTPErrorHandler | None = attr.ib(default=None)
+    timeout_sec: float | None = attr.ib(default=None)
 
     @web.middleware
     async def middleware(self, request: web.Request, handler: Handler) -> web.StreamResponse:
-        dl_request: Optional[DLRequestBase] = None
+        dl_request: DLRequestBase | None = None
         result = None
-        err_code: Optional[str] = None
+        err_code: str | None = None
         try:
             with contextlib.ExitStack() as top_level_stack:
                 if self.error_handler is not None and self.error_handler.use_sentry:
@@ -101,7 +97,7 @@ class RequestBootstrap:
                     try:
                         async with timeout(self.timeout_sec):
                             result = await handler(request)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         raise RequestTimeoutError() from None
                 else:
                     result = await handler(request)

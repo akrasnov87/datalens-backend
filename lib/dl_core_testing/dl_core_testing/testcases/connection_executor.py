@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import (
+    AsyncGenerator,
+    Callable,
+    Generator,
+    Sequence,
+)
 import contextlib
 import functools
 from typing import (
     TYPE_CHECKING,
-    AsyncGenerator,
-    Callable,
     ClassVar,
-    Generator,
-    Generic,
-    Optional,
-    Sequence,
-    TypeVar,
 )
 
 import attr
@@ -22,7 +21,7 @@ import shortuuid
 import sqlalchemy as sa
 from sqlalchemy.types import TypeEngine
 
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     UserDataType,
 )
@@ -47,17 +46,13 @@ from dl_type_transformer.native_type import (
     norm_native_type,
 )
 
-
 if TYPE_CHECKING:
     from dl_core.connection_executors.async_base import AsyncConnExecutorBase
     from dl_core.connection_executors.sync_base import SyncConnExecutorBase
 
 
-_CONN_TV = TypeVar("_CONN_TV", bound=ConnectionBase)
-
-
-class BaseConnectionExecutorTestClass(RegulatedTestCase, BaseConnectionTestClass[_CONN_TV], Generic[_CONN_TV]):
-    @pytest.fixture(scope="function")
+class BaseConnectionExecutorTestClass[CONN_TV: ConnectionBase](RegulatedTestCase, BaseConnectionTestClass[CONN_TV]):
+    @pytest.fixture
     def sync_connection_executor(
         self,
         sync_conn_executor_factory: Callable[[], SyncConnExecutorBase],
@@ -80,12 +75,12 @@ class BaseConnectionExecutorTestClass(RegulatedTestCase, BaseConnectionTestClass
             await async_conn_executor.close()
 
 
-class DefaultSyncAsyncConnectionExecutorCheckBase(BaseConnectionExecutorTestClass[_CONN_TV], Generic[_CONN_TV]):
-    @pytest.fixture(scope="function")
+class DefaultSyncAsyncConnectionExecutorCheckBase[CONN_TV: ConnectionBase](BaseConnectionExecutorTestClass[CONN_TV]):
+    @pytest.fixture
     def db_ident(self) -> DBIdent:
         raise NotImplementedError
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def existing_table_ident(self, sample_table: DbTable) -> TableIdent:
         # Using sample table by default, but this can be overridden by redefining this fixture
         return TableIdent(
@@ -94,11 +89,11 @@ class DefaultSyncAsyncConnectionExecutorCheckBase(BaseConnectionExecutorTestClas
             table_name=sample_table.name,
         )
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def nonexistent_table_ident(self, existing_table_ident: TableIdent) -> TableIdent:
         return existing_table_ident.clone(table_name=f"nonexistent_table_{shortuuid.uuid().lower()}")
 
-    def check_db_version(self, db_version: Optional[str]) -> None:
+    def check_db_version(self, db_version: str | None) -> None:
         pass
 
     @pytest.fixture(scope="class")
@@ -113,7 +108,9 @@ class DefaultSyncAsyncConnectionExecutorCheckBase(BaseConnectionExecutorTestClas
         assert old_cnt == new_cnt, f"Expected {old_cnt} sessions, got {new_cnt}"
 
 
-class DefaultSyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutorCheckBase[_CONN_TV], Generic[_CONN_TV]):
+class DefaultSyncConnectionExecutorTestSuite[CONN_TV: ConnectionBase](
+    DefaultSyncAsyncConnectionExecutorCheckBase[CONN_TV]
+):
     @pytest.fixture(scope="session")
     def conn_exec_factory_async_env(self) -> bool:
         return False
@@ -133,7 +130,7 @@ class DefaultSyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutorC
         # at the moment, checks that sample table is listed among the others
 
         tables = [sample_table]
-        expected_table_names = set(table.name for table in tables)
+        expected_table_names = {table.name for table in tables}
 
         actual_tables = sync_connection_executor.get_tables(
             SchemaIdent(
@@ -165,8 +162,8 @@ class DefaultSyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutorC
         # Expected data
         user_type: UserDataType = attr.ib()
         nullable: bool = attr.ib(default=True)
-        nt_name: Optional[str] = attr.ib(default=None)
-        nt: Optional[GenericNativeType] = attr.ib(default=None)
+        nt_name: str | None = attr.ib(default=None)
+        nt: GenericNativeType | None = attr.ib(default=None)
 
         def get_expected_native_type(self, conn_type: ConnectionType) -> GenericNativeType:
             if self.nt is not None:
@@ -190,7 +187,7 @@ class DefaultSyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutorC
         self,
         request: pytest.FixtureRequest,
         db: Db,
-        sample_table_schema: Optional[str],
+        sample_table_schema: str | None,
         sync_connection_executor: SyncConnExecutorBase,
     ) -> None:
         for schema_name, type_schema in self.get_schemas_for_type_recognition().items():
@@ -215,7 +212,7 @@ class DefaultSyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutorC
                 expected_native_type = expected_col.get_expected_native_type(self.conn_type)
                 assert (
                     detected_col.native_type == expected_native_type
-                ), f"Incorrect native type detected for schema {schema_name} col #{col_idx}: expected {repr(expected_native_type)}, got {repr(detected_col.native_type)}"
+                ), f"Incorrect native type detected for schema {schema_name} col #{col_idx}: expected {expected_native_type!r}, got {detected_col.native_type!r}"
 
     def test_simple_select(self, sync_connection_executor: SyncConnExecutorBase) -> None:
         query = ConnExecutorQuery(query=sa.select([sa.literal(1)]))
@@ -230,7 +227,7 @@ class DefaultSyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutorC
         nonexistent_table_ident: TableIdent,
     ) -> None:
         query = ConnExecutorQuery(query=f"SELECT * from {db.quote(nonexistent_table_ident.table_name)}")
-        with pytest.raises(core_exc.SourceDoesNotExist):
+        with pytest.raises(core_exc.SourceDoesNotExistError):
             sync_connection_executor.execute(query)
 
     def test_closing_sql_sessions(
@@ -265,11 +262,13 @@ class DefaultSyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutorC
         sync_connection_executor: SyncConnExecutorBase,
         nonexistent_table_ident: TableIdent,
     ) -> None:
-        with pytest.raises(core_exc.DLBaseException):
+        with pytest.raises(core_exc.DLBaseError):
             sync_connection_executor.get_table_schema_info(table_def=nonexistent_table_ident)
 
 
-class DefaultAsyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutorCheckBase[_CONN_TV], Generic[_CONN_TV]):
+class DefaultAsyncConnectionExecutorTestSuite[CONN_TV: ConnectionBase](
+    DefaultSyncAsyncConnectionExecutorCheckBase[CONN_TV]
+):
     @pytest.fixture(scope="session")
     def conn_exec_factory_async_env(self) -> bool:
         return True
@@ -355,7 +354,7 @@ class DefaultAsyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutor
         nonexistent_table_ident: TableIdent,
     ) -> None:
         query = ConnExecutorQuery(query=f"SELECT * from {db.quote(nonexistent_table_ident.table_name)}")
-        with pytest.raises(core_exc.SourceDoesNotExist):
+        with pytest.raises(core_exc.SourceDoesNotExistError):
             await async_connection_executor.execute(query)
 
     @pytest.mark.asyncio
@@ -385,5 +384,141 @@ class DefaultAsyncConnectionExecutorTestSuite(DefaultSyncAsyncConnectionExecutor
         async_connection_executor: AsyncConnExecutorBase,
         nonexistent_table_ident: TableIdent,
     ) -> None:
-        with pytest.raises(core_exc.DLBaseException):
+        with pytest.raises(core_exc.DLBaseError):
             await async_connection_executor.get_table_schema_info(table_def=nonexistent_table_ident)
+
+
+@attr.s(auto_attribs=True, frozen=True)
+class IndexTestCase:
+    table_ident: TableIdent
+    expected_indexes: frozenset
+    # `frozenset[IndexInfo]` — IndexInfo lives in dl_core.db; not imported here to
+    # keep this module's import surface narrow. Connectors construct frozensets directly.
+
+
+@attr.s(auto_attribs=True, frozen=True)
+class SchemaNamesTestCase:
+    target_db_ident: DBIdent
+    expected_schemas: list[str]
+    # If false, get_schema_names result must contain expected_schemas; if true, sets must match exactly.
+    full_match_required: bool
+
+
+class DefaultIndexDiscoveryTestSuite[CONN_TV: ConnectionBase](DefaultSyncAsyncConnectionExecutorCheckBase[CONN_TV]):
+    """Sync-only — covers the legacy `BaseConnExecutorSet.test_indexes_discovery`."""
+
+    @pytest.fixture
+    def index_test_case(self) -> IndexTestCase:
+        pytest.skip("No `index_test_case` fixture defined for this connector")
+
+    @pytest.fixture
+    def fetch_table_indexes_sync_connection_executor(
+        self,
+        sync_conn_executor_factory: Callable[[], SyncConnExecutorBase],
+    ) -> Generator[SyncConnExecutorBase, None, None]:
+        # Mirrors `sync_connection_executor` but flips `fetch_table_indexes` on
+        # via the executor's connect options. For sync envs that wrap an async
+        # executor (`SyncWrapperForAsyncConnExecutor`), mutate the inner one.
+        from dl_core.connection_executors.async_sa_executors import DefaultSqlAlchemyConnExecutor
+        from dl_core.connection_executors.sync_executor_wrapper import SyncWrapperForAsyncConnExecutor
+
+        sync_conn_executor = sync_conn_executor_factory()
+        target: DefaultSqlAlchemyConnExecutor
+        if isinstance(sync_conn_executor, SyncWrapperForAsyncConnExecutor):
+            inner = sync_conn_executor._async_conn_executor
+            assert isinstance(inner, DefaultSqlAlchemyConnExecutor)
+            target = inner
+        else:
+            assert isinstance(sync_conn_executor, DefaultSqlAlchemyConnExecutor)
+            target = sync_conn_executor
+        target._conn_options = attr.evolve(target._conn_options, fetch_table_indexes=True)
+        try:
+            yield sync_conn_executor
+        finally:
+            sync_conn_executor.close()
+
+    def test_indexes_discovery(
+        self,
+        fetch_table_indexes_sync_connection_executor: SyncConnExecutorBase,
+        index_test_case: IndexTestCase,
+    ) -> None:
+        actual_schema_info = fetch_table_indexes_sync_connection_executor.get_table_schema_info(
+            index_test_case.table_ident,
+        )
+        assert actual_schema_info.indexes == index_test_case.expected_indexes
+
+
+class DefaultSchemaListingTestSuite[CONN_TV: ConnectionBase](DefaultSyncAsyncConnectionExecutorCheckBase[CONN_TV]):
+    """Sync + async — covers the legacy `BaseSchemaSupportedExecutorSet` schema-name tests."""
+
+    @pytest.fixture
+    def schema_names_test_case(self) -> SchemaNamesTestCase:
+        raise NotImplementedError("Override `schema_names_test_case` for this connector")
+
+    def test_get_schema_names(
+        self,
+        sync_connection_executor: SyncConnExecutorBase,
+        schema_names_test_case: SchemaNamesTestCase,
+    ) -> None:
+        actual = sync_connection_executor.get_schema_names(schema_names_test_case.target_db_ident)
+        if schema_names_test_case.full_match_required:
+            assert sorted(actual) == sorted(schema_names_test_case.expected_schemas)
+        else:
+            assert set(actual).issuperset(set(schema_names_test_case.expected_schemas))
+
+    @pytest.mark.asyncio
+    async def test_get_schema_names_async(
+        self,
+        async_connection_executor: AsyncConnExecutorBase,
+        schema_names_test_case: SchemaNamesTestCase,
+    ) -> None:
+        actual = await async_connection_executor.get_schema_names(schema_names_test_case.target_db_ident)
+        if schema_names_test_case.full_match_required:
+            assert sorted(actual) == sorted(schema_names_test_case.expected_schemas)
+        else:
+            assert set(actual).issuperset(set(schema_names_test_case.expected_schemas))
+
+
+class ReadWriteAdapterTestSuite[CONN_TV: ConnectionBase](BaseConnectionExecutorTestClass[CONN_TV]):
+    @pytest.fixture
+    def rw_table_name(self, db: Db) -> Generator[str, None, None]:
+        name = f"dl_rw_test_{shortuuid.uuid().lower()}"
+        db.execute(f"CREATE TABLE {name} (id integer)")
+        try:
+            yield name
+        finally:
+            db.execute(f"DROP TABLE IF EXISTS {name}")
+
+    @pytest.mark.asyncio
+    async def test_write_executes_when_allow_write(
+        self,
+        db: Db,
+        async_connection_executor: AsyncConnExecutorBase,
+        rw_table_name: str,
+    ) -> None:
+        query = ConnExecutorQuery(
+            query=sa.text(f"INSERT INTO {rw_table_name} (id) VALUES (1)"),
+            is_dashsql_query=True,
+            autodetect_user_types=True,
+            allow_write=True,
+        )
+        result = await async_connection_executor.execute(query)
+        await result.get_all()
+        rows = [tuple(row) for row in db.execute(f"SELECT id FROM {rw_table_name} ORDER BY id")]
+        assert rows == [(1,)], rows
+
+    @pytest.mark.asyncio
+    async def test_write_rejected_when_not_allow_write(
+        self,
+        async_connection_executor: AsyncConnExecutorBase,
+        rw_table_name: str,
+    ) -> None:
+        query = ConnExecutorQuery(
+            query=sa.text(f"INSERT INTO {rw_table_name} (id) VALUES (1)"),
+            is_dashsql_query=True,
+            autodetect_user_types=True,
+            allow_write=False,
+        )
+        result = await async_connection_executor.execute(query)
+        with pytest.raises(core_exc.DatabaseReadOnlyTransactionError):
+            await result.get_all()

@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import Callable
 from enum import Enum
-from typing import (
-    Callable,
-    Optional,
-)
 import uuid
 
 import attr
@@ -28,7 +25,7 @@ class BoundaryCheckResult(Enum):
 @attr.s
 class LevelBoundary(abc.ABC):
     name: str = attr.ib()
-    name_gen: Optional[Callable[[nodes.FormulaItem, str], str]] = attr.ib(default=None)
+    name_gen: Callable[[nodes.FormulaItem, str], str] | None = attr.ib(default=None)
 
     def _default_name_gen(self, node: nodes.FormulaItem) -> str:
         """Default name generator for sliced nodes"""
@@ -96,9 +93,8 @@ class AggregateFunctionLevelBoundary(LevelBoundary):
         if dl_formula.inspect.node.is_aggregate_function(node):
             return BoundaryCheckResult.raise_level
 
-        if self.constants_neutral:
-            if dl_formula.inspect.expression.is_constant_expression(node, env=inspect_env):
-                return BoundaryCheckResult.neutral
+        if self.constants_neutral and dl_formula.inspect.expression.is_constant_expression(node, env=inspect_env):
+            return BoundaryCheckResult.neutral
 
         return BoundaryCheckResult.maintain_level
 
@@ -118,9 +114,8 @@ class WindowFunctionLevelBoundary(LevelBoundary):
         if isinstance(node, nodes.WindowFuncCall):
             return BoundaryCheckResult.raise_level
 
-        if self.constants_neutral:
-            if dl_formula.inspect.expression.is_constant_expression(node, env=inspect_env):
-                return BoundaryCheckResult.neutral
+        if self.constants_neutral and dl_formula.inspect.expression.is_constant_expression(node, env=inspect_env):
+            return BoundaryCheckResult.neutral
 
         return BoundaryCheckResult.maintain_level
 
@@ -173,11 +168,11 @@ class NestedLevelTaggedBoundary(LevelBoundary):
             T({A, B, C}, 0)
     """
 
-    tag: Optional[LevelTag] = attr.ib(default=None)
+    tag: LevelTag | None = attr.ib(default=None)
     constants_neutral: bool = attr.ib(default=True)
 
     def check_tag(self, is_own_tag: bool, level_tag: LevelTag) -> BoundaryCheckResult:
-        if self.tag is None or (level_tag < self.tag or is_own_tag and level_tag <= self.tag):
+        if self.tag is None or (level_tag < self.tag or (is_own_tag and level_tag <= self.tag)):
             # For non-own tags use strict <
             return BoundaryCheckResult.raise_level
         return BoundaryCheckResult.maintain_level
@@ -186,7 +181,7 @@ class NestedLevelTaggedBoundary(LevelBoundary):
         self,
         node: nodes.FormulaItem,
         parent_stack: tuple[nodes.FormulaItem, ...],
-    ) -> tuple[bool, Optional[LevelTag]]:
+    ) -> tuple[bool, LevelTag | None]:
         # For QueryForks the node itself is tagged
         if isinstance(node, fork_nodes.QueryFork):
             return True, node.level_tag
@@ -225,9 +220,8 @@ class NestedLevelTaggedBoundary(LevelBoundary):
         if level_tag is not None:
             return self.check_tag(is_own_tag=is_own_tag, level_tag=level_tag)
 
-        if self.constants_neutral:
-            if dl_formula.inspect.expression.is_constant_expression(node, env=inspect_env):
-                return BoundaryCheckResult.neutral
+        if self.constants_neutral and dl_formula.inspect.expression.is_constant_expression(node, env=inspect_env):
+            return BoundaryCheckResult.neutral
 
         return BoundaryCheckResult.maintain_level
 

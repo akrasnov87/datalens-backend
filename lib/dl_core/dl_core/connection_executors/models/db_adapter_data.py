@@ -1,21 +1,20 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Mapping,
+    Sequence,
+)
 from typing import (
     TYPE_CHECKING,
     Any,
-    Mapping,
-    Optional,
-    Sequence,
-    Union,
+    Self,
 )
 
 import attr
 from sqlalchemy.sql.elements import ClauseElement
-from typing_extensions import Self
-
 
 if TYPE_CHECKING:
-    from dl_constants.enums import IndexKind
+    from dl_constants import IndexKind
     from dl_constants.types import TJSONExt
     from dl_type_transformer.native_type import GenericNativeType
 
@@ -39,12 +38,12 @@ class ExecutionStepDataChunk(ExecutionStep):
 
 @attr.s(frozen=True)
 class DBAdapterQuery:
-    query: Union[ClauseElement, str] = attr.ib()
-    db_name: Optional[str] = attr.ib(default=None)
-    debug_compiled_query: Optional[str] = attr.ib(default=None)
-    inspector_query: Optional[str] = attr.ib(default=None)
-    chunk_size: Optional[int] = attr.ib(default=None)
-    connector_specific_params: Optional[Mapping[str, TJSONExt]] = attr.ib(default=None)
+    query: ClauseElement | str = attr.ib()
+    db_name: str | None = attr.ib(default=None)
+    debug_compiled_query: str | None = attr.ib(default=None)
+    inspector_query: str | None = attr.ib(default=None)
+    chunk_size: int | None = attr.ib(default=None)
+    connector_specific_params: Mapping[str, TJSONExt] | None = attr.ib(default=None)
     # Use-case: `explain ...` queries are incompatible with streaming (and
     # server-side cursors in general) because psycopg2 prepends 'DECLARE ...
     # CURSOR WITHOUT HOLD FOR ...' to the statement.
@@ -53,12 +52,15 @@ class DBAdapterQuery:
     trusted_query: bool = attr.ib(default=False)
     is_ddl_dml_query: bool = attr.ib(default=False)
     is_dashsql_query: bool = attr.ib(default=False)
+    allow_write: bool = attr.ib(default=False)
+    limit: int | None = attr.ib(default=None)
+    offset: int | None = attr.ib(default=None)
+    query_settings: Mapping[str, str] = attr.ib(factory=dict)
 
     def get_effective_chunk_size(self, default_chunk_size: int) -> int:
         if self.chunk_size is None:
             return default_chunk_size
-        else:
-            return self.chunk_size
+        return self.chunk_size
 
     def clone(self, **kwargs: Any) -> Self:
         return attr.evolve(self, **kwargs)
@@ -67,19 +69,19 @@ class DBAdapterQuery:
 @attr.s(frozen=True, slots=True, auto_attribs=True)
 class RawColumnInfo:
     name: str
-    title: Optional[str]
+    title: str | None
     nullable: bool
-    native_type: "GenericNativeType"
+    native_type: GenericNativeType
 
 
 @attr.s(frozen=True, slots=True, auto_attribs=True)
 class RawIndexInfo:
     columns: tuple[str, ...]
     unique: bool
-    kind: Optional[IndexKind]
+    kind: IndexKind | None
 
 
 @attr.s(frozen=True, slots=True, auto_attribs=True)
 class RawSchemaInfo:
     columns: tuple[RawColumnInfo, ...]
-    indexes: Optional[tuple[RawIndexInfo, ...]] = None
+    indexes: tuple[RawIndexInfo, ...] | None = None

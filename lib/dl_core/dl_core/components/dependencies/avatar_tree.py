@@ -1,14 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 import logging
-from typing import (
-    Collection,
-    Optional,
-)
 
 import attr
 
-from dl_constants.enums import ManagedBy
+from dl_constants import ManagedBy
 from dl_core.components.accessor import DatasetComponentAccessor
 from dl_core.components.dependencies.avatar_tree_base import AvatarTreeResolverBase
 from dl_core.components.dependencies.relation_avatar_base import RelationAvatarDependencyManagerBase
@@ -18,7 +15,6 @@ from dl_core.components.ids import (
 )
 import dl_core.exc as exc
 from dl_core.us_dataset import Dataset
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -39,7 +35,7 @@ class AvatarTreeResolver(AvatarTreeResolverBase):
             for relation in self._ds_accessor.get_avatar_relation_list(left_avatar_id=avatar_id):
                 if relation.managed_by == ManagedBy.feature:
                     continue
-                elif relation.managed_by == ManagedBy.user:
+                if relation.managed_by == ManagedBy.user:
                     populate_recursively(avatar_id=relation.right_avatar_id, rank=rank + 1)
                 else:
                     raise ValueError(f"Unsupported managed_by value in relation: {relation.managed_by}")
@@ -57,7 +53,7 @@ class AvatarTreeResolver(AvatarTreeResolverBase):
 
     def expand_required_avatar_ids(
         self, required_avatar_ids: Collection[str]
-    ) -> tuple[Optional[AvatarId], set[AvatarId], set[RelationId]]:
+    ) -> tuple[AvatarId | None, set[AvatarId], set[RelationId]]:
         # TODO: this method is too big
         #  need to split it down to several methods
         if len(required_avatar_ids) == 1:
@@ -67,7 +63,7 @@ class AvatarTreeResolver(AvatarTreeResolverBase):
         required_avatar_ids = set(required_avatar_ids)
         ranks = self.rank_avatars()
         if len(required_avatar_ids) > 1:
-            LOGGER.info(f"Got avatar ranks: {ranks}")
+            LOGGER.info("Got avatar ranks: %s", ranks)
 
         required_relation_ids: set[RelationId] = set()
 
@@ -81,13 +77,12 @@ class AvatarTreeResolver(AvatarTreeResolverBase):
                     )
                     required_relation_ids.add(relation.id)
             if updated_required_avatar_ids == required_avatar_ids:
-                LOGGER.info(f"Finished resolving feature-managed avatars on iteration {iteration}")
+                LOGGER.info("Finished resolving feature-managed avatars on iteration %s", iteration)
                 break
-            else:
-                LOGGER.info(
-                    "Found additional avatars in required feature-managed relations: "
-                    f"{updated_required_avatar_ids - required_avatar_ids}"
-                )
+            LOGGER.info(
+                "Found additional avatars in required feature-managed relations: %s",
+                updated_required_avatar_ids - required_avatar_ids,
+            )
             required_avatar_ids = updated_required_avatar_ids
         else:
             # It means that for every iteration we are still getting new avatars
@@ -118,7 +113,7 @@ class AvatarTreeResolver(AvatarTreeResolverBase):
                     # add this parent to required IDs
                     if new_avatar_id not in required_avatar_ids:
                         LOGGER.info(
-                            f"Implicitly adding avatar {new_avatar_id} " f"so that avatar {avatar_id} can be joined to"
+                            "Implicitly adding avatar %s so that avatar %s can be joined to", new_avatar_id, avatar_id
                         )
                         required_avatar_ids.add(new_avatar_id)
                     avatar_id = new_avatar_id

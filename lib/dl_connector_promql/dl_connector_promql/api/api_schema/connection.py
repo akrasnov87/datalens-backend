@@ -1,16 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 import re
-from typing import (
-    Any,
-    Mapping,
-    Optional,
-)
+from typing import Any
 
 from marshmallow import ValidationError
 from marshmallow import fields as ma_fields
 
-from dl_api_connector.api_schema.connection_base import ConnectionMetaMixin
 from dl_api_connector.api_schema.connection_base_fields import secret_string_field
 from dl_api_connector.api_schema.connection_mixins import DataExportForbiddenMixin
 from dl_api_connector.api_schema.connection_sql import ClassicSQLConnectionSchema
@@ -35,7 +31,7 @@ class DBPathField(ma_fields.String):
         if not path_re.match(user_path_str):
             raise ValidationError("Path in the wrong format")
 
-    def _deserialize(self, value: Any, attr: Optional[str], data: Optional[Mapping[str, Any]], **kwargs: Any) -> Any:
+    def _deserialize(self, value: Any, attr: str | None, data: Mapping[str, Any] | None, **kwargs: Any) -> Any:
         user_path_str = super()._deserialize(value, attr, data, **kwargs)
         self._validate_path_str(user_path_str)
         user_path_str = user_path_str.lstrip("/")
@@ -44,7 +40,7 @@ class DBPathField(ma_fields.String):
         return user_path_str
 
 
-class PromQLConnectionSchema(ConnectionMetaMixin, DataExportForbiddenMixin, ClassicSQLConnectionSchema):
+class PromQLConnectionSchema(DataExportForbiddenMixin, ClassicSQLConnectionSchema):
     TARGET_CLS = PromQLConnection
     auth_type = DynamicEnumField(
         PromQLAuthType,

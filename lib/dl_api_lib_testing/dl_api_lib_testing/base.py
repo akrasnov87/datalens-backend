@@ -1,9 +1,10 @@
 import abc
 from asyncio import AbstractEventLoop
+from collections.abc import Generator
+from importlib.resources import files
 from typing import (
     Any,
     ClassVar,
-    Generator,
 )
 
 from flask.app import Flask
@@ -28,13 +29,13 @@ from dl_api_lib_testing.client import FlaskSyncApiClient
 from dl_api_lib_testing.configuration import ApiTestEnvironmentConfiguration
 import dl_auth
 from dl_configs.rqe import RQEConfig
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     QueryProcessingMode,
 )
 from dl_core.components.ids import FieldIdGeneratorType
 from dl_core.connectors.settings.base import ConnectorSettings
-from dl_core.united_storage_client import USAuthContextMaster
+from dl_core.us_manager.dynamic_token_factory import DynamicUSMasterTokenFactory
 from dl_core.us_manager.us_manager_sync import SyncUSManager
 from dl_core_testing.flask_utils import (
     FlaskTestClient,
@@ -56,7 +57,7 @@ class ApiTestBase(abc.ABC):
     compeng_enabled: ClassVar[bool] = True
     query_processing_mode: ClassVar[QueryProcessingMode] = QueryProcessingMode.basic
 
-    @pytest.fixture(scope="function", autouse=True)
+    @pytest.fixture(autouse=True)
     def preload(self) -> None:
         preload_api_lib()
 
@@ -77,11 +78,11 @@ class ApiTestBase(abc.ABC):
     def is_connector_available(self, conn_type: ConnectionType) -> bool:
         return True
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def enable_all_connectors(self, monkeypatch: Any) -> None:
         monkeypatch.setattr(ConnectorAvailabilityConfig, "check_connector_is_available", self.is_connector_available)
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def environment_readiness(self, enable_all_connectors: Any) -> None:
         """Make sure the environment is ready for tests"""
         return
@@ -91,7 +92,7 @@ class ApiTestBase(abc.ABC):
         with pytest.MonkeyPatch.context() as mp:
             yield mp
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def rqe_config_subprocess(
         self,
         bi_test_config: ApiTestEnvironmentConfiguration,
@@ -117,7 +118,7 @@ class ApiTestBase(abc.ABC):
         redis_setting_maker = core_test_config.get_redis_setting_maker()
 
         # TODO(catsona): Deal with evolve alternative for pydantic and support new settings in create_data_api_settings and all references
-        settings = DeprecatedControlApiAppSettings(  # type: ignore  # 2024-01-29 # TODO: Unexpected keyword argument "CONNECTOR_AVAILABILITY" for "ControlApiAppSettings"  [call-arg]
+        return DeprecatedControlApiAppSettings(  # type: ignore  # 2024-01-29 # TODO: Unexpected keyword argument "CONNECTOR_AVAILABILITY" for "ControlApiAppSettings"  [call-arg]
             CONNECTOR_AVAILABILITY=ConnectorAvailabilityConfig.from_settings(
                 bi_test_config.connector_availability_settings,
             ),
@@ -137,9 +138,8 @@ class ApiTestBase(abc.ABC):
             QUERY_PROCESSING_MODE=cls.query_processing_mode,
             CA_FILE_PATH=get_root_certificates_path(),
         )
-        return settings
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def control_api_app_settings(
         self,
         bi_test_config: ApiTestEnvironmentConfiguration,
@@ -150,9 +150,7 @@ class ApiTestBase(abc.ABC):
             bi_test_config=bi_test_config,
             rqe_config_subprocess=rqe_config_subprocess,
         )
-        settings = TestingControlApiAppSettings(fallback=deprecated_settings)
-
-        return settings
+        return TestingControlApiAppSettings(fallback=deprecated_settings)
 
     @pytest.fixture(scope="class")
     def sample_table_schema(self) -> str | None:
@@ -162,19 +160,19 @@ class ApiTestBase(abc.ABC):
     def ca_data(self) -> bytes:
         return get_root_certificates()
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def control_api_app_factory(self, control_api_app_settings: ControlApiAppSettings) -> ControlApiAppFactory:
         return TestingControlApiAppFactory(settings=control_api_app_settings)
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def fake_tenant(self) -> dl_api_commons.TenantDef:
         return dl_api_commons.TenantCommon()
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def fake_auth_data(self) -> dl_auth.AuthData | None:
         return None
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def control_api_app(
         self,
         environment_readiness: None,
@@ -201,7 +199,7 @@ class ApiTestBase(abc.ABC):
             assert ctx
             yield app
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def client(
         self,
         control_api_app: Flask,
@@ -217,11 +215,11 @@ class ApiTestBase(abc.ABC):
 
         return control_api_app.test_client()
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def control_api_sync_client(self, client: FlaskClient) -> SyncHttpClientBase:
         return FlaskSyncApiClient(int_wclient=client)
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def control_api(
         self,
         control_api_sync_client: SyncHttpClientBase,
@@ -229,7 +227,7 @@ class ApiTestBase(abc.ABC):
     ) -> SyncHttpDatasetApiV1:
         return SyncHttpDatasetApiV1(client=control_api_sync_client, headers=bi_headers or {})
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def sync_us_manager(
         self,
         bi_test_config: ApiTestEnvironmentConfiguration,
@@ -242,7 +240,14 @@ class ApiTestBase(abc.ABC):
         bi_context = dl_api_commons.RequestContextInfo.create_empty()
         us_config = core_test_config.get_us_config()
 
-        us_manager = SyncUSManager(
+        private_key = (files("dl_core_testing") / "keys" / "dynamic_us_master_token_private_key.pem").read_text()
+        dynamic_token_factory = DynamicUSMasterTokenFactory(
+            private_key=private_key,
+            token_lifetime_sec=3600,
+            min_ttl_sec=900.0,
+        )
+
+        return SyncUSManager(
             bi_context=bi_context,
             services_registry=control_api_app_factory.get_sr_factory(
                 conn_opts_factory=ConnOptionsMutatorsFactory(),
@@ -251,8 +256,9 @@ class ApiTestBase(abc.ABC):
                 ca_data=ca_data,
             ).make_service_registry(request_context_info=bi_context),
             us_base_url=us_config.us_host,
-            us_auth_context=USAuthContextMaster(us_master_token=us_config.us_master_token),
+            us_auth_context=dynamic_token_factory.get_auth_context(
+                us_master_token=us_config.us_master_token,
+            ),
             crypto_keys_config=core_test_config.get_crypto_keys_config(),
             retry_policy_factory=dl_retrier.DefaultRetryPolicyFactory(),
         )
-        return us_manager

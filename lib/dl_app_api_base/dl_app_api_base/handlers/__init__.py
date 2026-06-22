@@ -11,7 +11,7 @@ from .base import (
     BaseResponseSchema,
     ErrorResponseSchema,
     Response,
-    ResponseException,
+    ResponseError,
     Route,
 )
 from .health import (
@@ -20,7 +20,6 @@ from .health import (
     StartupProbeHandler,
 )
 from .system import AppInfoHandler
-
 
 __all__ = [
     "AppInfoHandler",
@@ -34,7 +33,7 @@ __all__ = [
     "LivenessProbeHandler",
     "ReadinessProbeHandler",
     "Response",
-    "ResponseException",
+    "ResponseError",
     "Route",
     "SettingsHandler",
     "StartupProbeHandler",

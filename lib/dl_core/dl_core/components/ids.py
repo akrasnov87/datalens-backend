@@ -16,7 +16,6 @@ import uuid
 from anyascii import anyascii
 import attr
 
-
 if TYPE_CHECKING:
     from dl_core.us_dataset import Dataset
 
@@ -65,9 +64,7 @@ class FieldIdValidator:
     def is_valid(self, field_id: FieldId) -> bool:
         if not len(field_id) or len(field_id) > self._id_length:
             return False
-        if any((symbol not in self._id_valid_symbols for symbol in field_id)):
-            return False
-        return True
+        return not any(symbol not in self._id_valid_symbols for symbol in field_id)
 
     @property
     def id_length(self) -> int:
@@ -91,8 +88,7 @@ class DefaultFieldIdGenerator(FieldIdGenerator):
 
 def make_readable_field_id(title: str, valid_symbols: str, max_length: int) -> str:
     field_id = "".join(symbol for symbol in "_".join(anyascii(title).lower().split()) if symbol in valid_symbols)
-    field_id = field_id[:max_length]
-    return field_id
+    return field_id[:max_length]
 
 
 @attr.s
@@ -104,15 +100,14 @@ class ReadableFieldIdGenerator(FieldIdGenerator):
         if title is None:
             return str(uuid.uuid4())
         field_id = make_readable_field_id(title, self._id_valid_symbols, self._id_length)
-        field_id = self._resolve_id_collisions(field_id)
-        return field_id
+        return self._resolve_id_collisions(field_id)
 
     def _resolve_id_collisions(self, item: FieldId) -> FieldId:
         existing_items = {f.guid for f in self.dataset.result_schema.fields}
         idx = 1
         orig_item = item
         while item in existing_items:
-            _idx = "_{}".format(idx)
+            _idx = f"_{idx}"
             item = "".join([orig_item[: self._id_length - len(_idx)], _idx])
             idx += 1
         return item
@@ -126,7 +121,7 @@ class ReadableFieldIdGeneratorWithPrefix(ReadableFieldIdGenerator):
         field_id = super().make_field_id(title=title)
         if title is None:
             return field_id
-        return "_".join([generate_random_str(), field_id])
+        return f"{generate_random_str()}_{field_id}"
 
 
 @attr.s
@@ -137,7 +132,7 @@ class ReadableFieldIdGeneratorWithSuffix(ReadableFieldIdGenerator):
         field_id = super().make_field_id(title=title)
         if title is None:
             return field_id
-        return "_".join([field_id, generate_random_str()])
+        return f"{field_id}_{generate_random_str()}"
 
 
 @unique

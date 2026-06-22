@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dl_constants.enums import ConnectionType
+from dl_constants import ConnectionType
 from dl_core.connectors.base.lifecycle import (
     ConnectionLifecycleManager,
     DefaultConnectionLifecycleManager,
@@ -13,7 +13,6 @@ from dl_core.us_connection_base import (
     ConnectionBase,
     UnknownConnection,
 )
-
 
 CONNECTION_TYPES: dict[ConnectionType, type[ConnectionBase]] = {
     ConnectionType.unknown: UnknownConnection,

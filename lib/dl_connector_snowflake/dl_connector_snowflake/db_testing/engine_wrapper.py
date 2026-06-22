@@ -1,5 +1,3 @@
-from typing import Optional
-
 import attr
 import sqlalchemy as sa
 
@@ -29,13 +27,13 @@ class SnowFlakeEngineWrapper(EngineWrapperBase):
         assert isinstance(name, str)
         return name
 
-    def get_version(self) -> Optional[str]:
+    def get_version(self) -> str | None:
         return self.name
 
     def drop_table(self, db_name: str, table: sa.Table) -> None:
         table.drop(bind=self.engine, checkfirst=True)
 
     def get_conn_credentials(self, full: bool = False) -> dict:
-        return dict(
-            db_name=self.config.db_name,
-        )
+        return {
+            "db_name": self.config.db_name,
+        }

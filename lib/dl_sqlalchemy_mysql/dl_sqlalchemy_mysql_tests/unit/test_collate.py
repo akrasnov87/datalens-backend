@@ -45,13 +45,13 @@ CI_EXPECTED_WITHOUT_COLLATE = [
 
 
 @pytest.fixture(
-    params=list(zip(CI_EXPRS, CI_EXPECTED_WITH_COLLATE, CI_EXPECTED_WITHOUT_COLLATE)),
+    params=list(zip(CI_EXPRS, CI_EXPECTED_WITH_COLLATE, CI_EXPECTED_WITHOUT_COLLATE, strict=True)),
     ids=[name for name, _ in CI_EXPRS],
 )
 def ci_expr_with_expected(request):
     """Fixture that yields (expr, expected_with_collate, expected_without_collate)"""
-    (name, expr), expected_ci, expected_no_ci = request.param
-    yield expr, expected_ci, expected_no_ci
+    (_name, expr), expected_ci, expected_no_ci = request.param
+    return expr, expected_ci, expected_no_ci
 
 
 def test_collate_option(engine_url, ci_expr_with_expected):

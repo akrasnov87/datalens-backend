@@ -17,7 +17,6 @@ from dl_core.connection_executors.qe_serializer.schemas_common import (
     DBAdapterScopedRCISchema,
 )
 
-
 # Full RCI is used in test-cases to prevent extra work when scope of DBAdapterScopedRCI will be extended
 _TEST_REQ_CTX_INFO = (
     DBAdapterScopedRCI.from_full_rci(
@@ -135,6 +134,15 @@ _TEST_DB_ADAPTER_QUERY = (
         query="",
         connector_specific_params={"from": datetime(2020, 1, 1)},
     ),
+    DBAdapterQuery(
+        query="",
+        limit=100,
+        offset=20,
+    ),
+    DBAdapterQuery(
+        query="",
+        allow_write=True,
+    ),
 )
 
 
@@ -160,3 +168,28 @@ def test_db_adapter_query_schema(db_adapter_query: DBAdapterQuery):
     reloaded_db_adapter_query = schema.load(dumped_db_adapter_query)
 
     assert reloaded_db_adapter_query == db_adapter_query
+
+
+def test_db_adapter_query_schema_tolerates_missing_limit_offset():
+    # Older producer payloads won't contain limit/offset; loading must default them to None.
+    schema = DBAdapterQueryStrSchema()
+    dumped = schema.dump(DBAdapterQuery(query=""))
+    dumped.pop("limit", None)
+    dumped.pop("offset", None)
+
+    reloaded = schema.load(dumped)
+
+    assert reloaded.limit is None
+    assert reloaded.offset is None
+
+
+def test_db_adapter_query_schema_ignores_unknown_field():
+    # Forward-compatibility: a newer producer may send fields that an older consumer (RQE)
+    # does not know yet. Deserialization must drop them, not 500.
+    schema = DBAdapterQueryStrSchema()
+    dumped_db_adapter_query = schema.dump(DBAdapterQuery(query=""))
+    dumped_db_adapter_query["some_field_from_the_future"] = {"foo": "bar"}
+
+    reloaded_db_adapter_query = schema.load(dumped_db_adapter_query)
+
+    assert reloaded_db_adapter_query == DBAdapterQuery(query="")

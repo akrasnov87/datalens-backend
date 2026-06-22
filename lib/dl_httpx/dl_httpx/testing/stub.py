@@ -1,13 +1,12 @@
 import asyncio
+from collections.abc import Callable
 from typing import (
     Any,
-    Callable,
-    Generic,
+    Self,
     TypeVar,
 )
 
 import attrs
-from typing_extensions import Self
 
 
 @attrs.define(kw_only=True)
@@ -21,7 +20,7 @@ CallableT = TypeVar("CallableT", bound=Callable)
 
 
 @attrs.define(kw_only=True)
-class TrackedCallable(Generic[CallableT]):
+class TrackedCallable[CallableT: Callable]:
     method: CallableT
 
     calls: list[Call] = attrs.field(factory=list, init=False)
@@ -79,7 +78,11 @@ class TrackedCallable(Generic[CallableT]):
     def assert_called_once_with(self, *args: Any, **kwargs: Any) -> None:
         self.assert_called_once()
         call = self.calls[0]
-        assert call.args == args and call.kwargs == kwargs, (
+        assert call.args == args, (
+            f"Expected {self.method.__name__!r} to be called with args={args!r}, kwargs={kwargs!r}, "
+            f"but was called with args={call.args!r}, kwargs={call.kwargs!r}"
+        )
+        assert call.kwargs == kwargs, (
             f"Expected {self.method.__name__!r} to be called with args={args!r}, kwargs={kwargs!r}, "
             f"but was called with args={call.args!r}, kwargs={call.kwargs!r}"
         )
@@ -96,7 +99,11 @@ class TrackedCallable(Generic[CallableT]):
     def assert_awaited_once_with(self, *args: Any, **kwargs: Any) -> None:
         self.assert_awaited_once()
         call = self.calls[0]
-        assert call.args == args and call.kwargs == kwargs, (
+        assert call.args == args, (
+            f"Expected {self.method.__name__!r} to be awaited with args={args!r}, kwargs={kwargs!r}, "
+            f"but was awaited with args={call.args!r}, kwargs={call.kwargs!r}"
+        )
+        assert call.kwargs == kwargs, (
             f"Expected {self.method.__name__!r} to be awaited with args={args!r}, kwargs={kwargs!r}, "
             f"but was awaited with args={call.args!r}, kwargs={call.kwargs!r}"
         )
@@ -108,5 +115,5 @@ class TrackedCallable(Generic[CallableT]):
         ), f"Expected {self.method.__name__!r} not to be awaited, but it was awaited {len(awaited)} time(s)"
 
 
-def tracked(func: CallableT) -> "TrackedCallable[CallableT]":
+def tracked[CallableT: Callable](func: CallableT) -> "TrackedCallable[CallableT]":
     return TrackedCallable(method=func)

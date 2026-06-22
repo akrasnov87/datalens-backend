@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    Callable,
-    Optional,
-    TypeVar,
-    Union,
-    no_type_check,
-)
+from collections.abc import Callable
+from typing import no_type_check
 
 import sqlalchemy as sa
 from sqlalchemy.sql.elements import (
@@ -41,17 +36,15 @@ def raw_sql(sql_text: str) -> _TextClauseHack:
     return _TextClauseHack(sql_text)
 
 
-TransCallResult = Union[ClauseElement, nodes.FormulaItem]
+TransCallResult = ClauseElement | nodes.FormulaItem
 TranslateCallback = Callable[[nodes.FormulaItem], TransCallResult]
 
-_BINARY_CHAIN_TV = TypeVar("_BINARY_CHAIN_TV", bound=TransCallResult)
 
-
-def make_binary_chain(
-    binary_callable: Callable[[_BINARY_CHAIN_TV, _BINARY_CHAIN_TV], _BINARY_CHAIN_TV],
-    *args: _BINARY_CHAIN_TV,
+def make_binary_chain[BINARY_CHAIN_TV: TransCallResult](
+    binary_callable: Callable[[BINARY_CHAIN_TV, BINARY_CHAIN_TV], BINARY_CHAIN_TV],
+    *args: BINARY_CHAIN_TV,
     wrap_as_nodes: bool = True,
-) -> _BINARY_CHAIN_TV:
+) -> BINARY_CHAIN_TV:
     if len(args) == 0:
         return sa.null()
 
@@ -158,9 +151,9 @@ class _PatchedOver(Over):
 
 def over(
     clause_el: ClauseElement,
-    partition_by: Optional[ClauseElement] = None,
-    order_by: Optional[ClauseElement] = None,
-    rows: Optional[tuple[Optional[int], Optional[int]]] = None,
-    range_: Optional[tuple[Optional[int], Optional[int]]] = None,
+    partition_by: ClauseElement | None = None,
+    order_by: ClauseElement | None = None,
+    rows: tuple[int | None, int | None] | None = None,
+    range_: tuple[int | None, int | None] | None = None,
 ) -> _PatchedOver:
     return _PatchedOver(clause_el, partition_by=partition_by, order_by=order_by, rows=rows, range_=range_)

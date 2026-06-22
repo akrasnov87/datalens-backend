@@ -1,42 +1,44 @@
 import asyncio
+from collections.abc import (
+    AsyncGenerator,
+    Callable,
+    Generator,
+)
 from concurrent.futures.thread import ThreadPoolExecutor
 import logging
 import random
 import threading
 import time
-from typing import (
-    Any,
-    AsyncGenerator,
-    Callable,
-    Generator,
-)
+from typing import Any
 
 import attr
 import pytest
 
 from dl_api_commons.aio.async_wrapper_for_sync_generator import (
-    EndOfStream,
-    InitializationFailed,
+    EndOfStreamError,
+    InitializationFailedError,
     Job,
     JobState,
 )
 
+LOGGER = logging.getLogger(__name__)
 
-@pytest.fixture()
+
+@pytest.fixture
 def service_tpe() -> Generator[ThreadPoolExecutor, None, None]:
     tpe = ThreadPoolExecutor(thread_name_prefix="SERVICE_TPE_")
     yield tpe
     tpe.shutdown()
 
 
-@pytest.fixture()
+@pytest.fixture
 def worker_tpe() -> Generator[ThreadPoolExecutor, None, None]:
     tpe = ThreadPoolExecutor(thread_name_prefix="WORKER_TPE_")
     yield tpe
     tpe.shutdown()
 
 
-@pytest.fixture()
+@pytest.fixture
 def wrapper_factory(
     worker_tpe: ThreadPoolExecutor,
     service_tpe: ThreadPoolExecutor,
@@ -64,7 +66,7 @@ async def async_gen_adapter(wr: Job) -> AsyncGenerator[int, None]:
     while True:
         try:
             yield await wr.get_next()
-        except EndOfStream:
+        except EndOfStreamError:
             return
 
 
@@ -77,14 +79,11 @@ async def test_simple_finite_generator(
     count = int(1e3)
 
     def test_generator() -> Generator[Any, None, None]:
-        for i in range(count):
-            yield i
+        yield from range(count)
 
     job = wrapper_factory(test_generator)
 
-    result = []
-    async for item in async_gen_adapter(job):
-        result.append(item)
+    result = [item async for item in async_gen_adapter(job)]
 
     assert result == list(range(count))
     assert job.state == JobState.closed
@@ -100,7 +99,6 @@ async def test_error_in_start_generator(
 
     def test_generator() -> Generator[int, None, None]:
         raise ValueError("Error in generator")
-        # noqa
         yield
 
     job = wrapper_factory(test_generator)
@@ -119,15 +117,15 @@ async def test_error_in_generator_creation(
 ) -> None:
     caplog.set_level("DEBUG")
 
-    class MarkerException(Exception):
+    class MarkerError(Exception):
         pass
 
     def broken_generator_factory() -> Generator[int, None, None]:
-        raise MarkerException
+        raise MarkerError
 
     job = wrapper_factory(broken_generator_factory)
 
-    with pytest.raises(MarkerException):
+    with pytest.raises(MarkerError):
         await job.run()
 
 
@@ -150,22 +148,23 @@ async def test_start_confirmation_timeout(caplog: pytest.LogCaptureFixture) -> N
     stop_garbage = threading.Event()
 
     def garbage() -> None:
-        logging.info("Garbage thread was started")
+        LOGGER.info("Garbage thread was started")
 
         def cb() -> None:
-            logging.info("Triggering event 'garbage_started'")
+            LOGGER.info("Triggering event 'garbage_started'")
             garbage_started.set()
 
         loop.call_soon_threadsafe(cb)
         got_stop_event = stop_garbage.wait(timeout=15)
         if got_stop_event:
-            logging.info("Stopping garbage thread due to stop event")
+            LOGGER.info("Stopping garbage thread due to stop event")
         else:
-            logging.info("Stopping garbage thread due to timeout")
+            LOGGER.info("Stopping garbage thread due to timeout")
         return
 
     try:
-        asyncio.ensure_future(asyncio.get_running_loop().run_in_executor(local_worker_tpe, garbage))
+        # `garbage` is intentionally left dangling — the test exercises GC of an orphaned task.
+        asyncio.ensure_future(asyncio.get_running_loop().run_in_executor(local_worker_tpe, garbage))  # noqa: RUF006
         await asyncio.wait_for(garbage_started.wait(), timeout=1)
 
         job = LocalJob(
@@ -173,18 +172,18 @@ async def test_start_confirmation_timeout(caplog: pytest.LogCaptureFixture) -> N
             workers_tpe=local_worker_tpe,
         )
 
-        with pytest.raises(InitializationFailed):
+        with pytest.raises(InitializationFailedError):
             await job.run()
 
         await job.cancel()
 
     finally:
-        logging.info("Executing test clean-up")
+        LOGGER.info("Executing test clean-up")
         # Terminating garbage thread
         stop_garbage.set()
         local_worker_tpe.shutdown(wait=True)
         local_service_tpe.shutdown(wait=True)
-        logging.info("Test clean-up done")
+        LOGGER.info("Test clean-up done")
 
 
 @pytest.mark.asyncio
@@ -200,7 +199,7 @@ async def test_closing_before_full_consuming(
                 time.sleep(0.5)
                 yield random.randint(0, int(1e6))
         finally:
-            logging.info("Generator was correctly closed")
+            LOGGER.info("Generator was correctly closed")
 
     job = wrapper_factory(test_generator)
     await job.run()

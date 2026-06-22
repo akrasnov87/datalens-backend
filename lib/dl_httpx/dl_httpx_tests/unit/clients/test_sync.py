@@ -1,11 +1,13 @@
+from collections.abc import Generator
 import json
 import logging
 import ssl
-from typing import Generator
+from typing import Self
+from unittest import mock
 import unittest.mock
 
+import attrs
 import httpx
-import mock
 import pytest
 import pytest_mock
 import respx
@@ -15,7 +17,6 @@ import dl_constants
 import dl_httpx
 import dl_logging
 import dl_retrier
-
 
 LOGGER = logging.getLogger(__name__)
 REQUEST_ID_HEADER = dl_constants.DLHeadersCommon.REQUEST_ID.value
@@ -34,6 +35,7 @@ def test_get_request(
 
     with dl_httpx.HttpxSyncClient.from_dependencies(
         dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
             base_url="https://example.com",
             ssl_context=ssl_context,
         ),
@@ -59,6 +61,7 @@ def test_post_request(
 
     with dl_httpx.HttpxSyncClient.from_dependencies(
         dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
             base_url="https://example.com",
             ssl_context=ssl_context,
         ),
@@ -90,6 +93,7 @@ def test_custom_headers(
 
     with dl_httpx.HttpxSyncClient.from_dependencies(
         dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
             base_url="https://example.com",
             base_headers=headers,
             ssl_context=ssl_context,
@@ -114,20 +118,19 @@ def test_error_handling(
 
     with dl_httpx.HttpxSyncClient.from_dependencies(
         dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
             base_url="https://example.com",
             ssl_context=ssl_context,
         ),
     ) as client:
         request = client.prepare_raw_request("GET", "/api/not-found")
-        with pytest.raises(dl_httpx.HttpStatusHttpxClientException) as excinfo:
-            with client.send(request):
-                pass
+        with pytest.raises(dl_httpx.HttpStatusHttpxClientError) as excinfo, client.send(request):
+            pass
         assert excinfo.value.response.status_code == 404
 
         request = client.prepare_raw_request("GET", "/api/forbidden")
-        with pytest.raises(dl_httpx.HttpStatusHttpxClientException) as excinfo:
-            with client.send(request):
-                pass
+        with pytest.raises(dl_httpx.HttpStatusHttpxClientError) as excinfo, client.send(request):
+            pass
         assert excinfo.value.response.status_code == 403
 
 
@@ -142,6 +145,7 @@ def test_request_with_params(
 
     with dl_httpx.HttpxSyncClient.from_dependencies(
         dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
             base_url="https://example.com",
             ssl_context=ssl_context,
         ),
@@ -166,6 +170,7 @@ def test_cookies_handling(
 
     with dl_httpx.HttpxSyncClient.from_dependencies(
         dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
             base_url="https://example.com",
             base_cookies=cookies,
             ssl_context=ssl_context,
@@ -194,6 +199,7 @@ def test_binary_response(
 
     with dl_httpx.HttpxSyncClient.from_dependencies(
         dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
             base_url="https://example.com",
             ssl_context=ssl_context,
         ),
@@ -212,6 +218,7 @@ def fixture_client_with_mocks(
     mock_retry_policy_factory: unittest.mock.Mock,
 ) -> Generator[dl_httpx.HttpxSyncClient, None, None]:
     with dl_httpx.HttpxSyncClient(
+        client_name="HttpxSyncClient",
         base_url="https://example.com",
         base_cookies={},
         base_headers={},
@@ -291,12 +298,10 @@ def test_retry_client_error(
     mock_route = respx_mock.get("https://example.com/api/data").mock(side_effect=base_client_error)
 
     request = mocked_client.prepare_raw_request("GET", "/api/data")
-    with pytest.raises(dl_httpx.RequestHttpxClientException) as excinfo:
-        with mocked_client.send(request):
-            pass
+    with pytest.raises(dl_httpx.RequestHttpxClientError) as excinfo, mocked_client.send(request):
+        pass
 
-        assert excinfo.value.original_exception, base_client_error
-
+    assert excinfo.value.original_exception is base_client_error
     assert mock_route.call_count == 3
 
 
@@ -316,9 +321,8 @@ def test_retry_no_retries(
 
     request = mocked_client.prepare_raw_request("GET", "/api/data")
 
-    with pytest.raises(dl_httpx.NoRetriesHttpxClientException):
-        with mocked_client.send(request):
-            pass
+    with pytest.raises(dl_httpx.NoRetriesHttpxClientError), mocked_client.send(request):
+        pass
 
     assert mock_route.call_count == 0
 
@@ -340,6 +344,7 @@ def test_auth_provider(
     mock_route = respx_mock.get("https://example.com/api/data").respond(status_code=200)
     with dl_httpx.HttpxSyncClient.from_dependencies(
         dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
             base_url="https://example.com",
             ssl_context=ssl_context,
             auth_provider=mock_auth_provider,
@@ -383,6 +388,7 @@ def test_retry_mutates_request_id(
 
     with HttpxSyncTestClient.from_dependencies(
         dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
             base_url="https://example.com",
             ssl_context=ssl_context,
             retry_policy_factory=dl_retrier.RetryPolicyFactory.from_settings(retry_policy_factory_settings),
@@ -393,9 +399,8 @@ def test_retry_mutates_request_id(
             "/api/data",
             headers={REQUEST_ID_HEADER: "test-base-id"},
         )
-        with pytest.raises(dl_httpx.HttpStatusHttpxClientException):
-            with client.send(request):
-                pass
+        with pytest.raises(dl_httpx.HttpStatusHttpxClientError), client.send(request):
+            pass
 
     assert len(captured_ids) == 3
     assert captured_ids[0] == "test-base-id"
@@ -418,6 +423,7 @@ def test_request_with_auth_provider(
     mock_route = respx_mock.get("https://example.com/api/data").respond(status_code=200)
     with dl_httpx.HttpxSyncClient.from_dependencies(
         dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
             base_url="https://example.com",
             ssl_context=ssl_context,
             auth_provider=mock_auth_provider,
@@ -454,6 +460,7 @@ def test_rate_limit_propagates_from_send_sync(
     mock_route = respx_mock.get("https://example.com/api/data").respond(status_code=200)
     with dl_httpx.HttpxSyncClient.from_dependencies(
         dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
             base_url="https://example.com",
             ssl_context=ssl_context,
             retry_policy_factory=factory,
@@ -461,9 +468,8 @@ def test_rate_limit_propagates_from_send_sync(
         ),
     ) as client:
         request = client.prepare_raw_request("GET", "/api/data")
-        with pytest.raises(dl_httpx.RateLimitHttpxClientException):
-            with client.send(request):
-                pass
+        with pytest.raises(dl_httpx.RateLimitHttpxClientError), client.send(request):
+            pass
 
     assert mock_route.call_count == 0
 
@@ -476,6 +482,7 @@ def test_rate_limit_retries_exhausted_not_wrapped_sync(
 ) -> None:
     mock_route = respx_mock.get("https://example.com/api/data").respond(status_code=200)
     with dl_httpx.HttpxSyncClient(
+        client_name="HttpxSyncClient",
         base_url="https://example.com",
         base_cookies={},
         base_headers={},
@@ -487,9 +494,8 @@ def test_rate_limit_retries_exhausted_not_wrapped_sync(
         rate_limiter=always_rate_limit_limiter,
     ) as client:
         request = client.prepare_raw_request("GET", "/api/data")
-        with pytest.raises(dl_httpx.RateLimitHttpxClientException):
-            with client.send(request):
-                pass
+        with pytest.raises(dl_httpx.RateLimitHttpxClientError), client.send(request):
+            pass
 
     assert mock_route.call_count == 0
 
@@ -505,6 +511,7 @@ def test_rate_limit_retries_then_succeeds_sync(
         json={"ok": True},
     )
     with dl_httpx.HttpxSyncClient(
+        client_name="HttpxSyncClient",
         base_url="https://example.com",
         base_cookies={},
         base_headers={},
@@ -536,6 +543,7 @@ def test_send_sets_level1_logging_context(
 
     with dl_httpx.HttpxSyncClient.from_dependencies(
         dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
             base_url="https://example.com",
             ssl_context=ssl_context,
         ),
@@ -572,6 +580,7 @@ def test_send_sets_level2_attempt_request_id(
 
     with HttpxSyncTestClient.from_dependencies(
         dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
             base_url="https://example.com",
             ssl_context=ssl_context,
             retry_policy_factory=dl_retrier.RetryPolicyFactory.from_settings(
@@ -584,8 +593,220 @@ def test_send_sets_level2_attempt_request_id(
             "/api/data",
             headers={REQUEST_ID_HEADER: "base-id"},
         )
-        with pytest.raises(dl_httpx.HttpStatusHttpxClientException):
-            with client.send(request):
-                pass
+        with pytest.raises(dl_httpx.HttpStatusHttpxClientError), client.send(request):
+            pass
 
     assert captured_ids == ["base-id", "base-id/2", "base-id/3"]
+
+
+@attrs.define(kw_only=True)
+class SyncTransformedNotFoundError(Exception):
+    status_code: int
+
+    @classmethod
+    def from_httpx_exception(cls, exception: dl_httpx.HttpStatusHttpxClientError) -> Self:
+        return cls(status_code=exception.response.status_code)
+
+
+@attrs.define(kw_only=True)
+class SyncTransformedForbiddenError(Exception):
+    status_code: int
+
+    @classmethod
+    def from_httpx_exception(cls, exception: dl_httpx.HttpStatusHttpxClientError) -> Self:
+        return cls(status_code=exception.response.status_code)
+
+
+def test_sync_no_transformer_raises_original_http_status_exception(
+    respx_mock: respx.MockRouter,
+    ssl_context: ssl.SSLContext,
+) -> None:
+    respx_mock.get("https://example.com/api/not-found").respond(status_code=404)
+
+    with dl_httpx.HttpxSyncClient.from_dependencies(
+        dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
+            base_url="https://example.com",
+            ssl_context=ssl_context,
+        ),
+    ) as client:
+        request = client.prepare_raw_request("GET", "/api/not-found")
+        with pytest.raises(dl_httpx.HttpStatusHttpxClientError), client.send(request):
+            pass
+
+
+def test_sync_class_level_transformer_applied(
+    respx_mock: respx.MockRouter,
+    ssl_context: ssl.SSLContext,
+    mock_error_transformer: mock.MagicMock,
+) -> None:
+    expected_exception = SyncTransformedNotFoundError(status_code=404)
+    mock_error_transformer.transform.return_value = expected_exception
+    respx_mock.get("https://example.com/api/not-found").respond(status_code=404)
+
+    with dl_httpx.HttpxSyncClient.from_dependencies(
+        dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
+            base_url="https://example.com",
+            ssl_context=ssl_context,
+            error_transformer=mock_error_transformer,
+        ),
+    ) as client:
+        request = client.prepare_raw_request("GET", "/api/not-found")
+        with pytest.raises(SyncTransformedNotFoundError) as excinfo, client.send(request):
+            pass
+
+    assert excinfo.value is expected_exception
+    mock_error_transformer.transform.assert_called_once()
+
+
+def test_sync_method_level_transformer_applied(
+    respx_mock: respx.MockRouter,
+    ssl_context: ssl.SSLContext,
+    mock_error_transformer: mock.MagicMock,
+) -> None:
+    expected_exception = SyncTransformedNotFoundError(status_code=404)
+    mock_error_transformer.transform.return_value = expected_exception
+    respx_mock.get("https://example.com/api/not-found").respond(status_code=404)
+
+    with dl_httpx.HttpxSyncClient.from_dependencies(
+        dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
+            base_url="https://example.com",
+            ssl_context=ssl_context,
+        ),
+    ) as client:
+        request = client.prepare_raw_request("GET", "/api/not-found")
+        with (
+            pytest.raises(SyncTransformedNotFoundError) as excinfo,
+            client.send(request, error_transformer=mock_error_transformer),
+        ):
+            pass
+
+    assert excinfo.value is expected_exception
+    mock_error_transformer.transform.assert_called_once()
+
+
+def test_sync_method_level_wins_over_class_level(
+    respx_mock: respx.MockRouter,
+    ssl_context: ssl.SSLContext,
+    mock_error_transformer: mock.MagicMock,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
+    method_level_transformer = mocker.MagicMock(spec=dl_httpx.ErrorTransformerProtocol)
+    expected_method_exception = SyncTransformedForbiddenError(status_code=404)
+    method_level_transformer.transform.return_value = expected_method_exception
+
+    class_level_exception = SyncTransformedNotFoundError(status_code=404)
+    mock_error_transformer.transform.return_value = class_level_exception
+
+    respx_mock.get("https://example.com/api/not-found").respond(status_code=404)
+
+    with dl_httpx.HttpxSyncClient.from_dependencies(
+        dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
+            base_url="https://example.com",
+            ssl_context=ssl_context,
+            error_transformer=mock_error_transformer,
+        ),
+    ) as client:
+        request = client.prepare_raw_request("GET", "/api/not-found")
+        with (
+            pytest.raises(SyncTransformedForbiddenError) as excinfo,
+            client.send(request, error_transformer=method_level_transformer),
+        ):
+            pass
+
+    assert excinfo.value is expected_method_exception
+    method_level_transformer.transform.assert_called_once()
+    mock_error_transformer.transform.assert_not_called()
+
+
+def test_sync_class_level_used_when_method_level_returns_none(
+    respx_mock: respx.MockRouter,
+    ssl_context: ssl.SSLContext,
+    mock_error_transformer: mock.MagicMock,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
+    method_level_transformer = mocker.MagicMock(spec=dl_httpx.ErrorTransformerProtocol)
+    method_level_transformer.transform.return_value = None
+
+    expected_class_exception = SyncTransformedNotFoundError(status_code=404)
+    mock_error_transformer.transform.return_value = expected_class_exception
+
+    respx_mock.get("https://example.com/api/not-found").respond(status_code=404)
+
+    with dl_httpx.HttpxSyncClient.from_dependencies(
+        dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
+            base_url="https://example.com",
+            ssl_context=ssl_context,
+            error_transformer=mock_error_transformer,
+        ),
+    ) as client:
+        request = client.prepare_raw_request("GET", "/api/not-found")
+        with (
+            pytest.raises(SyncTransformedNotFoundError) as excinfo,
+            client.send(request, error_transformer=method_level_transformer),
+        ):
+            pass
+
+    assert excinfo.value is expected_class_exception
+    method_level_transformer.transform.assert_called_once()
+    mock_error_transformer.transform.assert_called_once()
+
+
+def test_sync_both_return_none_raises_original(
+    respx_mock: respx.MockRouter,
+    ssl_context: ssl.SSLContext,
+    mock_error_transformer: mock.MagicMock,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
+    method_level_transformer = mocker.MagicMock(spec=dl_httpx.ErrorTransformerProtocol)
+    method_level_transformer.transform.return_value = None
+    mock_error_transformer.transform.return_value = None
+
+    respx_mock.get("https://example.com/api/server-error").respond(status_code=500)
+
+    with dl_httpx.HttpxSyncClient.from_dependencies(
+        dl_httpx.HttpxClientDependencies(
+            client_name="HttpxSyncClient",
+            base_url="https://example.com",
+            ssl_context=ssl_context,
+            error_transformer=mock_error_transformer,
+        ),
+    ) as client:
+        request = client.prepare_raw_request("GET", "/api/server-error")
+        with (
+            pytest.raises(dl_httpx.HttpStatusHttpxClientError) as excinfo,
+            client.send(request, error_transformer=method_level_transformer),
+        ):
+            pass
+
+    assert excinfo.value.response.status_code == 500
+    method_level_transformer.transform.assert_called_once()
+    mock_error_transformer.transform.assert_called_once()
+
+
+def test_client_name_appears_in_logs(
+    respx_mock: respx.MockRouter,
+    ssl_context: ssl.SSLContext,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    respx_mock.get("https://example.com/api/data").respond(status_code=200)
+
+    with dl_httpx.HttpxSyncClient.from_dependencies(
+        dl_httpx.HttpxClientDependencies(
+            client_name="CustomWrapperClient",
+            base_url="https://example.com",
+            ssl_context=ssl_context,
+            logger=LOGGER,
+        ),
+    ) as client:
+        request = client.prepare_raw_request("GET", "/api/data")
+        with caplog.at_level(logging.DEBUG, logger=LOGGER.name), client.send(request):
+            pass
+
+    sending_messages = [record.getMessage() for record in caplog.records if "sending Attempt" in record.getMessage()]
+    assert sending_messages
+    assert all(message.startswith("CustomWrapperClient sending") for message in sending_messages)

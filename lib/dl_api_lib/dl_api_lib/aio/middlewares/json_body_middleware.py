@@ -18,7 +18,6 @@ from dl_api_lib.app.data_api.resources.base import (
     RequiredResourceDSAPI,
 )
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -46,18 +45,18 @@ def json_body_middleware() -> Middleware:
             dbg_body_data = RequestObfuscator().mask_sensitive_fields_by_name_in_json_recursive(body)
             dbg_body = json.dumps(dbg_body_data)
             url = dl_request.url  # url with http->https override
-            extra = dict(
-                request_path=url,
-                request_body=dbg_body,
-            )
+            extra = {
+                "request_path": url,
+                "request_body": dbg_body,
+            }
             LOGGER.debug("Body for %s: %s...", url, dbg_body[:100], extra=extra)
 
         if isinstance(view_cls, type) and issubclass(view_cls, BaseView):
 
-            async def json_is_ready():
+            async def json_is_ready():  # type: ignore[no-untyped-def]  # 26.05.2026 mypy bump 1.20.2
                 raise Exception("Direct usage of request.json() is prohibited. Use DLRequest.json_body")
 
-            request.json = json_is_ready
+            request.json = json_is_ready  # type: ignore[assignment,method-assign]  # 26.05.2026 mypy bump 1.20.2
 
         return await handler(request)
 

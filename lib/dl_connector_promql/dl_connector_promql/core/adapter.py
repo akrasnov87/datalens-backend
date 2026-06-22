@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import (
+    UTC,
+    datetime,
+)
 import logging
 from typing import (
     TYPE_CHECKING,
     ClassVar,
-    Optional,
 )
 from urllib.parse import (
-    quote_plus,
+    quote,
     urljoin,
 )
 
@@ -16,10 +18,11 @@ from aiohttp.client import ClientResponse
 from aiohttp.helpers import BasicAuth
 from aiohttp.web import HTTPBadRequest
 import attr
+from frozendict import frozendict
 import sqlalchemy as sa
 
 from dl_app_tools.profiling_base import generic_profiler_async
-from dl_constants.enums import ConnectionType
+from dl_constants import ConnectionType
 from dl_core.connection_executors.adapters.adapters_base_sa_classic import (
     BaseClassicAdapter,
     ClassicSQLConnLineConstructor,
@@ -34,7 +37,6 @@ from dl_connector_promql.core.constants import (
     CONNECTION_TYPE_PROMQL,
     PromQLAuthType,
 )
-
 
 if TYPE_CHECKING:
     from dl_constants.types import TBIChunksGen
@@ -58,17 +60,17 @@ class PromQLConnLineConstructor(ClassicSQLConnLineConstructor["PromQLConnTargetD
     def _get_dsn_params(
         self,
         safe_db_symbols: tuple[str, ...] = (),
-        db_name: Optional[str] = None,
-        standard_auth: Optional[bool] = True,
+        db_name: str | None = None,
+        standard_auth: bool | None = True,
     ) -> dict:
-        return dict(
-            dialect=self._dialect_name,
-            user=quote_plus(self._target_dto.username) if self._target_dto.username is not None else None,
-            passwd=quote_plus(self._target_dto.password) if self._target_dto.password is not None else None,
-            host=quote_plus(self._target_dto.host),
-            port=quote_plus(str(self._target_dto.port)),
-            db_name=db_name or quote_plus(self._target_dto.db_name or "", safe="".join(safe_db_symbols)),
-        )
+        return {
+            "dialect": self._dialect_name,
+            "user": quote(self._target_dto.username, safe="") if self._target_dto.username is not None else None,
+            "passwd": quote(self._target_dto.password, safe="") if self._target_dto.password is not None else None,
+            "host": quote(self._target_dto.host, safe=""),
+            "port": quote(str(self._target_dto.port), safe=""),
+            "db_name": quote(db_name or (self._target_dto.db_name or ""), safe="".join(safe_db_symbols)),
+        }
 
     def _get_dsn_query_params(self) -> dict:
         params: dict = {
@@ -86,12 +88,14 @@ class PromQLAdapter(BaseClassicAdapter["PromQLConnTargetDTO"]):
     conn_type: ClassVar[ConnectionType] = CONNECTION_TYPE_PROMQL
     conn_line_constructor_type: ClassVar[type[PromQLConnLineConstructor]] = PromQLConnLineConstructor
 
-    _type_code_to_sa = {
-        None: sa.TEXT,  # fallback
-        "float64": sa.FLOAT,
-        "string": sa.TEXT,
-        "unix_timestamp": sa.DATETIME,
-    }
+    _type_code_to_sa = frozendict(
+        {
+            None: sa.TEXT,  # fallback
+            "float64": sa.FLOAT,
+            "string": sa.TEXT,
+            "unix_timestamp": sa.DATETIME,
+        }
+    )
 
     def _test(self) -> None:
         engine = self.get_db_engine(db_name="")
@@ -118,7 +122,7 @@ class AsyncPromQLAdapter(AiohttpDBAdapter):
             path=self._target_dto.path,
         )
 
-    def get_session_auth(self) -> Optional[BasicAuth]:
+    def get_session_auth(self) -> BasicAuth | None:
         if (
             self._target_dto.auth_type == PromQLAuthType.password
             and self._target_dto.username
@@ -155,7 +159,7 @@ class AsyncPromQLAdapter(AiohttpDBAdapter):
                 conn_params[param] = int(conn_param.timestamp())
 
         query_text = self.compile_query_for_execution(dba_query.query)
-        resp = await self._session.post(
+        return await self._session.post(
             url=urljoin(self._url, "api/v1/query_range"),
             data={
                 "query": query_text,
@@ -165,7 +169,6 @@ class AsyncPromQLAdapter(AiohttpDBAdapter):
             },
             allow_redirects=False,
         )
-        return resp
 
     @staticmethod
     def _parse_response_body_data(data: dict) -> dict:
@@ -183,10 +186,10 @@ class AsyncPromQLAdapter(AiohttpDBAdapter):
 
             label_values = [value for _, value in chunk["metric"].items()]
             for ts, v in chunk["values"]:
-                row = [datetime.fromtimestamp(ts), float(v)] + label_values
+                row = [datetime.fromtimestamp(ts, tz=UTC).replace(tzinfo=None), float(v), *label_values]
                 rows.append(row)
 
-        return dict(rows=rows, schema=schema)
+        return {"rows": rows, "schema": schema}
 
     async def _parse_response_body(self, resp: ClientResponse, dba_query: DBAdapterQuery) -> dict:
         data = await resp.json()
@@ -202,7 +205,7 @@ class AsyncPromQLAdapter(AiohttpDBAdapter):
 
     @staticmethod
     def make_exc(  # TODO:  Move to ErrorTransformer
-        status_code: int,  # noqa
+        status_code: int,
         err_body: str,
         debug_query: str | None = None,
         inspector_query: str | None = None,
@@ -244,12 +247,12 @@ class AsyncPromQLAdapter(AiohttpDBAdapter):
                 yield chunk
 
         return AsyncRawExecutionResult(
-            raw_cursor_info=dict(
-                schema=rd["schema"],
-                names=[name for name, _ in rd["schema"]],
-                driver_types=[driver_type for _, driver_type in rd["schema"]],
-                db_types=[self._promql_type_name_to_native_type(driver_type) for _, driver_type in rd["schema"]],
-            ),
+            raw_cursor_info={
+                "schema": rd["schema"],
+                "names": [name for name, _ in rd["schema"]],
+                "driver_types": [driver_type for _, driver_type in rd["schema"]],
+                "db_types": [self._promql_type_name_to_native_type(driver_type) for _, driver_type in rd["schema"]],
+            },
             raw_chunk_generator=chunk_gen(),
         )
 

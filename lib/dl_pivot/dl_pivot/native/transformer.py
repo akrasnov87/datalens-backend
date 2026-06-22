@@ -1,13 +1,13 @@
-import logging
-from typing import (
-    TYPE_CHECKING,
+from collections.abc import (
     Iterable,
     Sequence,
 )
+import logging
+from typing import TYPE_CHECKING
 
 import attr
 
-from dl_constants.enums import PivotRole
+from dl_constants import PivotRole
 from dl_pivot.base.transformer import PivotTransformer
 from dl_pivot.native.data_frame import (
     DoublePivotDataKey,
@@ -26,7 +26,6 @@ from dl_pivot.stream_modifiers import (
 from dl_pivot.table import PivotTable
 import dl_query_processing.exc as qp_exc
 from dl_query_processing.merging.primitives import MergedQueryDataRow
-
 
 if TYPE_CHECKING:
     from dl_pivot.stream_modifiers import TransposedDataRow
@@ -94,9 +93,8 @@ class NativePivotTransformer(PivotTransformer):
             legend=self._legend,
             pivot_legend=self._pivot_legend,
         )
-        table = PivotTable(
+        return PivotTable(
             facade=facade,
             pivot_legend=self._pivot_legend,
             cell_packer=self._cell_packer,
         )
-        return table

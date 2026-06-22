@@ -20,10 +20,7 @@ error_mgr.print_component_refs(phantom_refs)
 """
 
 from collections import defaultdict
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any
 import uuid
 
 import attr
@@ -32,10 +29,9 @@ from dl_api_lib.dataset.component_abstraction import (
     DatasetComponentAbstraction,
     DatasetComponentRef,
 )
-from dl_constants.enums import ComponentType
+from dl_constants import ComponentType
 from dl_core.us_dataset import Dataset
 from dl_core.us_manager.us_manager import USManagerBase
-
 
 TACTION = dict[str, Any]
 
@@ -46,7 +42,7 @@ def _make_component_id() -> str:
 
 @attr.s
 class ComponentErrorManager:
-    _dataset: Optional[Dataset] = attr.ib(kw_only=True, default=None)
+    _dataset: Dataset | None = attr.ib(kw_only=True, default=None)
     _dca: DatasetComponentAbstraction = attr.ib(init=False)
     _us_manager: USManagerBase = attr.ib(kw_only=True)
 
@@ -65,12 +61,11 @@ class ComponentErrorManager:
             DatasetComponentRef(component_type=item.type, component_id=item.id)
             for item in self.dataset.error_registry.items
         ]
-        phantom_refs: list[DatasetComponentRef] = []
-        for component_ref in all_error_refs:
-            if self._dca.get_component(component_ref=component_ref) is None:
-                phantom_refs.append(component_ref)
-
-        return phantom_refs
+        return [
+            component_ref
+            for component_ref in all_error_refs
+            if self._dca.get_component(component_ref=component_ref) is None
+        ]
 
     @staticmethod
     def print_component_refs(component_refs: list[DatasetComponentRef]) -> None:

@@ -4,7 +4,6 @@ import datetime
 from typing import (
     Any,
     ClassVar,
-    Optional,
 )
 
 import pytest
@@ -22,7 +21,7 @@ class DefaultOperatorFormulaConnectorTestSuite(FormulaConnectorTestBase):
     subtraction_round_dt: ClassVar[bool] = True
     supports_string_int_multiplication: ClassVar[bool] = True
     supports_null_in: ClassVar[bool] = True
-    make_float_array_cast: Optional[str] = None
+    make_float_array_cast: str | None = None
 
     def test_negation(self, dbe: DbEvaluator, forced_literal_use: Any) -> None:
         assert dbe.eval("-__LIT__(2)") == -2
@@ -199,7 +198,7 @@ class DefaultOperatorFormulaConnectorTestSuite(FormulaConnectorTestBase):
         if self.supports_arrays:
             assert dbe.eval("ARRAY(1, 2, NULL, 4) = ARRAY(1, 2, NULL, 4)")
 
-    @pytest.mark.parametrize("lit", (pytest.param("##", id="generic"), pytest.param("#", id="regular")))
+    @pytest.mark.parametrize("lit", [pytest.param("##", id="generic"), pytest.param("#", id="regular")])
     def test_comparison_operators_datetimes(self, dbe: DbEvaluator, lit: str) -> None:
         def _dt_lit(s: str) -> str:
             return f"{lit}{s}{lit}"

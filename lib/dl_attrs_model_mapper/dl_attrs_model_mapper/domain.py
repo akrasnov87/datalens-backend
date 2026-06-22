@@ -1,10 +1,11 @@
 import abc
+from collections.abc import (
+    Collection,
+    Sequence,
+)
 from typing import (
     Any,
     ClassVar,
-    Collection,
-    Optional,
-    Sequence,
 )
 
 import attr
@@ -58,7 +59,7 @@ class AmmField:
     common_props: CommonAttributeProps = attr.ib()
 
     def to_openapi_dict(self, ref_resolver: AmmSchemaRegistry, *, is_root_prop: bool) -> dict[str, Any]:
-        ret: dict[str, Any] = dict(nullable=self.common_props.allow_none)
+        ret: dict[str, Any] = {"nullable": self.common_props.allow_none}
         if self.common_props.load_only:
             ret["writeOnly"] = True
         return ret
@@ -67,7 +68,7 @@ class AmmField:
 @attr.s()
 class AmmScalarField(AmmField):
     scalar_type: type = attr.ib()
-    scalar_type_identifier: Optional[str] = attr.ib(default=None)
+    scalar_type_identifier: str | None = attr.ib(default=None)
 
     TYPE_MAP: ClassVar[dict[type, str]] = {
         int: "number",
@@ -90,7 +91,7 @@ class AmmEnumField(AmmScalarField):
     def to_openapi_dict(self, ref_resolver: AmmSchemaRegistry, *, is_root_prop: bool) -> dict[str, Any]:
         return dict(
             **super().to_openapi_dict(ref_resolver, is_root_prop=is_root_prop),
-            enum=list(sorted(self.values)),
+            enum=sorted(self.values),
         )
 
 
@@ -110,7 +111,7 @@ class AmmListField(AmmField):
     item: "AmmField" = attr.ib()
 
     def to_openapi_dict(self, ref_resolver: AmmSchemaRegistry, *, is_root_prop: bool) -> dict[str, Any]:
-        return dict(type="array", items=self.item.to_openapi_dict(ref_resolver, is_root_prop=False))
+        return {"type": "array", "items": self.item.to_openapi_dict(ref_resolver, is_root_prop=False)}
 
 
 @attr.s()
@@ -118,7 +119,7 @@ class AmmStringMappingField(AmmField):
     value: "AmmField" = attr.ib()
 
     def to_openapi_dict(self, ref_resolver: AmmSchemaRegistry, *, is_root_prop: bool) -> dict[str, Any]:
-        return dict(type="object", additionalProperties=self.value.to_openapi_dict(ref_resolver, is_root_prop=False))
+        return {"type": "object", "additionalProperties": self.value.to_openapi_dict(ref_resolver, is_root_prop=False)}
 
 
 @attr.s()
@@ -134,13 +135,13 @@ class AmmOneOfDescriptorField(AmmField):
 @attr.s(kw_only=True)
 class AmmEnumMemberDescriptor:
     key: str = attr.ib()
-    description: Optional[MText] = attr.ib(default=None)
+    description: MText | None = attr.ib(default=None)
 
 
 @attr.s(kw_only=True)
 class AmmEnumDescriptor:
     type_identifier: str = attr.ib()
-    description: Optional[MText] = attr.ib(default=None)
+    description: MText | None = attr.ib(default=None)
     members: list[AmmEnumMemberDescriptor] = attr.ib()
 
 
@@ -150,7 +151,7 @@ class AmmEnumDescriptor:
 @attr.s(kw_only=True)
 class AmmSchema(metaclass=abc.ABCMeta):
     clz: type = attr.ib()
-    identifier: Optional[str] = attr.ib(default=None)
+    identifier: str | None = attr.ib(default=None)
 
     @abc.abstractmethod
     def to_openapi_dict(self, ref_resolver: AmmSchemaRegistry) -> dict[str, Any]:
@@ -160,7 +161,7 @@ class AmmSchema(metaclass=abc.ABCMeta):
 @attr.s()
 class AmmRegularSchema(AmmSchema):
     fields: dict[str, AmmField] = attr.ib()
-    description: Optional[MText] = attr.ib(default=None)
+    description: MText | None = attr.ib(default=None)
 
     def to_openapi_dict(self, ref_resolver: AmmSchemaRegistry) -> dict[str, Any]:
         ret = {

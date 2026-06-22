@@ -2,11 +2,15 @@ from .base import (
     BaseModel,
     BaseSchema,
 )
-from .exceptions import UnknownTypeException
+from .exceptions import (
+    UnknownTypeError,
+    UnsetTypeError,
+)
 from .jsonable import (
     JsonableDate,
     JsonableDatetime,
     JsonableDatetimeWithTimeZone,
+    JsonableDict,
     JsonableTimedelta,
     JsonableUUID,
 )
@@ -26,13 +30,13 @@ from .typed import (
     TypedSchemaListAnnotation,
 )
 
-
 __all__ = [
     "BaseModel",
     "BaseSchema",
     "JsonableDate",
     "JsonableDatetime",
     "JsonableDatetimeWithTimeZone",
+    "JsonableDict",
     "JsonableTimedelta",
     "JsonableUUID",
     "SchematizedAnnotation",
@@ -46,5 +50,6 @@ __all__ = [
     "TypedSchemaAnnotation",
     "TypedSchemaDictAnnotation",
     "TypedSchemaListAnnotation",
-    "UnknownTypeException",
+    "UnknownTypeError",
+    "UnsetTypeError",
 ]

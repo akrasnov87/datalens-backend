@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 import ipaddress
 import logging
 import pickle
@@ -9,9 +10,6 @@ import time
 from typing import (
     TYPE_CHECKING,
     Any,
-    Iterable,
-    Optional,
-    Union,
 )
 
 import attr
@@ -46,7 +44,7 @@ from dl_core.connection_executors.remote_query_executor.settings import (
     RQESettings,
 )
 from dl_core.enums import RQEEventType
-from dl_core.exc import SourceTimeout
+from dl_core.exc import SourceTimeoutError
 from dl_core.loader import (
     CoreLibraryConfig,
     load_core_lib,
@@ -57,9 +55,10 @@ from dl_dashsql.typed_query.result_serialization import get_typed_query_result_s
 from dl_model_tools.msgpack import DLSafeMessagePackSerializer
 from dl_obfuscator import (
     OBFUSCATION_BASE_OBFUSCATORS_KEY,
+    SecretKeeper,
     create_base_obfuscators,
+    get_secret_strings,
 )
-
 
 if TYPE_CHECKING:
     from dl_core.connection_executors.adapters.adapters_base import DBAdapterQueryResult
@@ -68,7 +67,7 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 
-def chunked_wrap(iterable: Iterable[Union[bytes, str]]) -> Iterable[bytes]:
+def chunked_wrap(iterable: Iterable[bytes | str]) -> Iterable[bytes]:
     """
     `Transfer-Encoding: Chunked` wrap.
 
@@ -87,7 +86,7 @@ def chunked_wrap(iterable: Iterable[Union[bytes, str]]) -> Iterable[bytes]:
 
 
 class ActionHandlingView(flask.views.View):
-    methods = ["POST"]
+    methods = ("POST",)
 
     def get_action(self) -> act.RemoteDBAdapterAction:
         action = ActionSerializer().deserialize_action(flask.request.json, allowed_dba_classes=SUPPORTED_ADAPTER_CLS)  # type: ignore  # 2024-01-30 # TODO: Argument 1 to "deserialize_action" of "ActionSerializer" has incompatible type "Any | None"; expected "dict[Any, Any]"  [arg-type]
@@ -106,26 +105,25 @@ class ActionHandlingView(flask.views.View):
         if isinstance(action, act.ActionTest):
             return dba.test()
 
-        elif isinstance(action, act.ActionGetDBVersion):
+        if isinstance(action, act.ActionGetDBVersion):
             return dba.get_db_version(db_ident=action.db_ident)
 
-        elif isinstance(action, act.ActionGetSchemaNames):
+        if isinstance(action, act.ActionGetSchemaNames):
             return dba.get_schema_names(db_ident=action.db_ident)
 
-        elif isinstance(action, act.ActionGetTables):
+        if isinstance(action, act.ActionGetTables):
             return dba.get_tables(schema_ident=action.schema_ident, page_ident=action.page_ident)  # type: ignore  # 2024-01-30 # TODO: Incompatible return value type (got "list[TableIdent]", expected "RawSchemaInfo | list[str] | str | bool | int | None")  [return-value]
 
-        elif isinstance(action, act.ActionGetTableInfo):
+        if isinstance(action, act.ActionGetTableInfo):
             return dba.get_table_info(table_def=action.table_def, fetch_idx_info=action.fetch_idx_info)
 
-        elif isinstance(action, act.ActionIsTableExists):
+        if isinstance(action, act.ActionIsTableExists):
             return dba.is_table_exists(table_ident=action.table_ident)
 
-        elif isinstance(action, act.ActionExecuteTypedQuery):
+        if isinstance(action, act.ActionExecuteTypedQuery):
             return self._handle_execute_typed_query_action(dba=dba, action=action)
 
-        else:
-            raise NotImplementedError(f"Action {action} is not implemented in QE")
+        raise NotImplementedError(f"Action {action} is not implemented in QE")
 
     def _handle_execute_typed_query_action(
         self,
@@ -136,8 +134,7 @@ class ActionHandlingView(flask.views.View):
         typed_query = tq_serializer.deserialize(action.typed_query_str)
         tq_result = dba.execute_typed_query(typed_query=typed_query)
         tq_result_serializer = get_typed_query_result_serializer(query_type=action.query_type)
-        tq_result_str = tq_result_serializer.serialize(tq_result)
-        return tq_result_str
+        return tq_result_serializer.serialize(tq_result)
 
     @staticmethod
     def try_close_dba(dba: SyncDirectDBAdapter) -> None:
@@ -150,7 +147,7 @@ class ActionHandlingView(flask.views.View):
     def serialize_event(event: RQEEventType, data: Any) -> bytes:
         return pickle.dumps((event.value, data))
 
-    def response_events_gen(self, db_result: "DBAdapterQueryResult", dba: SyncDirectDBAdapter) -> Iterable[bytes]:
+    def response_events_gen(self, db_result: DBAdapterQueryResult, dba: SyncDirectDBAdapter) -> Iterable[bytes]:
         try:
             yield self.serialize_event(RQEEventType.raw_cursor_info, db_result.cursor_info)
 
@@ -190,10 +187,11 @@ class ActionHandlingView(flask.views.View):
     ) -> flask.Response:
         try:
             db_result = dba.execute(action.db_adapter_query)
-            events: list[tuple[str, Any]] = [(RQEEventType.raw_cursor_info.value, db_result.cursor_info)]
-            for raw_chunk in db_result.data_chunks:
-                events.append((RQEEventType.raw_chunk.value, raw_chunk))
-            events.append((RQEEventType.finished.value, None))
+            events: list[tuple[str, Any]] = [
+                (RQEEventType.raw_cursor_info.value, db_result.cursor_info),
+                *((RQEEventType.raw_chunk.value, raw_chunk) for raw_chunk in db_result.data_chunks),
+                (RQEEventType.finished.value, None),
+            ]
 
             response_body: bytes
             with GenericProfiler("sync_qe_serialization"):
@@ -248,7 +246,9 @@ class ActionHandlingView(flask.views.View):
                     if isinstance(action, (act.ActionExecuteQuery, act.ActionNonStreamExecuteQuery)):
                         query = action.db_adapter_query.debug_compiled_query
                         inspector_query = action.db_adapter_query.inspector_query
-                    raise SourceTimeout(db_message="Source timed out", query=query, inspector_query=inspector_query)
+                    raise SourceTimeoutError(
+                        db_message="Source timed out", query=query, inspector_query=inspector_query
+                    )
 
         if isinstance(action, act.ActionExecuteQuery):
             return self.execute_execute_action(dba, action)
@@ -267,14 +267,14 @@ class ActionHandlingView(flask.views.View):
 
 
 def ping_view() -> flask.Response:
-    return flask.jsonify(dict(result="PONG"))
+    return flask.jsonify({"result": "PONG"})
 
 
 def hook_init_logging(
     app: Any,
     app_name: str = "rqe-sync",
     jaeger_service_name: str = "bi-rqe-sync",
-    app_prefix: Optional[str] = None,
+    app_prefix: str | None = None,
     **kwargs: Any,
 ) -> None:
     return hook_configure_logging(
@@ -291,8 +291,7 @@ def _handle_exception(err: Exception) -> tuple[flask.Response, int]:
     LOGGER.exception("Exception occurred in sync RQE")
     if isinstance(err, HTTPException):
         return flask.jsonify(ActionSerializer().serialize_exc(err)), err.code or 500
-    else:
-        return flask.jsonify(ActionSerializer().serialize_exc(err)), 500
+    return flask.jsonify(ActionSerializer().serialize_exc(err)), 500
 
 
 def create_sync_app(
@@ -326,7 +325,10 @@ def create_sync_app(
     flask_middlewares.RCIHeadersMiddleware().set_up(app)
 
     if settings.OBFUSCATION_ENABLED:
+        global_keeper = SecretKeeper()
+        global_keeper.add_secrets(get_secret_strings(settings))
         app.config[OBFUSCATION_BASE_OBFUSCATORS_KEY] = create_base_obfuscators(
+            global_keeper=global_keeper,
             extra_regex_patterns=obfuscation_extra_patterns,
         )
         flask_middlewares.setup_obfuscation_context_middleware(app)

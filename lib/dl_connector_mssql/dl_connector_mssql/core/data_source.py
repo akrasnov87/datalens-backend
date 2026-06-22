@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from dl_constants.enums import DataSourceType
+from dl_constants import DataSourceType
 from dl_core.data_source.sql import (
     BaseSQLDataSource,
     StandardSchemaSQLDataSource,
@@ -15,7 +15,6 @@ from dl_connector_mssql.core.constants import (
     SOURCE_TYPE_MSSQL_TABLE,
 )
 from dl_connector_mssql.core.query_compiler import MSSQLQueryCompiler
-
 
 LOGGER = logging.getLogger(__name__)
 

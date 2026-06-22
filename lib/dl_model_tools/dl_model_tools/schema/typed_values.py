@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import (
     Any,
     ClassVar,
-    Mapping,
     cast,
 )
 
@@ -17,7 +17,7 @@ from marshmallow import (
 )
 from marshmallow import fields as ma_fields
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_model_tools.schema.base import DefaultSchema
 from dl_model_tools.schema.oneofschema import OneOfSchemaWithDumpLoadHooks
 from dl_model_tools.typed_values import (
@@ -38,7 +38,6 @@ from dl_model_tools.typed_values import (
     StringValue,
     UuidValue,
 )
-
 
 VALUE_TYPE_CONTEXT_KEY = "bi_value_type"
 
@@ -139,7 +138,7 @@ class ValueSchema(OneOfSchemaWithDumpLoadHooks):
         TARGET_CLS = ArrayStrValue
         value = ma_fields.List(ma_fields.String())
 
-    type_schemas = {
+    type_schemas = {  # noqa: RUF012
         UserDataType.string.name: StringValueSchema,
         UserDataType.integer.name: IntegerValueSchema,
         UserDataType.float.name: FloatValueSchema,

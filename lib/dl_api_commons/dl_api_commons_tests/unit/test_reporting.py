@@ -17,12 +17,11 @@ from dl_api_commons.reporting.records import (
     RequestResultReportingRecord,
 )
 from dl_api_commons.reporting.registry import DefaultReportingRegistry
-from dl_constants.api_constants import DLContextKey
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     ReportingQueryType,
 )
-
+from dl_constants.api_constants import DLContextKey
 
 CONNECTION_TYPE_CHYT_TEST = ConnectionType.declare("chyt_test")
 CONNECTION_TYPE_TEST = ConnectionType.declare("test")
@@ -44,15 +43,15 @@ _DEFAULT_START_RECORD_TS_0 = QueryExecutionStartReportingRecord(
     workbook_id="wb_123",
 )
 
-_DEFAULT_REPORT_FIELDS_FROM_START = dict(
-    dataset_id="ds_123",
-    connection_id="conn_123",
-    connection_type=CONNECTION_TYPE_TEST.name,
-    host="8.8.8.8",
-    query_type=ReportingQueryType.external.name,
-    query="SELECT 1",
-    workbook_id="wb_123",
-)
+_DEFAULT_REPORT_FIELDS_FROM_START = {
+    "dataset_id": "ds_123",
+    "connection_id": "conn_123",
+    "connection_type": CONNECTION_TYPE_TEST.name,
+    "host": "8.8.8.8",
+    "query_type": ReportingQueryType.external.name,
+    "query": "SELECT 1",
+    "workbook_id": "wb_123",
+}
 
 _CHYT_START_RECORD_TS_0 = QueryExecutionStartReportingRecord(
     query_id=_QID,
@@ -69,16 +68,16 @@ _CHYT_START_RECORD_TS_0 = QueryExecutionStartReportingRecord(
     workbook_id=None,
 )
 
-_CHYT_REPORT_FIELDS_FROM_START = dict(
-    dataset_id="ds_123",
-    connection_id="conn_123",
-    connection_type=CONNECTION_TYPE_CHYT_TEST.name,
-    cluster="my_cluster",
-    clique_alias="*ch_my_clique",
-    query_type=ReportingQueryType.external.name,
-    query="SELECT 1",
-    workbook_id=None,
-)
+_CHYT_REPORT_FIELDS_FROM_START = {
+    "dataset_id": "ds_123",
+    "connection_id": "conn_123",
+    "connection_type": CONNECTION_TYPE_CHYT_TEST.name,
+    "cluster": "my_cluster",
+    "clique_alias": "*ch_my_clique",
+    "query_type": ReportingQueryType.external.name,
+    "query": "SELECT 1",
+    "workbook_id": None,
+}
 
 
 @pytest.mark.parametrize(
@@ -100,7 +99,7 @@ _CHYT_REPORT_FIELDS_FROM_START = dict(
     ],
 )
 @pytest.mark.parametrize(
-    "case_name, records_seq, expected_query_data",
+    ("case_name", "records_seq", "expected_query_data"),
     [
         (
             "OK_no_cache_used",

@@ -1,6 +1,6 @@
 import pytest
 
-from dl_constants.enums import RLSSubjectType
+from dl_constants import RLSSubjectType
 from dl_rls.models import (
     RLSEntry,
     RLSSubject,
@@ -12,12 +12,11 @@ from dl_rls.utils import (
     split_by_quoted_quote,
 )
 
-
 TEST_DATA = ["'abc'de", "'ab''c'''de", "'ab''c'''"]
 EXPECTED = [("abc", "de"), ("ab'c'", "de"), ("ab'c'", "")]
 
 
-@pytest.mark.parametrize(["string", "expected"], zip(TEST_DATA, EXPECTED))
+@pytest.mark.parametrize(("string", "expected"), zip(TEST_DATA, EXPECTED, strict=True))
 def test_quoting(string: str, expected: tuple[str, str]) -> None:
     split = split_by_quoted_quote(string)
     assert split == expected
@@ -25,7 +24,7 @@ def test_quoting(string: str, expected: tuple[str, str]) -> None:
 
 
 @pytest.mark.parametrize(
-    "group_id, group_name, expected",
+    ("group_id", "group_name", "expected"),
     [
         ("my-group", "@group:my-group", True),
         ("my-group", " @group:my-group  ", True),
@@ -56,7 +55,7 @@ def _make_group_entry(group_id: str, group_name: str) -> RLSEntry:
 
 
 @pytest.mark.parametrize(
-    "entries, expected",
+    ("entries", "expected"),
     [
         ([], True),
         (

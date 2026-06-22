@@ -1,13 +1,10 @@
-from typing import (
-    Optional,
-    Sequence,
-)
+from collections.abc import Sequence
 
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.dialects.oracle import base as oracle_types
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_core.connection_executors.sync_base import SyncConnExecutorBase
 from dl_core.connection_models.common_models import (
     DBIdent,
@@ -19,6 +16,7 @@ from dl_core_testing.database import (
 )
 from dl_core_testing.testcases.connection_executor import (
     DefaultAsyncConnectionExecutorTestSuite,
+    DefaultIndexDiscoveryTestSuite,
     DefaultSyncAsyncConnectionExecutorCheckBase,
     DefaultSyncConnectionExecutorTestSuite,
 )
@@ -42,11 +40,11 @@ class OracleSyncAsyncConnectionExecutorCheckBase(
         },
     )
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def db_ident(self) -> DBIdent:
         return DBIdent(db_name=CoreConnectionSettings.DB_NAME)
 
-    def check_db_version(self, db_version: Optional[str]) -> None:
+    def check_db_version(self, db_version: str | None) -> None:
         assert db_version is not None
         assert "." in db_version
 
@@ -58,6 +56,7 @@ class OracleSyncAsyncConnectionExecutorCheckBase(
 class TestOracleSyncConnectionExecutor(
     OracleSyncAsyncConnectionExecutorCheckBase,
     DefaultSyncConnectionExecutorTestSuite[ConnectionSQLOracle],
+    DefaultIndexDiscoveryTestSuite[ConnectionSQLOracle],
 ):
     subselect_query_for_schema_test = "(SELECT 1 AS num FROM DUAL)"
 
@@ -93,7 +92,7 @@ class TestOracleSyncConnectionExecutor(
         # at the moment, checks that sample table is listed among the others
 
         tables = [sample_table]
-        expected_table_names = set(table.name.upper() for table in tables)
+        expected_table_names = {table.name.upper() for table in tables}
 
         actual_tables = sync_connection_executor.get_tables(SchemaIdent(db_name=db.name, schema_name=None))
         actual_table_names = [tid.table_name for tid in actual_tables]

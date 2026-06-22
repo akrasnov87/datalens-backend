@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncGenerator
 import contextlib
 import logging
-from typing import (
-    Any,
-    AsyncGenerator,
-    Optional,
-)
+from typing import Any
 
 from aiohttp import web
 from aiohttp.typedefs import (
@@ -23,11 +20,11 @@ from dl_core import exc
 from dl_core.aio.aiohttp_wrappers_data_core import DLRequestDataCore
 from dl_core.enums import USApiType
 from dl_core.services_registry.top_level import DummyServiceRegistry
+from dl_core.us_manager.dynamic_token_factory import DynamicUSMasterTokenFactory
 from dl_core.us_manager.factory import USMFactory
 from dl_core.us_manager.us_manager_async import AsyncUSManager
 import dl_retrier
 from dl_utils.aio import shield_wait_for_complete
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -38,7 +35,7 @@ def usm_tenant_resolver_middleware(
     crypto_keys_config: CryptoKeysConfig,
     dataset_id_match_info_code: str,
     conn_id_match_info_code: str,
-    us_master_token: Optional[str],
+    us_master_token: str | None,
     tenant_resolver: TenantResolver,
     ca_data: bytes,
     us_api_type: USApiType,
@@ -98,7 +95,7 @@ def usm_tenant_resolver_middleware(
             try:
                 # TODO: context_name not passed due to target type unknown
                 entry = await usm.get_by_id(entry_id)
-            except exc.USObjectNotFoundException as e:
+            except exc.USObjectNotFoundError as e:
                 raise web.HTTPNotFound() from e
             else:
                 tenant = tenant_resolver.resolve_tenant_def_by_tenant_id(entry.raw_tenant_id)
@@ -122,8 +119,8 @@ async def _usm_close_cm(usm: AsyncUSManager, label: str) -> AsyncGenerator[None,
             await shield_wait_for_complete(usm.close())
         except asyncio.CancelledError:
             raise
-        except Exception:  # noqa
-            LOGGER.warning(f"Error during closing {label} USManager", exc_info=True)
+        except Exception:
+            LOGGER.warning("Error during closing %s USManager", label, exc_info=True)
 
 
 def us_manager_middleware(
@@ -212,6 +209,8 @@ def service_us_manager_middleware(
     retry_policy_factory: dl_retrier.BaseRetryPolicyFactory,
     as_user_usm: bool = False,
     env_specific_kwargs: dict[str, Any] | None = None,
+    dynamic_token_factory: DynamicUSMasterTokenFactory | None = None,
+    master_token_authorization_enabled: bool = True,
 ) -> Middleware:
     env_specific_kwargs = env_specific_kwargs or {}
     usm_factory = us_manager_factory_class(
@@ -220,6 +219,8 @@ def service_us_manager_middleware(
         us_master_token=us_master_token,
         ca_data=ca_data,
         retry_policy_factory=retry_policy_factory,
+        dynamic_token_factory=dynamic_token_factory,
+        master_token_authorization_enabled=master_token_authorization_enabled,
         **env_specific_kwargs,
     )
 

@@ -3,12 +3,11 @@ from dl_api_client.dsmaker.primitives import (
     ResultField,
     ResultFieldJoinPart,
 )
-from dl_constants.enums import (
+from dl_constants import (
     BinaryJoinOperator,
     CalcMode,
     UserDataType,
 )
-
 
 # FIXME: This is practically a dummy. Add tests please
 

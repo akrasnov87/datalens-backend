@@ -9,12 +9,11 @@ from enum import (
     unique,
 )
 
-from dl_constants.enums import (
+from dl_constants import (
+    AggregationFunction,
     UserDataType,
     WhereClauseOperation,
 )
-from dl_constants.enums import AggregationFunction as ag
-
 
 W = WhereClauseOperation
 _FILT_MINIMAL = frozenset((W.EQ, W.NE, W.IN, W.NIN))
@@ -147,25 +146,62 @@ CASTS_BY_TYPE = {
     UserDataType.tree_str: [UserDataType.tree_str],
 }
 
-_AGG_BASIC = [ag.none, ag.count]
+_AGG_BASIC = [AggregationFunction.none, AggregationFunction.count]
 BI_TYPE_AGGREGATIONS = {
-    UserDataType.string: _AGG_BASIC + [ag.countunique],
-    UserDataType.integer: _AGG_BASIC + [ag.sum, ag.avg, ag.min, ag.max, ag.countunique],
-    UserDataType.float: _AGG_BASIC + [ag.sum, ag.avg, ag.min, ag.max, ag.countunique],
-    UserDataType.date: _AGG_BASIC + [ag.min, ag.max, ag.countunique, ag.avg],
-    UserDataType.datetime: _AGG_BASIC + [ag.min, ag.max, ag.countunique, ag.avg],
-    UserDataType.datetimetz: _AGG_BASIC + [ag.min, ag.max, ag.countunique, ag.avg],
-    UserDataType.genericdatetime: _AGG_BASIC + [ag.min, ag.max, ag.countunique],  # TODO: 'avg'?
-    UserDataType.boolean: _AGG_BASIC + [],
-    UserDataType.geopoint: _AGG_BASIC + [],
-    UserDataType.geopolygon: _AGG_BASIC + [],
-    UserDataType.uuid: _AGG_BASIC + [ag.countunique],
-    UserDataType.markup: _AGG_BASIC + [],  # TODO: 'any'
-    UserDataType.unsupported: [ag.none],  # only explicit formula-based processing is allowed
-    UserDataType.array_float: _AGG_BASIC + [ag.countunique],
-    UserDataType.array_int: _AGG_BASIC + [ag.countunique],
-    UserDataType.array_str: _AGG_BASIC + [ag.countunique],
-    UserDataType.tree_str: _AGG_BASIC + [ag.countunique],
+    UserDataType.string: [*_AGG_BASIC, AggregationFunction.countunique],
+    UserDataType.integer: [
+        *_AGG_BASIC,
+        AggregationFunction.sum,
+        AggregationFunction.avg,
+        AggregationFunction.min,
+        AggregationFunction.max,
+        AggregationFunction.countunique,
+    ],
+    UserDataType.float: [
+        *_AGG_BASIC,
+        AggregationFunction.sum,
+        AggregationFunction.avg,
+        AggregationFunction.min,
+        AggregationFunction.max,
+        AggregationFunction.countunique,
+    ],
+    UserDataType.date: [
+        *_AGG_BASIC,
+        AggregationFunction.min,
+        AggregationFunction.max,
+        AggregationFunction.countunique,
+        AggregationFunction.avg,
+    ],
+    UserDataType.datetime: [
+        *_AGG_BASIC,
+        AggregationFunction.min,
+        AggregationFunction.max,
+        AggregationFunction.countunique,
+        AggregationFunction.avg,
+    ],
+    UserDataType.datetimetz: [
+        *_AGG_BASIC,
+        AggregationFunction.min,
+        AggregationFunction.max,
+        AggregationFunction.countunique,
+        AggregationFunction.avg,
+    ],
+    UserDataType.genericdatetime: [
+        *_AGG_BASIC,
+        AggregationFunction.min,
+        AggregationFunction.max,
+        AggregationFunction.countunique,
+    ],  # TODO: 'avg'?
+    UserDataType.boolean: [*_AGG_BASIC],
+    UserDataType.geopoint: [*_AGG_BASIC],
+    UserDataType.geopolygon: [*_AGG_BASIC],
+    UserDataType.uuid: [*_AGG_BASIC, AggregationFunction.countunique],
+    UserDataType.markup: [*_AGG_BASIC],  # TODO: 'any'
+    UserDataType.unsupported: [AggregationFunction.none],  # only explicit formula-based processing is allowed
+    UserDataType.array_float: [*_AGG_BASIC, AggregationFunction.countunique],
+    UserDataType.array_int: [*_AGG_BASIC, AggregationFunction.countunique],
+    UserDataType.array_str: [*_AGG_BASIC, AggregationFunction.countunique],
+    UserDataType.tree_str: [*_AGG_BASIC, AggregationFunction.countunique],
 }
 
 
@@ -215,12 +251,15 @@ class DatasetAction(Enum):
     add = "add"
     delete = "delete"
 
+    # extract
+    update_extract = "update_extract"
+
     @staticmethod
-    def remap_legacy(action: "DatasetAction") -> "DatasetAction":
+    def remap_legacy(action: DatasetAction) -> DatasetAction:
         return _LEGACY_ACTIONS.get(action, action)
 
     @staticmethod
-    def get_actions_whitelist_for_data_api() -> set["DatasetAction"]:
+    def get_actions_whitelist_for_data_api() -> set[DatasetAction]:
         return {DatasetAction.add_field, DatasetAction.update_field, DatasetAction.delete_field}
 
 

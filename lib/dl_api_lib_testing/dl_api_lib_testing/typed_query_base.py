@@ -1,8 +1,5 @@
 import abc
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any
 
 from aiohttp.test_utils import (
     ClientResponse,
@@ -12,7 +9,7 @@ import attr
 
 from dl_api_lib_testing.connection_base import ConnectionTestBase
 from dl_api_lib_testing.data_api_base import DataApiTestBase
-from dl_constants.enums import (
+from dl_constants import (
     DashSQLQueryType,
     UserDataType,
 )
@@ -40,7 +37,7 @@ class DashSQLTypedQueryTestBase(DataApiTestBase, ConnectionTestBase, metaclass=a
         conn_id: str,
         typed_query_info: TypedQueryInfo,
         fail_ok: bool = False,
-        headers: Optional[dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
     ) -> ClientResponse:
         request_body: dict[str, Any] = {
             "query_type": typed_query_info.query_type.name,

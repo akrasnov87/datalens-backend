@@ -1,6 +1,5 @@
 import abc
 import logging
-from typing import Optional
 
 import attr
 
@@ -9,7 +8,6 @@ from dl_core.us_manager.mutation_cache.usentry_mutation_cache import (
     USEntryMutationCache,
 )
 from dl_core.us_manager.us_manager import USManagerBase
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -23,7 +21,7 @@ class USEntryMutationCacheFactory(metaclass=abc.ABCMeta):
         self,
         usm: USManagerBase,
         engine: GenericCacheEngine,
-        ttl: Optional[float] = None,
+        ttl: float | None = None,
     ) -> USEntryMutationCache:
         pass
 
@@ -34,7 +32,7 @@ class DefaultUSEntryMutationCacheFactory(USEntryMutationCacheFactory):
         self,
         usm: USManagerBase,
         engine: GenericCacheEngine,
-        ttl: Optional[float] = None,
+        ttl: float | None = None,
     ) -> USEntryMutationCache:
         if ttl is None:
             ttl = self.default_ttl

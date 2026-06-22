@@ -4,7 +4,6 @@ from dl_api_lib_testing.configuration import ApiTestEnvironmentConfiguration
 from dl_core_testing.configuration import CoreTestEnvironmentConfiguration
 from dl_testing.containers import get_test_container_hostport
 
-
 # Infra settings
 CORE_TEST_CONFIG = CoreTestEnvironmentConfiguration(
     host_us_http=get_test_container_hostport("us", fallback_port=51911).host,
@@ -23,17 +22,17 @@ API_TEST_CONFIG = ApiTestEnvironmentConfiguration(
 )
 
 PROMETHEUS_CONTAINER_HOSTPORT = get_test_container_hostport("db-prometheus", fallback_port=50518)
-API_CONNECTION_SETTINGS = dict(
-    host=PROMETHEUS_CONTAINER_HOSTPORT.host,
-    port=PROMETHEUS_CONTAINER_HOSTPORT.port,
-    auth_type="password",
-    username="admin",
-    password="admin",
-)
+API_CONNECTION_SETTINGS = {
+    "host": PROMETHEUS_CONTAINER_HOSTPORT.host,
+    "port": PROMETHEUS_CONTAINER_HOSTPORT.port,
+    "auth_type": "password",
+    "username": "admin",
+    "password": "admin",
+}
 
-API_CONNECTION_SETTINGS_HEADER_AUTH = dict(
-    host=PROMETHEUS_CONTAINER_HOSTPORT.host,
-    port=PROMETHEUS_CONTAINER_HOSTPORT.port,
-    auth_type="header",
-    auth_header=f"Basic {base64.b64encode(b'admin:admin').decode()}",
-)
+API_CONNECTION_SETTINGS_HEADER_AUTH = {
+    "host": PROMETHEUS_CONTAINER_HOSTPORT.host,
+    "port": PROMETHEUS_CONTAINER_HOSTPORT.port,
+    "auth_type": "header",
+    "auth_header": f"Basic {base64.b64encode(b'admin:admin').decode()}",
+}

@@ -2,20 +2,16 @@ from __future__ import annotations
 
 import abc
 import logging
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     ManagedBy,
     RawSQLLevel,
     WhereClauseOperation,
 )
 from dl_utils.utils import DataKey
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -38,18 +34,17 @@ class InternalMaterializationConnectionRef(ConnectionRef):
     pass
 
 
-def connection_ref_from_id(connection_id: Optional[str]) -> ConnectionRef:
+def connection_ref_from_id(connection_id: str | None) -> ConnectionRef:
     if connection_id is None:
         # TODO REMOVE: some sample source code still relies on mat con ref
         return InternalMaterializationConnectionRef()
-    else:
-        return DefaultConnectionRef(conn_id=connection_id)
+    return DefaultConnectionRef(conn_id=connection_id)
 
 
 @attr.s()
 class DefaultWhereClause:
     operation: WhereClauseOperation = attr.ib()
-    values: list = attr.ib(default=[])
+    values: list = attr.ib(factory=list)
 
 
 @attr.s()
@@ -65,7 +60,7 @@ class ObligatoryFilter:
 class SourceFilterSpec:
     name: str = attr.ib()
     operation: WhereClauseOperation = attr.ib()
-    values: list = attr.ib(default=[])
+    values: list = attr.ib(factory=list)
 
 
 class EntryLocation(metaclass=abc.ABCMeta):
@@ -78,7 +73,7 @@ class EntryLocation(metaclass=abc.ABCMeta):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def to_us_resp_api_params(self, key_from_us_resp: Optional[str]) -> dict[str, str]:
+    def to_us_resp_api_params(self, key_from_us_resp: str | None) -> dict[str, str]:
         raise NotImplementedError()
 
 
@@ -92,7 +87,7 @@ class PathEntryLocation(EntryLocation):
     def to_us_req_api_params(self) -> dict[str, Any]:
         return {"key": self.path}
 
-    def to_us_resp_api_params(self, key_from_us_resp: Optional[str]) -> dict[str, str]:
+    def to_us_resp_api_params(self, key_from_us_resp: str | None) -> dict[str, str]:
         return {"key": self.path}
 
 
@@ -110,7 +105,7 @@ class WorkbookEntryLocation(EntryLocation):
             "name": self.entry_name,
         }
 
-    def to_us_resp_api_params(self, key_from_us_resp: Optional[str]) -> dict[str, str]:
+    def to_us_resp_api_params(self, key_from_us_resp: str | None) -> dict[str, str]:
         restored_key: str
         if key_from_us_resp is None:
             restored_key = f"dummy_workbook_path_repr/{self.entry_name}"
@@ -134,7 +129,7 @@ class CollectionEntryLocation(EntryLocation):
             "name": self.entry_name,
         }
 
-    def to_us_resp_api_params(self, key_from_us_resp: Optional[str]) -> dict[str, str]:
+    def to_us_resp_api_params(self, key_from_us_resp: str | None) -> dict[str, str]:
         restored_key: str
         if key_from_us_resp is None:
             restored_key = f"dummy_collection_path_repr/{self.entry_name}"

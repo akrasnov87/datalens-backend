@@ -38,7 +38,7 @@ def fixture_private_key_pem(private_key: rsa.RSAPrivateKey) -> str:
 @pytest.fixture(name="public_key_pem")
 def fixture_public_key_pem(public_key: rsa.RSAPublicKey) -> str:
     public_key_bytes = public_key.public_bytes(
-        encoding=serialization.Encoding.PEM, format=serialization.PublicFormat.SubjectPublicKeyInfo
+        encoding=serialization.Encoding.PEM, format=serialization.PublicFormat.SubjectPublicKeyInfo  # type: ignore[arg-type]  # 26.05.2026 mypy bump 1.20.2
     )
 
     return public_key_bytes.decode()
@@ -48,16 +48,15 @@ def fixture_public_key_pem(public_key: rsa.RSAPublicKey) -> str:
 def fixture_another_public_key_pem() -> str:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
     private_key_bytes = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
+        encoding=serialization.Encoding.PEM,  # type: ignore[arg-type]  # 26.05.2026 mypy bump 1.20.2
+        format=serialization.PrivateFormat.PKCS8,  # type: ignore[arg-type]  # 26.05.2026 mypy bump 1.20.2
         encryption_algorithm=serialization.NoEncryption(),
     )
     return private_key_bytes.decode()
 
 
 class Encoder(typing.Protocol):
-    def __call__(self, payload: dict) -> str:
-        ...
+    def __call__(self, payload: dict) -> str: ...
 
 
 @pytest.fixture(name="encoder")
@@ -77,7 +76,8 @@ def test_decode_default(
     encoder: Encoder,
     decoder: token.Decoder,
 ) -> None:
-    expires_at = datetime.datetime.now().replace(microsecond=0) + datetime.timedelta(seconds=60)
+    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    expires_at = now.replace(microsecond=0) + datetime.timedelta(seconds=60)
     user_id = "test-user-id"
     roles_list = ["datalens.creator", "datalens.admin"]
 
@@ -100,7 +100,7 @@ def test_decode_invalid_key(
 ) -> None:
     raw_payload = {
         "userId": "test-user-id",
-        "exp": datetime.datetime.now().timestamp(),
+        "exp": datetime.datetime.now(datetime.UTC).replace(tzinfo=None).timestamp(),
     }
 
     encoded = jwt.encode(raw_payload, another_private_key_pem, algorithm=algorithm)
@@ -124,7 +124,8 @@ def test_decode_expired(
     encoder: Encoder,
     decoder: token.Decoder,
 ) -> None:
-    expires_at = datetime.datetime.now().replace(microsecond=0) - datetime.timedelta(seconds=60)
+    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    expires_at = now.replace(microsecond=0) - datetime.timedelta(seconds=60)
     user_id = "test-user-id"
 
     raw_payload = {
@@ -146,7 +147,7 @@ def test_decode_invalid_payload(
 ) -> None:
     raw_payload = {
         "userId": "test-user-id",
-        "exp": datetime.datetime.now().timestamp() + 60,
+        "exp": datetime.datetime.now(datetime.UTC).replace(tzinfo=None).timestamp() + 60,
     }
 
     encoded = encoder(raw_payload)

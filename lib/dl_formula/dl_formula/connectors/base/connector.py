@@ -1,9 +1,8 @@
-from typing import (
-    ClassVar,
+from collections.abc import (
     Iterable,
-    Optional,
     Sequence,
 )
+from typing import ClassVar
 
 from sqlalchemy.engine.default import DefaultDialect
 
@@ -29,7 +28,7 @@ from dl_formula.definitions.base import NodeTranslation
 class FormulaConnector:
     dialect_ns_cls: ClassVar[type[DialectNamespace]] = StandardDialect
     dialects: ClassVar[DialectCombo]
-    default_dialect: ClassVar[Optional[DialectCombo]] = None
+    default_dialect: ClassVar[DialectCombo | None] = None
     op_definitions: ClassVar[Iterable[NodeTranslation]] = []
     literalizer_cls: ClassVar[type[Literalizer]] = Literalizer
     column_renderer_cls: ClassVar[type[ColumnRenderer]] = DefaultColumnRenderer
@@ -39,8 +38,7 @@ class FormulaConnector:
 
     @classmethod
     def get_dialect_names(cls) -> Sequence[DialectName]:
-        dialect_names = sorted({bit.name for bit in cls.dialects.bits}, key=lambda item: item.name)
-        return dialect_names
+        return sorted({bit.name for bit in cls.dialects.bits}, key=lambda item: item.name)
 
     @classmethod
     def registration_hook(cls) -> None:

@@ -13,9 +13,8 @@ attrs = "*"
 dl-pydantic = {path = "../dl_pydantic"}
 dl-settings = {path = "../dl_settings"}
 pydantic = "*"
-python = ">=3.10, <3.13"
+python = ">=3.12, <3.13"
 pyyaml = "*"
-typing-extensions = "*"
 
 [tool.poetry.group.tests.dependencies]
 dl-testing = {path = "../dl_testing"}
@@ -50,7 +49,6 @@ root_dir = "dl_dynconfig_tests/"
 target_path = "db"
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_dynconfig_tests/"
 skip_compose = "true"
 target_path = "unit"

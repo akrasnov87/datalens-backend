@@ -6,6 +6,7 @@ This is independent from the specific pivot table implementations.
 from __future__ import annotations
 
 import abc
+from collections.abc import Callable
 from enum import (
     Enum,
     auto,
@@ -15,13 +16,11 @@ from math import isnan
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Optional,
 )
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     FieldRole,
     OrderDirection,
     PivotRole,
@@ -36,7 +35,6 @@ from dl_pivot.sort_helpers import (
     TOTAL_GREATEST_NULL_VALUE,
     TOTAL_LEAST_NULL_VALUE,
 )
-
 
 if TYPE_CHECKING:
     from dl_pivot.pivot_legend import PivotLegend
@@ -70,7 +68,7 @@ class SortValueNormalizer(abc.ABC):
 @attr.s
 class BaseSortValueNormalizer(SortValueNormalizer):
     _legend_item_ids: set[int] = attr.ib(init=False)
-    _value_converter: Optional[Callable[[Any], Any]] = attr.ib(init=False)
+    _value_converter: Callable[[Any], Any] | None = attr.ib(init=False)
 
     @_legend_item_ids.default
     def _make_legend_item_ids(self) -> set[int]:
@@ -80,7 +78,7 @@ class BaseSortValueNormalizer(SortValueNormalizer):
         return {item.legend_item_id for item in legend_items}
 
     @_value_converter.default
-    def _make_value_converter(self) -> Optional[Callable[[Any], Any]]:
+    def _make_value_converter(self) -> Callable[[Any], Any] | None:
         data_types = {self._legend.get_item(legend_item_id).data_type for legend_item_id in self._legend_item_ids}
         assert len(data_types) == 1, "Only single data type is supported within a pivot dimension"
         data_type = next(iter(data_types))
@@ -94,7 +92,7 @@ class BaseSortValueNormalizer(SortValueNormalizer):
 
     def normalize_vector_value(self, vector: DataCellVector | float | None) -> Any:
         # the case of NaN values (in pandas they represent missing cells)
-        if vector is None or isinstance(vector, float) and isnan(vector):
+        if vector is None or (isinstance(vector, float) and isnan(vector)):
             return NORMAL_LEAST_NULL_VALUE
 
         assert isinstance(vector, DataCellVector)
@@ -129,11 +127,11 @@ class DimensionSortValueNormalizer(BaseSortValueNormalizer):
             # The data type of these values may be different from the main data.
             if self._direction == OrderDirection.asc:
                 return TOTAL_GREATEST_NULL_VALUE
-            else:  # desc
-                # Sorting is reversed, but totals still must be at the end,
-                # even after regular NULLs.
-                # So a `LeastNullValue` value with a smaller weight is used.
-                return TOTAL_LEAST_NULL_VALUE
+            # desc
+            # Sorting is reversed, but totals still must be at the end,
+            # even after regular NULLs.
+            # So a `LeastNullValue` value with a smaller weight is used.
+            return TOTAL_LEAST_NULL_VALUE
 
         return super().normalize_vector_value(vector)
 

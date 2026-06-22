@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Sequence,
-)
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import attr
 
@@ -14,7 +12,6 @@ from dl_connector_promql.core.adapter import (
     PromQLAdapter,
 )
 from dl_connector_promql.core.target_dto import PromQLConnTargetDTO
-
 
 if TYPE_CHECKING:
     from dl_connector_promql.core.dto import PromQLConnDTO

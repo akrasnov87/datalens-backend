@@ -3,14 +3,12 @@ from __future__ import annotations
 import enum
 from typing import (
     ClassVar,
-    Optional,
-    Union,
+    Literal,
 )
 
 import attr
-from typing_extensions import Literal
 
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     ReportingQueryType,
 )
@@ -23,16 +21,16 @@ class DbQueryExecutionReport:
 
     query_id: str
     dataset_id: str
-    user_id: Optional[str]
-    billing_folder_id: Optional[str]
+    user_id: str | None
+    billing_folder_id: str | None
     connection_id: str
     connection_type: ConnectionType
-    source: Optional[str]
-    username: Optional[str]
+    source: str | None
+    username: str | None
     execution_time: int
-    query: Optional[str]
-    status: Union[Literal["success"], Literal["error"]]
-    error: Optional[str]
+    query: str | None
+    status: Literal["success"] | Literal["error"]
+    error: str | None
     host: str
 
     cache_used: bool
@@ -42,17 +40,16 @@ class DbQueryExecutionReport:
     query_type: ReportingQueryType
     is_public: bool
 
-    def convert_for_logging_extras(self, value) -> Union[str, int, bool, None]:  # type: ignore  # TODO: fix
+    def convert_for_logging_extras(self, value) -> str | int | bool | None:  # type: ignore  # TODO: fix
         if value is None:
             return None
-        elif isinstance(value, (str, int, bool)):
+        if isinstance(value, (str, int, bool)):
             return value
-        elif isinstance(value, enum.Enum):
+        if isinstance(value, enum.Enum):
             return value.name
-        else:
-            return repr(value)
+        return repr(value)
 
-    def to_logging_extras(self) -> dict[str, Union[str, int, bool]]:
+    def to_logging_extras(self) -> dict[str, str | int | bool]:
         return dict(
             {  # type: ignore  # TODO: fix
                 k: self.convert_for_logging_extras(v) for k, v in attr.asdict(self)  # type: ignore  # TODO: fix

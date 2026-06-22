@@ -11,7 +11,7 @@ from marshmallow import (
 )
 from marshmallow import fields as ma_fields
 
-from dl_constants.enums import (
+from dl_constants import (
     RLSPatternType,
     RLSSubjectType,
 )
@@ -49,7 +49,7 @@ class RLSSchema(Schema):
 
     @pre_load
     def pre_load(self, data: list, **kwargs: Any) -> dict[str, list]:
-        return dict(items=data)
+        return {"items": data}
 
     @post_load
     def post_load(self, data: dict[str, list[RLSEntry]], **kwargs: Any) -> RLS:

@@ -4,7 +4,7 @@ from dl_api_lib_testing.configuration import ApiTestEnvironmentConfiguration
 from dl_api_lib_testing.connection_base import ConnectionTestBase
 from dl_api_lib_testing.data_api_base import StandardizedDataApiTestBase
 from dl_api_lib_testing.dataset_base import DatasetTestBase
-from dl_constants.enums import RawSQLLevel
+from dl_constants import RawSQLLevel
 
 from dl_connector_oracle.core.constants import (
     CONNECTION_TYPE_ORACLE,
@@ -35,7 +35,7 @@ class OracleConnectionTestBase(BaseOracleTestClass, ConnectionTestBase):
             port=CoreConnectionSettings.PORT,
             username=CoreConnectionSettings.USERNAME,
             password=CoreConnectionSettings.PASSWORD,
-            **(dict(raw_sql_level=self.raw_sql_level.value) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level.value} if self.raw_sql_level is not None else {}),
         )
 
 
@@ -46,14 +46,14 @@ class OracleDashSQLConnectionTest(OracleConnectionTestBase):
 class OracleDatasetTestBase(OracleConnectionTestBase, DatasetTestBase):
     @pytest.fixture(scope="class")
     def dataset_params(self, sample_table) -> dict:
-        return dict(
-            source_type=SOURCE_TYPE_ORACLE_TABLE.name,
-            parameters=dict(
-                db_name=sample_table.db.name,
-                schema_name=sample_table.schema,
-                table_name=sample_table.name,
-            ),
-        )
+        return {
+            "source_type": SOURCE_TYPE_ORACLE_TABLE.name,
+            "parameters": {
+                "db_name": sample_table.db.name,
+                "schema_name": sample_table.schema,
+                "table_name": sample_table.name,
+            },
+        }
 
 
 class OracleDataApiTestBase(OracleDatasetTestBase, StandardizedDataApiTestBase):

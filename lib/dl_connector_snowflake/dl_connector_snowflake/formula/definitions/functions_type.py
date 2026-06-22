@@ -1,4 +1,5 @@
 import sqlalchemy as sa
+from sqlalchemy.sql.elements import ClauseElement
 
 from dl_formula.core.datatype import DataType
 from dl_formula.definitions.args import ArgTypeSequence
@@ -10,9 +11,9 @@ from dl_formula.definitions.base import (
 import dl_formula.definitions.functions_type as base
 from dl_formula.definitions.scope import Scope
 from dl_formula.definitions.type_strategy import Fixed
+from dl_formula.translation.context import TranslationCtx
 
 from dl_connector_snowflake.formula.constants import SnowFlakeDialect as D
-
 
 V = TranslationVariant.make
 
@@ -23,18 +24,18 @@ V = TranslationVariant.make
 
 class FuncDatetime2SF(SingleVariantTranslationBase, base.FuncTypeGenericDatetime2Impl):
     dialects = D.SNOWFLAKE
-    argument_types = [
+    argument_types = (
         ArgTypeSequence(
             [
                 {DataType.DATETIME, DataType.GENERICDATETIME, DataType.INTEGER, DataType.FLOAT, DataType.STRING},
                 DataType.CONST_STRING,
             ]
         ),
-    ]
+    )
     name = "datetime"
 
     @classmethod
-    def _translate_main(cls, value_ctx, tz_ctx):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def _translate_main(cls, value_ctx: TranslationCtx, tz_ctx: TranslationCtx) -> ClauseElement:
         """
         Equivalent to `dt at time zone tz`.
         Its semantics:
@@ -90,19 +91,13 @@ class FuncGenericDatetime2SF(FuncDatetime2SF):
 
 
 class FuncBoolFromNullSF(base.FuncBoolFromNull):
-    variants = [
-        V(D.SNOWFLAKE, lambda _: sa.null()),
-    ]
+    variants = (V(D.SNOWFLAKE, lambda _: sa.null()),)
     return_type = Fixed(DataType.NULL)
 
 
 class FuncFloatFromNullSF(base.FuncFloat):
-    variants = [
-        V(D.SNOWFLAKE, lambda _: sa.null()),
-    ]
-    argument_types = [
-        ArgTypeSequence([DataType.NULL]),
-    ]
+    variants = (V(D.SNOWFLAKE, lambda _: sa.null()),)
+    argument_types = (ArgTypeSequence([DataType.NULL]),)
 
 
 DEFINITIONS_TYPE = [
@@ -174,8 +169,8 @@ DEFINITIONS_TYPE = [
                 lambda value: sa.case(
                     whens=[
                         (value.is_(None), sa.null()),
-                        (value == True, 1.0),  # noqa: E712
-                        (value == False, 0.0),  # noqa: E712
+                        (value == True, 1.0),
+                        (value == False, 0.0),
                     ],
                 ),
             )

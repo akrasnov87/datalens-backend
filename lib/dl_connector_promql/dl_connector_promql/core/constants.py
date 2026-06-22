@@ -1,4 +1,4 @@
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DataSourceType,
     SourceBackendType,
@@ -7,7 +7,6 @@ from dl_dynamic_enum import (
     AutoEnumValue,
     DynamicEnum,
 )
-
 
 BACKEND_TYPE_PROMQL = SourceBackendType.declare("PROMQL")
 CONNECTION_TYPE_PROMQL = ConnectionType.declare("promql")

@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import (
+    Generator,
+    Iterable,
+    Sequence,
+)
 import logging
 from typing import (
     TYPE_CHECKING,
-    Generator,
-    Iterable,
-    Optional,
-    Sequence,
     TypeVar,
+    final,
 )
 
 import attr
-from typing_extensions import final
 
 from dl_core.connection_executors.adapters.adapter_actions.sync_base import (
     SyncDBVersionAdapterAction,
@@ -46,9 +47,8 @@ from dl_core.connection_models import (
     TableIdent,
 )
 
-
 if TYPE_CHECKING:
-    from dl_core.connection_executors.models.connection_target_dto_base import ConnTargetDTO  # noqa: F401
+    from dl_core.connection_executors.models.connection_target_dto_base import ConnTargetDTO
     from dl_dashsql.typed_query.primitives import (
         TypedQuery,
         TypedQueryResult,
@@ -63,7 +63,7 @@ class DBAdapterQueryResult:
     cursor_info: dict = attr.ib()
     data_chunks: Iterable[Sequence] = attr.ib()
     # Notable difference from `cursor_info`: raw value is not meant to be serialized.
-    raw_cursor_info: Optional[ExecutionStepCursorInfo] = attr.ib(default=None)
+    raw_cursor_info: ExecutionStepCursorInfo | None = attr.ib(default=None)
 
     def get_all(self) -> list[Sequence]:
         """
@@ -140,7 +140,7 @@ class SyncDirectDBAdapter(CommonBaseDirectAdapter[_TARGET_DTO_TV], metaclass=abc
     def test(self) -> None:
         pass
 
-    def get_target_host(self) -> Optional[str]:
+    def get_target_host(self) -> str | None:
         return None
 
     def execute_typed_query(self, typed_query: TypedQuery) -> TypedQueryResult:
@@ -167,7 +167,7 @@ class SyncDirectDBAdapter(CommonBaseDirectAdapter[_TARGET_DTO_TV], metaclass=abc
             raw_cursor_info=cursor_info_step,
         )
 
-    def get_db_version(self, db_ident: DBIdent) -> Optional[str]:
+    def get_db_version(self, db_ident: DBIdent) -> str | None:
         return self._sync_db_version_action.run_db_version_action(db_ident=db_ident)
 
     def get_schema_names(self, db_ident: DBIdent) -> list[str]:

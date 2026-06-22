@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import sys
 import time
-from typing import Optional
 
 from aiohttp import web
 
@@ -64,7 +63,7 @@ class DashSQLTypedQueryRawView(BaseView):
         return service_registry
 
     @property
-    def connection_id(self) -> Optional[str]:
+    def connection_id(self) -> str | None:
         return self.request.match_info.get("conn_id")
 
     async def get_connection(self) -> ConnectionBase:
@@ -77,12 +76,12 @@ class DashSQLTypedQueryRawView(BaseView):
                 ConnectionBase,
                 context_name="connection",
             )
-        except core_exc.USValidationException:
-            raise core_exc.USInvalidConnectionID(params={"entry_id": connection_id})
-        except core_exc.USObjectNotFoundException:
-            raise core_exc.USConnectionNotFound(params={"entry_id": connection_id})
-        except core_exc.USAccessDeniedException:
-            raise core_exc.USConnectionAccessDenied(params={"entry_id": connection_id})
+        except core_exc.USValidationError as exc:
+            raise core_exc.USInvalidConnectionIDError(params={"entry_id": connection_id}) from exc
+        except core_exc.USObjectNotFoundError as exc:
+            raise core_exc.USConnectionNotFoundError(params={"entry_id": connection_id}) from exc
+        except core_exc.USAccessDeniedError as exc:
+            raise core_exc.USConnectionAccessDeniedError(params={"entry_id": connection_id}) from exc
         assert isinstance(connection, ConnectionBase)
         return connection
 
@@ -90,12 +89,12 @@ class DashSQLTypedQueryRawView(BaseView):
         """Check whether we can use this connection to execute the query"""
         need_permission_on_entry(connection, USPermissionKind.execute)
         if not connection.is_typed_query_raw_allowed:
-            raise core_exc.DashSQLNotAllowed()
+            raise core_exc.DashSQLNotAllowedError()
 
     def make_typed_query_raw(self) -> TypedQueryRaw:
         """Formalize and validate query from input"""
         raw_typed_query_raw: RawTypedQueryRaw = TypedQueryRawSchema().load(self.dl_request.json)
-        typed_query_raw = TypedQueryRaw(
+        return TypedQueryRaw(
             query_type=raw_typed_query_raw.query_type,
             parameters=TypedQueryRawParameters(
                 path=raw_typed_query_raw.parameters.path,
@@ -104,7 +103,6 @@ class DashSQLTypedQueryRawView(BaseView):
                 body=raw_typed_query_raw.parameters.body,
             ),
         )
-        return typed_query_raw
 
     async def execute_query(self, connection: ConnectionBase, typed_query_raw: TypedQueryRaw) -> TypedQueryRawResult:
         """Prepare everything for execution and execute"""
@@ -112,12 +110,12 @@ class DashSQLTypedQueryRawView(BaseView):
         def _make_reporting_query() -> str:
             params = typed_query_raw.parameters
             return json.dumps(
-                dict(
-                    path=hide_url_args(params.path),
-                    method=params.method,
-                    content_type=params.content_type,
-                    body="***" if params.body else None,
-                ),
+                {
+                    "path": hide_url_args(params.path),
+                    "method": params.method,
+                    "content_type": params.content_type,
+                    "body": "***" if params.body else None,
+                },
                 sort_keys=True,
             )
 

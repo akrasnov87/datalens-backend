@@ -1,16 +1,18 @@
 import logging
 
-from pytest import Config
+import pytest
 
 from dl_api_lib.loader import load_api_lib
 from dl_api_lib_testing.configuration import ApiTestEnvironmentConfiguration
 from dl_core_testing.initialization import initialize_core_test
 from dl_formula_testing.initialization import initialize_formula_test
 
+LOGGER = logging.getLogger(__name__)
 
-def initialize_api_lib_test(pytest_config: Config, api_test_config: ApiTestEnvironmentConfiguration) -> None:
-    logging.debug("Initializing API lib test")
-    logging.debug(f"API test config: {api_test_config}")
+
+def initialize_api_lib_test(pytest_config: pytest.Config, api_test_config: ApiTestEnvironmentConfiguration) -> None:
+    LOGGER.debug("Initializing API lib test")
+    LOGGER.debug("API test config: %s", api_test_config)
 
     load_api_lib(api_lib_config=api_test_config.get_api_library_config())
     initialize_core_test(pytest_config=pytest_config, core_test_config=api_test_config.core_test_config)

@@ -6,7 +6,6 @@ from dl_formula.core.dialect import DialectCombo
 from dl_formula.core.dialect import StandardDialect as D
 from dl_formula_ref.registry.dialect_base import DialectExtractorBase
 
-
 if TYPE_CHECKING:
     import dl_formula_ref.registry.base as _registry_base
     from dl_formula_ref.registry.env import GenerationEnvironment
@@ -29,7 +28,7 @@ class DefaultDialectExtractor(DialectExtractorBase):
     ) -> set[DialectCombo]:
         if item.category.name == "window":  # TODO: Maybe separate into two different classes?
             if EXPAND_COMPENG:
-                return set(dialect for dialect in COMPENG_SUPPORT if dialect in env.supported_dialects)
+                return {dialect for dialect in COMPENG_SUPPORT if dialect in env.supported_dialects}
             return set()
 
         def_list = item.get_implementation_specs(env=env)

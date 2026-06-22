@@ -8,11 +8,9 @@ import attr
 import typing_extensions
 
 from dl_constants.exc import (
-    DEFAULT_ERR_CODE_API_PREFIX,
-    GLOBAL_ERR_PREFIX,
-    DLBaseException,
+    DEFAULT_GLOBAL_ERR_CODE_API_PREFIX,
+    DLBaseError,
 )
-
 
 KEY_PREFIX = "cache_inval_"
 
@@ -84,9 +82,9 @@ class CacheInvalidationEntry:
     @classmethod
     def from_exception(
         cls,
-        exc: DLBaseException,
+        exc: DLBaseError,
     ) -> typing_extensions.Self:
-        error_code = ".".join([GLOBAL_ERR_PREFIX, DEFAULT_ERR_CODE_API_PREFIX] + exc.err_code)
+        error_code = ".".join((*DEFAULT_GLOBAL_ERR_CODE_API_PREFIX, *exc.err_code))
         return cls(
             status=CacheInvalidationStatus.ERROR,
             payload=CacheInvalidationErrorPayload(

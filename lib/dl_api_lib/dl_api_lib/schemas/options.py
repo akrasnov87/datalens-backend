@@ -5,7 +5,7 @@ import logging
 from marshmallow import fields as ma_fields
 
 from dl_api_lib.enums import WhereClauseOperation
-from dl_constants.enums import (
+from dl_constants import (
     AggregationFunction,
     BinaryJoinOperator,
     ConnectionType,
@@ -15,7 +15,6 @@ from dl_constants.enums import (
 )
 from dl_model_tools.schema.base import BaseSchema
 from dl_model_tools.schema.dynamic_enum_field import DynamicEnumField
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -88,6 +87,7 @@ class AvatarsSchema(BaseSchema):
 class SourceListingSchema(BaseSchema):
     supports_source_search = ma_fields.Boolean()
     supports_source_pagination = ma_fields.Boolean()
+    supports_query_pagination = ma_fields.Boolean()
     supports_db_name_listing = ma_fields.Boolean()
     db_name_label = ma_fields.String(dump_default=None)
     db_name_required_for_search = ma_fields.Boolean()
@@ -106,6 +106,7 @@ class OptionsSchema(BaseSchema):
     supported_functions = ma_fields.List(ma_fields.String())
     source_listing = ma_fields.Nested(SourceListingSchema)
     is_cache_invalidation_enabled_in_conn = ma_fields.Boolean(dump_only=True, dump_default=False)
+    query_settings_enabled = ma_fields.Boolean(dump_only=True, dump_default=False)
 
 
 class OptionsMixin(BaseSchema):

@@ -2,8 +2,8 @@ import abc
 from copy import deepcopy
 import enum
 from typing import (
+    Any,
     ClassVar,
-    Optional,
 )
 
 import attr
@@ -121,7 +121,7 @@ def test_round_trip():
 @ModelDescriptor()
 @attr.s
 class UnsafeFlat:
-    guard_animal: Optional[Animal] = attr.ib(metadata=AttribDescriptor(skip_none_on_dump=True).to_meta())
+    guard_animal: Animal | None = attr.ib(metadata=AttribDescriptor(skip_none_on_dump=True).to_meta())
     owner: Bio = attr.ib()
 
 
@@ -210,7 +210,7 @@ def test_enum_by_value():
 
     serialized = schema_cls().dump(target)
 
-    assert serialized == dict(axis=target.axis.value, ab=target.ab.name)
+    assert serialized == {"axis": target.axis.value, "ab": target.ab.name}
 
     restored_target = schema_cls().load(serialized)
     assert restored_target == target
@@ -246,18 +246,18 @@ def test_nested_containers():
 
     serialized = schema_cls().dump(target)
 
-    assert serialized == dict(
-        list_of_lists_of_ints=target.list_of_lists_of_ints,
-        list_of_lists_of_lists_of_points=[
+    assert serialized == {
+        "list_of_lists_of_ints": target.list_of_lists_of_ints,
+        "list_of_lists_of_lists_of_points": [
             [[attr.asdict(point) for point in l2] for l2 in l1] for l1 in target.list_of_lists_of_lists_of_points
         ],
-    )
+    }
 
     restored_target = schema_cls().load(serialized)
     assert restored_target == target
 
 
-def test_FrozenMappingStrToStrOrStrSeqField():
+def test_frozen_mapping_str_to_str_or_str_seq_field():
     @ModelDescriptor()
     @attr.s(auto_attribs=True)
     class Container:
@@ -278,9 +278,9 @@ def test_FrozenMappingStrToStrOrStrSeqField():
 
     # Serialization
     serialized = schema_cls().dump(target)
-    assert serialized == dict(
-        m=mapping_data,
-    )
+    assert serialized == {
+        "m": mapping_data,
+    }
 
     # Deserialization
     deserialized = schema_cls().load(serialized)
@@ -308,9 +308,9 @@ def test_frozen_str_mapping():
 
     # Serialization
     serialized = schema_cls().dump(target)
-    assert serialized == dict(
-        m=mapping_data,
-    )
+    assert serialized == {
+        "m": mapping_data,
+    }
 
     # Deserialization
     deserialized = schema_cls().load(serialized)
@@ -318,7 +318,7 @@ def test_frozen_str_mapping():
 
     # Deserialization errors
     with pytest.raises(marshmallow.ValidationError) as exc_pack:
-        schema_cls().load(dict(m={"de_havilland": None}))
+        schema_cls().load({"m": {"de_havilland": None}})
 
     assert exc_pack.value.messages == {
         "m": {"de_havilland": {"value": ["Field may not be null."]}},
@@ -355,13 +355,13 @@ def test_serialization_key():
 
     serialized = schema_cls().dump(target)
 
-    assert serialized == dict(
-        lop=[dict(the_x=0, y=0)],
-        loint=[1, 2, 3],
-        slan=1984,
-        no_serialization_key="no_serialization_key_value",
-        p=dict(the_x=-1, y=-1),
-    )
+    assert serialized == {
+        "lop": [{"the_x": 0, "y": 0}],
+        "loint": [1, 2, 3],
+        "slan": 1984,
+        "no_serialization_key": "no_serialization_key_value",
+        "p": {"the_x": -1, "y": -1},
+    }
 
     restored = schema_cls().load(serialized)
 
@@ -377,16 +377,16 @@ class MAFieldProjection:
     attribute: str = attr.ib()
     required: bool = attr.ib()
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, **kwargs: Any) -> None:
         cls.MAP_MA_FIELD_CLS_PROJECTION_CLS[cls.MA_TYPE] = cls
 
     @classmethod
     def get_default_kwargs(cls, ma_field: fields.Field) -> dict:
-        return dict(
-            allow_none=ma_field.allow_none,
-            attribute=ma_field.attribute,
-            required=ma_field.required,
-        )
+        return {
+            "allow_none": ma_field.allow_none,
+            "attribute": ma_field.attribute,
+            "required": ma_field.required,
+        }
 
     @classmethod
     def project(cls, ma_field: fields.Field) -> "MAFieldProjection":
@@ -463,13 +463,13 @@ class Target1:
         defaulted_list = fields.List(fields.String(allow_none=True), attribute="defaulted_list", required=False)
 
     a: list[int]
-    optional_str: Optional[str]
-    defaulted_optional_str: Optional[str] = attr.ib(default=None)
+    optional_str: str | None
+    defaulted_optional_str: str | None = attr.ib(default=None)
     strict_bool: bool
     list_of_lists_of_str: list[list[str]]
-    optional_list_of_str: Optional[list[str]]
-    list_of_optional_str: list[Optional[str]]
-    defaulted_list: list[Optional[str]] = attr.ib(factory=lambda: [None])
+    optional_list_of_str: list[str] | None
+    list_of_optional_str: list[str | None]
+    defaulted_list: list[str | None] = attr.ib(factory=lambda: [None])
 
 
 @ModelDescriptor()
@@ -490,14 +490,14 @@ class TargetVariousMappings:
         )
 
     map_str_str: FrozenStrMapping[str]
-    map_str_optional_str: FrozenStrMapping[Optional[str]]
+    map_str_optional_str: FrozenStrMapping[str | None]
 
 
 @pytest.mark.parametrize(
-    "main_cls,extra_cls_list",
+    ("main_cls", "extra_cls_list"),
     [
-        [Target1, []],
-        [TargetVariousMappings, []],
+        (Target1, []),
+        (TargetVariousMappings, []),
     ],
 )
 def test_schema_generation(main_cls: type, extra_cls_list: list[type]):

@@ -1,14 +1,16 @@
+from collections.abc import (
+    AsyncIterator,
+    Iterator,
+)
 import contextlib
 import threading
 from typing import (
-    AsyncIterator,
-    Iterator,
     Literal,
+    Self,
 )
 
 import attrs
 import pydantic
-from typing_extensions import Self
 
 import dl_httpx.rate_limiters.base as base
 import dl_httpx.utils.attrs as attrs_utils
@@ -46,7 +48,7 @@ class MaxParallelRateLimiter:
     def context(self) -> Iterator[None]:
         acquired = self._semaphore.acquire(blocking=False)
         if not acquired:
-            raise base.RateLimitHttpxClientException()
+            raise base.RateLimitHttpxClientError()
         try:
             yield
         finally:
@@ -56,7 +58,7 @@ class MaxParallelRateLimiter:
     async def context_async(self) -> AsyncIterator[None]:
         acquired = self._semaphore.acquire(blocking=False)
         if not acquired:
-            raise base.RateLimitHttpxClientException()
+            raise base.RateLimitHttpxClientError()
         try:
             yield
         finally:

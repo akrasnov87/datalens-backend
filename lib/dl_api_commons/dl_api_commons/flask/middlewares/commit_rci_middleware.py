@@ -1,10 +1,8 @@
-from typing import Optional
-
 import attr
 import flask
 
 from dl_api_commons.base_models import RequestContextInfo
-from dl_api_commons.exc import FlaskRCINotSet
+from dl_api_commons.exc import FlaskRCINotSetError
 
 
 @attr.s(frozen=True)
@@ -22,20 +20,20 @@ class ReqCtxInfoMiddleware:
         app.before_request(self._commit_rci)
 
     @classmethod
-    def get_last_resort_rci(cls) -> Optional[RequestContextInfo]:
+    def get_last_resort_rci(cls) -> RequestContextInfo | None:
         try:
             return cls.get_request_context_info()
-        except FlaskRCINotSet:
+        except FlaskRCINotSetError:
             try:
                 return cls.get_temp_rci()
-            except FlaskRCINotSet:
+            except FlaskRCINotSetError:
                 return None
 
     @classmethod
     def get_temp_rci(cls) -> RequestContextInfo:
         temp_rci = getattr(flask.g, cls._G_ATTR_NAME_TEMP_RCI, None)
         if temp_rci is None:
-            raise FlaskRCINotSet("Temp RCI was not set for current request context")
+            raise FlaskRCINotSetError("Temp RCI was not set for current request context")
         assert isinstance(temp_rci, RequestContextInfo)
         return temp_rci
 
@@ -53,4 +51,4 @@ class ReqCtxInfoMiddleware:
         if hasattr(flask.g, cls._G_ATTR_NAME_COMMITTED_RCI):
             return getattr(flask.g, cls._G_ATTR_NAME_COMMITTED_RCI)
 
-        raise FlaskRCINotSet("Request context info was not flushed")
+        raise FlaskRCINotSetError("Request context info was not flushed")

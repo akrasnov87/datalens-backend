@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import (
+    AsyncGenerator,
+    Sequence,
+)
 import json
 import logging
 import os
@@ -9,9 +13,6 @@ import typing
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncGenerator,
-    Optional,
-    Sequence,
     TypeVar,
 )
 
@@ -54,7 +55,7 @@ from dl_core.connection_executors.models.db_adapter_data import (
     DBAdapterQuery,
     RawSchemaInfo,
 )
-from dl_core.connection_executors.models.exc import QueryExecutorException
+from dl_core.connection_executors.models.exc import QueryExecutorError
 from dl_core.connection_executors.models.scoped_rci import DBAdapterScopedRCI
 from dl_core.connection_executors.qe_serializer import (
     ActionSerializer,
@@ -77,7 +78,6 @@ from dl_dashsql.typed_query.result_serialization import (
 import dl_logging
 from dl_model_tools.msgpack import DLSafeMessagePackSerializer
 from dl_utils.utils import make_url
-
 
 if TYPE_CHECKING:
     from dl_core.connection_executors.models.connection_target_dto_base import ConnTargetDTO
@@ -120,7 +120,7 @@ class RemoteAsyncAdapter(AsyncDBAdapter):
             elif issubclass(self._dba_cls, SyncDirectDBAdapter):
                 self._use_sync_rqe = True
             else:
-                raise QueryExecutorException(f"Unexpected DBA class: {self._dba_cls}")
+                raise QueryExecutorError(f"Unexpected DBA class: {self._dba_cls}")
 
         self._session = aiohttp.ClientSession(
             # TODO CONSIDER: May be turn on keepalive on sync QE?
@@ -138,8 +138,8 @@ class RemoteAsyncAdapter(AsyncDBAdapter):
     async def _make_request(
         self,
         req_obj: dba_actions.RemoteDBAdapterAction,
-        rel_path: Optional[str] = None,
-        use_new_qe_serializer: Optional[str] = None,
+        rel_path: str | None = None,
+        use_new_qe_serializer: str | None = None,
     ) -> aiohttp.ClientResponse:
         if rel_path is None:
             rel_path = self.DEFAULT_REL_PATH
@@ -200,7 +200,7 @@ class RemoteAsyncAdapter(AsyncDBAdapter):
                 if isinstance(req_obj, dba_actions.ActionExecuteQuery)
                 else ("", "")
             )
-            raise common_exc.SourceTimeout(
+            raise common_exc.SourceTimeoutError(
                 db_message="Source timed out", query=query, inspector_query=inspector_query
             ) from err
         return resp
@@ -212,9 +212,9 @@ class RemoteAsyncAdapter(AsyncDBAdapter):
             try:
                 return json.loads(body)
             except Exception as json_parsing_exc:
-                raise QueryExecutorException("Response is not a valid JSON") from json_parsing_exc
+                raise QueryExecutorError("Response is not a valid JSON") from json_parsing_exc
         except Exception as unexpected_exc:
-            raise QueryExecutorException("Unexpected exception during QE response parsing") from unexpected_exc
+            raise QueryExecutorError("Unexpected exception during QE response parsing") from unexpected_exc
         finally:
             resp.release()
 
@@ -222,12 +222,12 @@ class RemoteAsyncAdapter(AsyncDBAdapter):
         try:
             return self._serializer.deserialize_exc(body_json)
         except Exception as exc_deserialization_exc:
-            raise QueryExecutorException("Unexpected error JSON schema") from exc_deserialization_exc
+            raise QueryExecutorError("Unexpected error JSON schema") from exc_deserialization_exc
 
     async def _make_request_parse_response(
         self,
         req_obj: dba_actions.NonStreamAction[_RESP_TV],
-        rel_path: Optional[str] = None,
+        rel_path: str | None = None,
     ) -> _RESP_TV:
         resp = await self._make_request(
             rel_path=rel_path,
@@ -244,21 +244,21 @@ class RemoteAsyncAdapter(AsyncDBAdapter):
         try:
             return req_obj.deserialize_response(body_json)
         except Exception as resp_deserialization_exc:
-            raise QueryExecutorException("Unexpected response JSON schema") from resp_deserialization_exc
+            raise QueryExecutorError("Unexpected response JSON schema") from resp_deserialization_exc
 
     @staticmethod
     def _parse_event(event: Any) -> tuple[RQEEventType, Any]:
         if not isinstance(event, (list, tuple)):
-            raise QueryExecutorException(f"QE parse: unexpected event type: {type(event)}")
+            raise QueryExecutorError(f"QE parse: unexpected event type: {type(event)}")
         if len(event) != 2:
-            raise QueryExecutorException(f"QE parse: event is not a pair: length={len(event)}")
+            raise QueryExecutorError(f"QE parse: event is not a pair: length={len(event)}")
         event_type_name, event_data = event
         if not isinstance(event_type_name, str):
-            raise QueryExecutorException(f"QE parse: event_type is not a str: {type(event_type_name)}")
+            raise QueryExecutorError(f"QE parse: event_type is not a str: {type(event_type_name)}")
         try:
             event_type = RQEEventType[event_type_name]
         except KeyError:
-            raise QueryExecutorException(f"QE parse: unknown event_type: {event_type_name!r}") from None
+            raise QueryExecutorError(f"QE parse: unknown event_type: {event_type_name!r}") from None
 
         return event_type, event_data
 
@@ -270,7 +270,7 @@ class RemoteAsyncAdapter(AsyncDBAdapter):
         if ev_type == RQEEventType.raw_cursor_info:
             raw_cursor_info = ev_data
         else:
-            raise QueryExecutorException(f"QE parse: first event type is not 'raw_cursor_info': {ev_type}")
+            raise QueryExecutorError(f"QE parse: first event type is not 'raw_cursor_info': {ev_type}")
 
         # 3-layer iterable: generator of chunks, chunks is a list of rows, row
         # is a list of column values.
@@ -281,18 +281,18 @@ class RemoteAsyncAdapter(AsyncDBAdapter):
                 if ev_type == RQEEventType.raw_chunk:
                     chunk = ev_data
                     if not isinstance(chunk, (list, tuple)):
-                        raise QueryExecutorException(f"QE parse: unexpected chunk type: {type(chunk)}")
+                        raise QueryExecutorError(f"QE parse: unexpected chunk type: {type(chunk)}")
                     yield chunk
                 elif ev_type == RQEEventType.error_dump:
                     try:
                         exc = self._parse_exception(ev_data)
                     except Exception as e:
-                        raise QueryExecutorException(f"QE parse: failed to parse an error event: {ev_data!r}") from e
+                        raise QueryExecutorError(f"QE parse: failed to parse an error event: {ev_data!r}") from e
                     raise exc
                 elif ev_type == RQEEventType.finished:
                     return
 
-            raise QueryExecutorException(f"QE parse: finish event was not received (last: {ev_type})")
+            raise QueryExecutorError(f"QE parse: finish event was not received (last: {ev_type})")
 
         return AsyncRawExecutionResult(
             raw_cursor_info=raw_cursor_info,
@@ -323,7 +323,7 @@ class RemoteAsyncAdapter(AsyncDBAdapter):
                 try:
                     raw_chunk, end_of_chunk = await resp.content.readchunk()
                 except asyncio.CancelledError as err:
-                    raise common_exc.SourceTimeout(
+                    raise common_exc.SourceTimeoutError(
                         db_message="Source timed out",
                         query=query.debug_compiled_query,
                         inspector_query=query.inspector_query,
@@ -333,9 +333,9 @@ class RemoteAsyncAdapter(AsyncDBAdapter):
                 # This isn't a very correct way, but it's hard to use pickle in async differently.
                 if end_of_chunk and buf:
                     try:
-                        event = pickle.loads(buf)
+                        event = pickle.loads(buf)  # noqa: S301  # trusted internal RQE payload
                     except Exception as err:
-                        raise QueryExecutorException("QE parse: failed to unpickle") from err
+                        raise QueryExecutorError("QE parse: failed to unpickle") from err
 
                     yield self._parse_event(event)
                     buf = b""
@@ -370,7 +370,7 @@ class RemoteAsyncAdapter(AsyncDBAdapter):
                 serializer = DLSafeMessagePackSerializer()
                 raw_events = serializer.loads(raw_data)
             else:
-                raw_events = pickle.loads(raw_data)
+                raw_events = pickle.loads(raw_data)  # noqa: S301  # trusted internal RQE payload
 
         async def event_gen() -> AsyncGenerator[tuple[RQEEventType, Any], None]:
             for raw_event in raw_events:
@@ -386,10 +386,10 @@ class RemoteAsyncAdapter(AsyncDBAdapter):
 
         return await self._execute_non_stream(query)
 
-    def get_target_host(self) -> Optional[str]:
+    def get_target_host(self) -> str | None:
         return self._target_dto.get_effective_host()
 
-    async def get_db_version(self, db_ident: DBIdent) -> Optional[str]:
+    async def get_db_version(self, db_ident: DBIdent) -> str | None:
         return await self._make_request_parse_response(
             dba_actions.ActionGetDBVersion(
                 target_conn_dto=self._target_dto,
@@ -463,8 +463,7 @@ class RemoteAsyncAdapter(AsyncDBAdapter):
             ),
         )
         tq_result_serializer = get_typed_query_result_serializer(query_type=typed_query.query_type)
-        tq_result = tq_result_serializer.deserialize(tq_result_str)
-        return tq_result
+        return tq_result_serializer.deserialize(tq_result_str)
 
     async def execute_typed_query_raw(self, typed_query_raw: TypedQueryRaw) -> TypedQueryRawResult:
         tq_serializer = get_typed_query_serializer(query_type=typed_query_raw.query_type)
@@ -479,8 +478,7 @@ class RemoteAsyncAdapter(AsyncDBAdapter):
             ),
         )
         tq_result_serializer = DefaultTypedQueryRawResultSerializer()
-        tq_result = tq_result_serializer.deserialize(tq_result_str)
-        return tq_result
+        return tq_result_serializer.deserialize(tq_result_str)
 
     async def close(self) -> None:
         await self._session.close()

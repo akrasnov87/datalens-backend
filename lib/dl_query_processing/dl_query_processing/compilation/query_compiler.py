@@ -2,14 +2,11 @@ from __future__ import annotations
 
 from itertools import chain
 from itertools import count as it_count
-from typing import (
-    Optional,
-    TypeVar,
-)
+from typing import TypeVar
 
 import attr
 
-from dl_constants.enums import OrderDirection
+from dl_constants import OrderDirection
 from dl_core.components.accessor import DatasetComponentAccessor
 from dl_core.components.ids import (
     FieldId,
@@ -43,7 +40,6 @@ from dl_query_processing.enums import (
     SelectValueType,
 )
 
-
 _COMPILED_FORMULA_INFO_TV = TypeVar("_COMPILED_FORMULA_INFO_TV", bound=CompiledFormulaInfo)
 
 
@@ -72,25 +68,24 @@ class QueryCompiler:
 
     def _update_alias(self, formula: _COMPILED_FORMULA_INFO_TV, force: bool = False) -> _COMPILED_FORMULA_INFO_TV:
         alias = self._get_expression_alias(expr=formula.formula_obj, force=force)
-        formula = formula.clone(alias=alias)
-        return formula
+        return formula.clone(alias=alias)
 
     def _replace_wrapped_formula(
         self,
         formula: CompiledFormulaInfo,
         expr: formula_nodes.FormulaItem,
-        override_alias: Optional[str] = None,
+        override_alias: str | None = None,
     ) -> CompiledFormulaInfo:
-        alias_kwarg = dict(alias=override_alias) if override_alias else {}
+        alias_kwarg = {"alias": override_alias} if override_alias else {}
         return formula.clone(
             formula_obj=formula_nodes.Formula.make(expr=expr),
             **alias_kwarg,
         )
 
-    def _get_override_alias(self, select_wrapper: SelectWrapperSpec) -> Optional[str]:
+    def _get_override_alias(self, select_wrapper: SelectWrapperSpec) -> str | None:
         if select_wrapper.type == SelectValueType.min:
             return "min_value"
-        elif select_wrapper.type == SelectValueType.max:
+        if select_wrapper.type == SelectValueType.max:
             return "max_value"
         return None
 
@@ -120,17 +115,15 @@ class QueryCompiler:
         select_wrapper: SelectWrapperSpec = SelectWrapperSpec(type=SelectValueType.plain),  # noqa: B008
     ) -> CompiledOrderByFormulaInfo:
         formula = self._make_compiled_formula(field_id=field_id, select_wrapper=select_wrapper)
-        formula = attrs_evolve_to_subclass(
+        return attrs_evolve_to_subclass(
             cls=CompiledOrderByFormulaInfo,
             inst=formula,
             direction=direction,
         )
-        return formula
 
     def _make_compiled_join_on_formula(self, relation_id: RelationId) -> CompiledJoinOnFormulaInfo:
         relation = self._ds_accessor.get_avatar_relation_strict(relation_id=relation_id)
-        formula = self._formula_compiler.compile_relation_formula(relation=relation)
-        return formula
+        return self._formula_compiler.compile_relation_formula(relation=relation)
 
     def _make_select(self, query_spec: QuerySpec) -> list[CompiledFormulaInfo]:
         result: list[CompiledFormulaInfo] = []
@@ -215,7 +208,7 @@ class QueryCompiler:
             chain.from_iterable(
                 formula.avatar_ids
                 for expr_list in (select, group_by, order_by, filters, join_on)
-                for formula in expr_list  # type: ignore  # TODO: fix
+                for formula in expr_list
             )
         )
 
@@ -226,7 +219,7 @@ class QueryCompiler:
             column_reg=self._column_reg,
         )
 
-        compiled_query = CompiledQuery(
+        return CompiledQuery(
             id=BASE_QUERY_ID,
             level_type=ExecutionLevel.source_db,
             select=select,
@@ -239,4 +232,3 @@ class QueryCompiler:
             offset=query_spec.offset,
             meta=query_spec.meta,
         )
-        return compiled_query

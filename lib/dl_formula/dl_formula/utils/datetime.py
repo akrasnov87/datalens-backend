@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import datetime
-from typing import Union
 
 import ciso8601
 import pytz
 import pytz.tzinfo
 
-
 # TODO: re-check and document the useful differences between
 # `datetime.timezone.utc` and `pytz.utc`.
-UTC = datetime.timezone.utc
+UTC = datetime.UTC
 
 
 SOME_DT = datetime.datetime(2020, 1, 1, 0, 0, 0)
@@ -46,14 +44,16 @@ def parse_dt_string(value: str) -> datetime.datetime:
     simple_format = DT_FORMATS_BY_LENGTH.get(len(value))
     if simple_format is not None:
         value = value.replace("T", " ").replace("t", " ")
-        result = datetime.datetime.strptime(value, simple_format)  # raises ValueError
+        result = datetime.datetime.strptime(  # noqa: DTZ007  # TODO: fix in BI-7500
+            value, simple_format
+        )  # raises ValueError
     else:
         result = ciso8601.parse_datetime(value)  # raises ValueError
 
     return result
 
 
-DTSourcesT = Union[None, str, int, float, datetime.date, datetime.datetime]
+DTSourcesT = None | str | int | float | datetime.date | datetime.datetime
 
 
 def make_datetime_value_base(value: DTSourcesT) -> datetime.datetime:
@@ -61,12 +61,12 @@ def make_datetime_value_base(value: DTSourcesT) -> datetime.datetime:
     if isinstance(value, str):
         return parse_dt_string(value)
     if isinstance(value, (int, float)):
-        return datetime.datetime.utcfromtimestamp(value)
+        return datetime.datetime.fromtimestamp(value, tz=datetime.UTC).replace(tzinfo=None)
     if isinstance(value, datetime.datetime):
         return value
     if isinstance(value, datetime.date):
         return datetime.datetime.combine(value, datetime.time())
-    raise Exception("Unexpected value type", dict(value_type=type(value)))
+    raise Exception("Unexpected value type", {"value_type": type(value)})
 
 
 def make_datetime_value(value: DTSourcesT) -> datetime.datetime:
@@ -87,5 +87,4 @@ def make_datetimetz_value(value: DTSourcesT, tzname: str = "UTC") -> datetime.da
     assert dt is not None
     if dt.tzinfo is None:
         dt = tzobj.localize(dt)
-    dt = dt.astimezone(UTC)
-    return dt
+    return dt.astimezone(UTC)

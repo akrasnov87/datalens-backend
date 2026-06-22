@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Optional
 
 import attr
 from frozendict import frozendict
@@ -44,7 +43,7 @@ class PackageIndex:
         assert self._is_built()
         return self._package_infos_by_test_name[test_dir_name]
 
-    def list_package_infos(self, package_type: Optional[str] = None) -> list[PackageInfo]:
+    def list_package_infos(self, package_type: str | None = None) -> list[PackageInfo]:
         return [
             package_info
             for package_info in self._package_infos_by_path.values()
@@ -64,7 +63,7 @@ class PackageIndexBuilder:
 
     def _load_package_info_from_package_dir(
         self, abs_package_dir_path: Path, default_package_type: str
-    ) -> Optional[PackageInfo]:
+    ) -> PackageInfo | None:
         # TODO: Move to a separate class
         toml_path = abs_package_dir_path / "pyproject.toml"
 
@@ -100,7 +99,7 @@ class PackageIndexBuilder:
                 continue  # it is not a test dir
             test_dirs.append(test_dir.name)
 
-        package_info = PackageInfo(
+        return PackageInfo(
             package_type=package_type,
             package_reg_name=package_reg_name,
             abs_path=abs_package_dir_path,
@@ -110,7 +109,6 @@ class PackageIndexBuilder:
             implicit_deps=implicit_reqs,
             i18n_domains=i18n_domains,
         )
-        return package_info
 
     def build_index(self) -> PackageIndex:
         package_infos_by_reg_name: dict[str, PackageInfo] = {}
@@ -138,11 +136,10 @@ class PackageIndexBuilder:
                 for test_dir in package_info.test_dirs:
                     package_infos_by_test_name[test_dir] = package_info
 
-        package_index = PackageIndex(
+        return PackageIndex(
             built=True,
             package_infos_by_reg_name=package_infos_by_reg_name,
             package_infos_by_path=package_infos_by_path,
             package_infos_by_module_name=package_infos_by_module_name,
             package_infos_by_test_name=package_infos_by_test_name,
         )
-        return package_index

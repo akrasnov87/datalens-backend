@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import abc
 import base64
+from collections.abc import Callable
 import datetime
 import decimal
 import ipaddress
@@ -15,15 +16,12 @@ import json
 import logging
 from typing import (
     Any,
-    Callable,
     ClassVar,
-    Generic,
-    Optional,
-    TypeVar,
-    Union,
     get_args,
 )
 import uuid
+
+from frozendict import frozendict
 
 from dl_constants.types import (
     TJSONExt,
@@ -32,30 +30,26 @@ from dl_constants.types import (
 from dl_type_transformer.native_type import GenericNativeType
 from dl_type_transformer.native_type_schema import OneOfNativeTypeSchema
 
-
 LOGGER = logging.getLogger(__name__)
 
 
-_TS_TV = TypeVar("_TS_TV")
-
-
-class TypeSerializer(Generic[_TS_TV]):
+class TypeSerializer[TS_TV]:
     typename: ClassVar[str]
 
     @classmethod
-    def typeobj(cls) -> type[_TS_TV]:
+    def typeobj(cls) -> type[TS_TV]:
         # https://github.com/python/typeshed/issues/7811#issuecomment-1120840824
         # TODO: replace with types.get_original_bases after switching to Python 3.12
         return get_args(cls.__orig_bases__[0])[0]  # type: ignore
 
     @staticmethod
     @abc.abstractmethod
-    def to_jsonable(value: _TS_TV) -> TJSONLike:
+    def to_jsonable(value: TS_TV) -> TJSONLike:
         raise NotImplementedError
 
     @staticmethod
     @abc.abstractmethod
-    def from_jsonable(value: TJSONLike) -> _TS_TV:
+    def from_jsonable(value: TJSONLike) -> TS_TV:
         raise NotImplementedError
 
 
@@ -277,7 +271,7 @@ class UnsupportedSerializer(TypeSerializer[object]):
 
     @staticmethod
     def to_jsonable(value: object) -> TJSONLike:
-        LOGGER.warning(f"Value of type {value.__class__.__name__} is not serializable, skipping serialization")
+        LOGGER.warning("Value of type %s is not serializable, skipping serialization", value.__class__.__name__)
         return None
 
     @staticmethod
@@ -303,13 +297,13 @@ COMMON_SERIALIZERS: list[type[TypeSerializer]] = [
     NativeTypeSerializer,
     UnsupportedSerializer,
 ]
-assert len(set(cls.typename for cls in COMMON_SERIALIZERS)) == len(COMMON_SERIALIZERS), "uniqueness check"
+assert len({cls.typename for cls in COMMON_SERIALIZERS}) == len(COMMON_SERIALIZERS), "uniqueness check"
 
 
 class DataLensJSONEncoder(json.JSONEncoder):
-    JSONABLERS_MAP = {cls.typeobj(): cls for cls in COMMON_SERIALIZERS}
+    JSONABLERS_MAP = frozendict({cls.typeobj(): cls for cls in COMMON_SERIALIZERS})
 
-    def _get_preprocessor(self, typeobj: type) -> Optional[type[TypeSerializer]]:
+    def _get_preprocessor(self, typeobj: type) -> type[TypeSerializer] | None:
         if issubclass(typeobj, GenericNativeType):
             return NativeTypeSerializer
         return self.JSONABLERS_MAP.get(typeobj)
@@ -318,30 +312,30 @@ class DataLensJSONEncoder(json.JSONEncoder):
         typeobj = type(obj)
         preprocessor = self._get_preprocessor(typeobj)
         if preprocessor is not None:
-            return dict(__dl_type__=preprocessor.typename, value=preprocessor.to_jsonable(obj))
+            return {"__dl_type__": preprocessor.typename, "value": preprocessor.to_jsonable(obj)}
 
         return super().default(obj)  # effectively, raises `TypeError`
 
 
 class SafeDataLensJSONEncoder(DataLensJSONEncoder):
-    def _get_preprocessor(self, typeobj: type) -> Optional[type[TypeSerializer]]:
+    def _get_preprocessor(self, typeobj: type) -> type[TypeSerializer] | None:
         if (preprocessor := super()._get_preprocessor(typeobj)) is not None:
             return preprocessor
         return UnsupportedSerializer  # don't raise a TypeError and log warning
 
 
 class DataLensJSONDecoder(json.JSONDecoder):
-    DEJSONABLERS_MAP = {cls.typename: cls for cls in COMMON_SERIALIZERS}
+    DEJSONABLERS_MAP = frozendict({cls.typename: cls for cls in COMMON_SERIALIZERS})
 
     def __init__(
         self,
         *,
-        object_hook: Optional[Callable[[dict[str, Any]], Any]] = None,
-        parse_float: Optional[Callable[[str], Any]] = None,
-        parse_int: Optional[Callable[[str], Any]] = None,
-        parse_constant: Optional[Callable[[str], Any]] = None,
+        object_hook: Callable[[dict[str, Any]], Any] | None = None,
+        parse_float: Callable[[str], Any] | None = None,
+        parse_int: Callable[[str], Any] | None = None,
+        parse_constant: Callable[[str], Any] | None = None,
         strict: bool = True,
-        object_pairs_hook: Optional[Callable[[list[tuple[str, Any]]], Any]] = None,
+        object_pairs_hook: Callable[[list[tuple[str, Any]]], Any] | None = None,
     ) -> None:
         assert object_hook is None
         super().__init__(
@@ -405,7 +399,7 @@ def safe_dumps(value: TJSONExt, **kwargs: Any) -> str:
     )
 
 
-def common_loads(value: Union[bytes, str], **kwargs: Any) -> TJSONExt:
+def common_loads(value: bytes | str, **kwargs: Any) -> TJSONExt:
     return json.loads(value, cls=DataLensJSONDecoder, **kwargs)
 
 
@@ -433,7 +427,7 @@ class CacheMetadataSerialization:
         assert cls._sep not in metadata_bytes
         return metadata_bytes + cls._sep + data_bytes
 
-    def __init__(self, full_data: bytes):
+    def __init__(self, full_data: bytes) -> None:
         self.full_data = full_data
         sep_pos = full_data.index(self._sep)
         self.sep_pos = sep_pos

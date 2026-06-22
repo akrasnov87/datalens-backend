@@ -1,18 +1,17 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Awaitable,
+    Callable,
+)
 import enum
 import functools
 import inspect
 import json
 from typing import (
     Any,
-    Awaitable,
-    Callable,
-    Generic,
     Literal,
-    Optional,
     TypeVar,
-    Union,
     overload,
 )
 
@@ -23,7 +22,7 @@ from aiohttp.typedefs import (
 )
 
 from dl_api_commons.base_models import RequestContextInfo
-from dl_api_commons.exc import InvalidHeaderException
+from dl_api_commons.exc import InvalidHeaderError
 from dl_api_commons.logging import RequestLoggingContextController
 from dl_api_commons.reporting.profiler import ReportingProfiler
 from dl_api_commons.reporting.registry import ReportingRegistry
@@ -42,7 +41,7 @@ class RequiredResourceCommon(RequiredResource):
     SKIP_CSRF = enum.auto()
 
 
-class RCINotSet(Exception):
+class RCINotSetError(Exception):
     pass
 
 
@@ -63,7 +62,7 @@ class DLRequestBase:
     # flag that forces `.url` to use `https` scheme
     enforce_https_on_self_url: bool = True
 
-    def __init__(self, request: web.Request):
+    def __init__(self, request: web.Request) -> None:
         self.request = request
 
     @classmethod
@@ -73,7 +72,7 @@ class DLRequestBase:
         return dl_request
 
     @classmethod
-    def get_for_request(cls, request: web.Request) -> Optional[DLRequestBase]:
+    def get_for_request(cls, request: web.Request) -> DLRequestBase | None:
         if cls.KEY_DL_REQUEST in request:
             return request[cls.KEY_DL_REQUEST]
         return None
@@ -95,7 +94,7 @@ class DLRequestBase:
 
     # TODO FIX: Check that is not used and remove
     @property
-    def request_id(self) -> Optional[str]:
+    def request_id(self) -> str | None:
         return self.rci.request_id
 
     # TODO FIX: Check that is not used and remove
@@ -114,7 +113,7 @@ class DLRequestBase:
         Returns not-committed RCI. Should be used only during RCI building.
         """
         if self.KEY_RCI_TEMP not in self.request:
-            raise RCINotSet("Temp RCI was not initiated")
+            raise RCINotSetError("Temp RCI was not initiated")
         return self.request[self.KEY_RCI_TEMP]
 
     def init_temp_rci(self, rci: RequestContextInfo):  # type: ignore  # TODO: fix
@@ -149,23 +148,23 @@ class DLRequestBase:
         """
         if self.is_rci_committed():
             return self.request[self.KEY_RCI]
-        raise RCINotSet("RequestContextInfo is not committed for this request")
+        raise RCINotSetError("RequestContextInfo is not committed for this request")
 
     @property
-    def last_resort_rci(self) -> Optional[RequestContextInfo]:
+    def last_resort_rci(self) -> RequestContextInfo | None:
         """
         :return: Returns committed RCI if exists
         """
         try:
             return self.rci
-        except RCINotSet:
+        except RCINotSetError:
             try:
                 return self.temp_rci
-            except RCINotSet:
+            except RCINotSetError:
                 return None
 
     @property
-    def log_ctx_controller(self) -> Optional[RequestLoggingContextController]:
+    def log_ctx_controller(self) -> RequestLoggingContextController | None:
         return self.request.get(self.KEY_LOG_CTX_CONTROLLER)
 
     @property
@@ -186,38 +185,38 @@ class DLRequestBase:
         self._set_attr_once(self.KEY_REPORTING_PROFILER, value)
 
     @overload
-    def get_single_header(self, header: Union[DLHeaders, str]) -> Optional[str]:
+    def get_single_header(self, header: DLHeaders | str) -> str | None:
         pass
 
-    @overload  # noqa
-    def get_single_header(self, header: Union[DLHeaders, str], required: Literal[False]) -> Optional[str]:
+    @overload
+    def get_single_header(self, header: DLHeaders | str, required: Literal[False]) -> str | None:
         pass
 
-    @overload  # noqa
-    def get_single_header(self, header: Union[DLHeaders, str], required: Literal[True]) -> str:
+    @overload
+    def get_single_header(self, header: DLHeaders | str, required: Literal[True]) -> str:
         pass
 
-    def get_single_header(self, header, required=False):  # type: ignore  # TODO: fix  # noqa
+    def get_single_header(self, header, required=False):  # type: ignore  # TODO: fix
         header_name = header.value if isinstance(header, DLHeaders) else header
         header_value_list = self.request.headers.getall(header_name, ())
 
         if len(header_value_list) == 0:
             if required:
-                raise InvalidHeaderException("Header required, but missing", header_name=header_name)
+                raise InvalidHeaderError("Header required, but missing", header_name=header_name)
             return None
-        elif len(header_value_list) > 1:
-            raise InvalidHeaderException("Expecting single header but multiple received", header_name=header_name)
+        if len(header_value_list) > 1:
+            raise InvalidHeaderError("Expecting single header but multiple received", header_name=header_name)
 
         return header_value_list[0]
 
-    def get_single_json_header(self, header: DLHeaders) -> Union[bool, int, float, list, dict, None]:
+    def get_single_json_header(self, header: DLHeaders) -> bool | int | float | list | dict | None:
         raw_header = self.request.headers.get(header.value)
         if raw_header is None:
             return None
         try:
             return json.loads(raw_header)
         except json.JSONDecodeError as e:
-            raise InvalidHeaderException(
+            raise InvalidHeaderError(
                 "Invalid JSON in header content",
                 header_name=header.value,
             ) from e
@@ -268,14 +267,11 @@ class DLRequestBase:
         return wrapper  # type: ignore[return-value]  # TODO FIX: method-based middlewares are not covered by aiohttp typing
 
 
-_DL_REQUEST_TV = TypeVar("_DL_REQUEST_TV", bound=DLRequestBase)
-
-
-class DLRequestView(web.View, Generic[_DL_REQUEST_TV]):
-    dl_request_cls: type[_DL_REQUEST_TV] = DLRequestBase  # type: ignore  # 2024-01-30 # TODO: Incompatible types in assignment (expression has type "type[DLRequestBase]", variable has type "type[_DL_REQUEST_TV]")  [assignment]
+class DLRequestView[DL_REQUEST_TV: DLRequestBase](web.View):
+    dl_request_cls: type[DL_REQUEST_TV] = DLRequestBase  # type: ignore  # 2024-01-30 # TODO: Incompatible types in assignment (expression has type "type[DLRequestBase]", variable has type "type[DL_REQUEST_TV]")  [assignment]
 
     @property
-    def dl_request(self) -> _DL_REQUEST_TV:
+    def dl_request(self) -> DL_REQUEST_TV:
         dl_request = self.request[DLRequestBase.KEY_DL_REQUEST]
         if not isinstance(dl_request, self.dl_request_cls):
             raise TypeError(

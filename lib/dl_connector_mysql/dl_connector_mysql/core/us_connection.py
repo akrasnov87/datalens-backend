@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import (
-    ClassVar,
-    Optional,
-)
+from typing import ClassVar
 
 import attr
 
@@ -40,7 +37,7 @@ class ConnectionMySQL(
     class DataModel(ClassicConnectionSQL.DataModel):
         enforce_collate: MySQLEnforceCollateMode = attr.ib(default=MySQLEnforceCollateMode.off)
         ssl_enable: bool = attr.ib(kw_only=True, default=False)
-        ssl_ca: Optional[str] = attr.ib(kw_only=True, default=None)
+        ssl_ca: str | None = attr.ib(kw_only=True, default=None)
 
     def get_conn_dto(self) -> MySQLConnDTO:
         return MySQLConnDTO(
@@ -66,6 +63,7 @@ class ConnectionMySQL(
                     source_type=SOURCE_TYPE_MYSQL_TABLE,
                     localizer=localizer,
                     disabled=not self.is_subselect_allowed,
+                    disabled_text=self.subselect_disabled_text,
                     template_enabled=self.is_datasource_template_allowed,
                 )
             )
@@ -76,6 +74,7 @@ class ConnectionMySQL(
                 source_type=SOURCE_TYPE_MYSQL_SUBSELECT,
                 localizer=localizer,
                 disabled=not self.is_subselect_allowed,
+                disabled_text=self.subselect_disabled_text,
                 template_enabled=self.is_datasource_template_allowed,
             )
         )

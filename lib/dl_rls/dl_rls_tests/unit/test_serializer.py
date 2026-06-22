@@ -2,7 +2,7 @@ import typing
 
 import pytest
 
-from dl_constants.enums import RLSSubjectType
+from dl_constants import RLSSubjectType
 from dl_rls.models import RLSSubject
 from dl_rls.serializer import FieldRLSSerializer
 from dl_rls.subject_resolver import NotFoundSubjectResolver
@@ -10,7 +10,6 @@ from dl_rls.testing.testing_data import (
     RLS_CONFIG_CASES,
     config_to_comparable,
 )
-
 
 SUBJECTS = ["@sa:123", "@group:gg", "user1", "user2", "@sa:456"]
 

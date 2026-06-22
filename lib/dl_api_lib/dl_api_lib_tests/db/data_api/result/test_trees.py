@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from collections import OrderedDict as OrderedDictTyping
+from collections.abc import (
+    Callable,
+    Sequence,
+)
 from http import HTTPStatus
 import json
-from typing import (
-    Any,
-    Callable,
-)
-from typing import OrderedDict as OrderedDictTyping
-from typing import Sequence
+from typing import Any
 
 from dl_api_client.dsmaker.api.data_api import SyncHttpDataApiV2
 from dl_api_client.dsmaker.api.dataset_api import SyncHttpDatasetApiV1
@@ -21,7 +21,7 @@ from dl_api_client.dsmaker.shortcuts.result_data import get_data_rows
 from dl_api_client.dsmaker.shortcuts.tree import make_request_legend_items_for_tree_branches
 from dl_api_lib_testing.helpers.data_source import data_source_settings_from_table
 from dl_api_lib_tests.db.base import DefaultApiTestBase
-from dl_constants.enums import (
+from dl_constants import (
     FieldRole,
     UserDataType,
 )
@@ -30,7 +30,6 @@ from dl_core_testing.database import (
     Db,
     make_table,
 )
-
 
 TREE_DATA = [
     # / Company
@@ -82,8 +81,7 @@ def make_tree_dataset(db: Db, connection_id: str, control_api: SyncHttpDatasetAp
     ds.result_schema["dept_tree"] = ds.field(formula="TREE([dept])")
     ds.result_schema["person_count"] = ds.field(formula="COUNT_IF(BOOL([is_person]))")
     ds = control_api.apply_updates(dataset=ds).dataset
-    ds = control_api.save_dataset(ds).dataset
-    return ds
+    return control_api.save_dataset(ds).dataset
 
 
 def get_tree(
@@ -114,7 +112,7 @@ def get_tree(
         for row in data_rows
     )
 
-    block_metas = [block_meta for block_meta in result_resp.json["blocks"]]
+    block_metas = list(result_resp.json["blocks"])
     assert len(block_metas) == len(branch_items)
     for block_meta in block_metas:
         assert block_meta["query"] is not None

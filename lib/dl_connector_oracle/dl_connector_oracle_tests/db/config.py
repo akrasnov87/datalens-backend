@@ -11,7 +11,6 @@ from dl_testing.containers import get_test_container_hostport
 
 from dl_connector_oracle.formula.constants import OracleDialect as D
 
-
 # Infra settings
 CORE_TEST_CONFIG = CoreTestEnvironmentConfiguration(
     host_us_http=get_test_container_hostport("us", fallback_port=51811).host,
@@ -44,9 +43,9 @@ class CoreSSLConnectionSettings:
     USERNAME: ClassVar[str] = "datalens"
     PASSWORD: ClassVar[str] = "qwerty"
     SSL_ENABLE: ClassVar[bool] = True
-    CERT_PROVIDER_URL: ClassVar[
-        str
-    ] = f"http://{get_test_container_hostport('ssl-provider', fallback_port=8080).as_pair()}"
+    CERT_PROVIDER_URL: ClassVar[str] = (
+        f"http://{get_test_container_hostport('ssl-provider', fallback_port=8080).as_pair()}"
+    )
 
 
 DEFAULT_ORACLE_SCHEMA_NAME = "DATALENS"
@@ -136,18 +135,17 @@ API_TEST_CONFIG = ApiTestEnvironmentConfiguration(
 
 def fetch_ca_certificate() -> str:
     uri = f"{CoreSSLConnectionSettings.CERT_PROVIDER_URL}/ca.pem"
-    response = requests.get(uri)
+    response = requests.get(uri, timeout=30)
     assert response.status_code == 200, response.text
 
     return response.text
 
 
 def make_ssl_engine_params(ssl_ca: str) -> dict:
-    engine_params = {
+    return {
         "connect_args": frozendict(
             {
                 "ssl_context": ssl.create_default_context(cadata=fetch_ca_certificate()),
             }
         ),
     }
-    return engine_params

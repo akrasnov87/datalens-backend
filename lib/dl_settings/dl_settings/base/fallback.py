@@ -1,12 +1,13 @@
+from collections.abc import Mapping
 import logging
 import typing
 import warnings
 
+from frozendict import frozendict
 import pydantic
 import pydantic_settings
 
 import dl_settings.base.settings as base_settings
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -29,24 +30,24 @@ class WithFallbackGetAttr(base_settings.BaseRootSettings):
             LOGGER.warning(message)
             raise AttributeError(message)
 
-        LOGGER.warning(f"Setting '{item}' is not found in the settings, trying to fallback")
+        LOGGER.warning("Setting '%s' is not found in the settings, trying to fallback", item)
 
         try:
             return getattr(self.fallback, item)
         except AttributeError:
-            LOGGER.warning(f"Setting '{item}' is not found in the fallback using getattr")
+            LOGGER.warning("Setting '%s' is not found in the fallback using getattr", item)
 
         if item != item.upper():
             try:
                 return getattr(self.fallback, item.upper())
             except AttributeError:
-                LOGGER.exception(f"Setting '{item.upper()}' is not found in the fallback using getattr")
+                LOGGER.exception("Setting '%s' is not found in the fallback using getattr", item.upper())
 
         if item != item.lower():
             try:
                 return getattr(self.fallback, item.lower())
             except AttributeError:
-                LOGGER.exception(f"Setting '{item.lower()}' is not found in the fallback using getattr")
+                LOGGER.exception("Setting '%s' is not found in the fallback using getattr", item.lower())
 
         raise AttributeError(f"Setting '{item}' is not found in the settings and fallback")
 
@@ -103,7 +104,7 @@ class WithFallbackEnvSource(base_settings.BaseRootSettings):
     """
 
     extra_fallback_env_keys: dict[str, str] = pydantic.Field(default_factory=dict)
-    fallback_env_keys: typing.ClassVar[dict[str, str]] = {}
+    fallback_env_keys: typing.ClassVar[Mapping[str, str]] = frozendict()
 
     @classmethod
     def settings_customise_sources(

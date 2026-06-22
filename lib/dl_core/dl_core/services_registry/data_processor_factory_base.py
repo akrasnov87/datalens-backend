@@ -10,15 +10,14 @@ from typing import (
 
 import attr
 
-from dl_constants.enums import ProcessorType
+from dl_constants import ProcessorType
 from dl_core.data_processing.processing.db_base.processor_base import ExecutorBasedOperationProcessor
 from dl_core.us_dataset import Dataset
 from dl_core.us_manager.local_cache import USEntryBuffer
 from dl_core.utils import FutureRef
 
-
 if TYPE_CHECKING:
-    from dl_core.services_registry.top_level import ServicesRegistry  # noqa
+    from dl_core.services_registry.top_level import ServicesRegistry
 
 
 LOGGER = logging.getLogger(__name__)
@@ -26,10 +25,10 @@ LOGGER = logging.getLogger(__name__)
 
 @attr.s(frozen=True)
 class DataProcessorFactory(metaclass=abc.ABCMeta):
-    _services_registry_ref: FutureRef["ServicesRegistry"] = attr.ib(kw_only=True)
+    _services_registry_ref: FutureRef[ServicesRegistry] = attr.ib(kw_only=True)
 
     @property
-    def services_registry(self) -> "ServicesRegistry":
+    def services_registry(self) -> ServicesRegistry:
         return self._services_registry_ref.ref
 
     @abc.abstractmethod
@@ -77,7 +76,7 @@ class BaseClosableDataProcessorFactory(DataProcessorFactory):
         await processor.start()
         return processor
 
-    def _create_data_processor(  # type: ignore  # TODO: fix
+    def _create_data_processor(
         self,
         dataset: Dataset,
         processor_type: ProcessorType,
@@ -85,7 +84,7 @@ class BaseClosableDataProcessorFactory(DataProcessorFactory):
         us_entry_buffer: USEntryBuffer,
         allow_cache_usage: bool = True,
         reporting_enabled: bool = True,
-        **kwargs,
+        **kwargs: Any,
     ) -> ExecutorBasedOperationProcessor:
         raise NotImplementedError
 

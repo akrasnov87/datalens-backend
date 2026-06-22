@@ -1,11 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from enum import Enum
-from typing import (
-    Any,
-    Callable,
-    Optional,
-)
+from typing import Any
 
 import attr
 
@@ -51,9 +48,9 @@ class ConnectionClickhouseBase(ClassicConnectionSQL):
     class DataModel(ClassicConnectionSQL.DataModel):
         secure: bool = attr.ib(default=False)
         endpoint: str = attr.ib(default="")
-        cluster_name: Optional[str] = attr.ib(default=None)
-        max_execution_time: Optional[int] = attr.ib(default=None)
-        ssl_ca: Optional[str] = attr.ib(kw_only=True, default=None)
+        cluster_name: str | None = attr.ib(default=None)
+        max_execution_time: int | None = attr.ib(default=None)
+        ssl_ca: str | None = attr.ib(kw_only=True, default=None)
         ssl_ca_verify: bool = attr.ib(kw_only=True, default=True)
         readonly: int = attr.ib(kw_only=True, default=2)
         experimental_features: bool = attr.ib(kw_only=True, default=False)
@@ -78,7 +75,7 @@ class ConnectionClickhouseBase(ClassicConnectionSQL):
     @staticmethod
     def get_effective_conn_options(
         base_conn_opts: ConnectOptions,
-        user_max_execution_time: Optional[int],
+        user_max_execution_time: int | None,
         max_allowed_max_execution_time: int,
     ) -> CHConnectOptions:
         if user_max_execution_time is None:
@@ -124,7 +121,7 @@ class ConnectionClickhouseBase(ClassicConnectionSQL):
         conn_executor = conn_executor_factory(self)
         query = ConnExecutorQuery(query="SELECT `database`, `name` from `system`.`tables`", db_name="system")
         return [
-            dict(db_name=db_name, table_name=table_name)
+            {"db_name": db_name, "table_name": table_name}
             for db_name, table_name in conn_executor.execute(query=query).get_all()
             if db_name.lower() not in ch_system_dbs
         ]

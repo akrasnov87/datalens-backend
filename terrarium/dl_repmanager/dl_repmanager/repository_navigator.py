@@ -1,14 +1,13 @@
 import ast
+from collections.abc import (
+    Collection,
+    Generator,
+)
 import os
 from pathlib import Path
 import re
 import sys
-from typing import (
-    ClassVar,
-    Collection,
-    Generator,
-    Optional,
-)
+from typing import ClassVar
 
 import attr
 
@@ -36,8 +35,7 @@ class RepositoryNavigator:
         if dir_path.is_file() and str(dir_path).rsplit(".", 1)[1] == "py":
             yield dir_path
 
-        for full_fn in dir_path.rglob("*.py"):
-            yield full_fn
+        yield from dir_path.rglob("*.py")
 
     def _file_contains_imports(self, file_path: Path, import_name: str) -> bool:
         import_specs = self._collect_imports_from_file(file_path)
@@ -71,21 +69,21 @@ class RepositoryNavigator:
                 else:
                     continue
 
-                for found_module in found_modules:
-                    result.append(
-                        ImportSpec(
-                            import_ast=node,
-                            import_module_name=found_module,
-                            source_path=file_path,
-                        )
+                result.extend(
+                    ImportSpec(
+                        import_ast=node,
+                        import_module_name=found_module,
+                        source_path=file_path,
                     )
+                    for found_module in found_modules
+                )
 
         return result
 
     def _filter_imports(
         self,
         import_specs: list[ImportSpec],
-        mask: Optional[re.Pattern] = None,
+        mask: re.Pattern | None = None,
         exclude_standard: bool = True,
     ) -> list[ImportSpec]:
         std_modules = set(sys.stdlib_module_names)
@@ -111,14 +109,13 @@ class RepositoryNavigator:
         if self.module_is_dir(module_name):
             module_path = self.make_dir_module_path(module_name)
             return self._collect_imports_from_dir(module_path)
-        else:
-            module_path = self.make_file_module_path(module_name)
-            return self._collect_imports_from_file(module_path)
+        module_path = self.make_file_module_path(module_name)
+        return self._collect_imports_from_file(module_path)
 
     def collect_import_bases_from_module(
         self,
         module_name: str,
-        mask: Optional[re.Pattern] = None,
+        mask: re.Pattern | None = None,
         exclude_standard: bool = True,
     ) -> set[str]:
         def get_base_package_name(imported_name: str) -> str:
@@ -157,12 +154,12 @@ class RepositoryNavigator:
     def _make_module_path(self, module_name: str) -> Path:
         if self.module_is_dir(module_name):
             return self.make_dir_module_path(module_name)
-        else:
-            return self.make_file_module_path(module_name)
+        return self.make_file_module_path(module_name)
 
     def _naive_path_to_module(self, path: Path) -> str:
         path_str = str(path)
-        assert not path_str.startswith("/") and path_str.endswith(".py")
+        assert not path_str.startswith("/")
+        assert path_str.endswith(".py")
         return path_str[:-3].replace("/", ".")
 
     def resolve_entity_to_type(
@@ -180,16 +177,15 @@ class RepositoryNavigator:
                 package_entity_refs = {package_info.reg_entity_ref for package_info in package_info_list}
                 if to_ref_type == EntityReferenceType.package_type:
                     return package_entity_refs
-                else:
-                    result = set()
-                    for package_entity_ref in package_entity_refs:
-                        result.update(
-                            self.resolve_entity_to_type(
-                                entity_ref=package_entity_ref,
-                                to_ref_type=to_ref_type,
-                            )
+                result = set()
+                for package_entity_ref in package_entity_refs:
+                    result.update(
+                        self.resolve_entity_to_type(
+                            entity_ref=package_entity_ref,
+                            to_ref_type=to_ref_type,
                         )
-                    return result
+                    )
+                return result
 
             case EntityReferenceType.package_reg:
                 if to_ref_type == EntityReferenceType.package_reg:

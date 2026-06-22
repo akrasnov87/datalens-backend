@@ -9,7 +9,7 @@ from marshmallow import Schema
 from marshmallow import fields as ma_fields
 
 from dl_api_connector.api_schema.top_level import USEntryBaseSchema
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DashSQLQueryType,
     UserDataType,
@@ -27,6 +27,7 @@ class ConnectionSchema(USEntryBaseSchema):
     # TODO FIX: Change for datetime field after created/updated _at become datetime instead of string
     created_at = ma_fields.String(dump_only=True)
     updated_at = ma_fields.String(dump_only=True)
+    meta = ma_fields.Dict(dump_only=True)
 
     # Create only fields
     permissions_mode = ma_fields.Raw(load_default=None, load_only=True)
@@ -49,23 +50,12 @@ class ConnectionSchema(USEntryBaseSchema):
             ct = ConnectionType(self.context[self.CONN_TYPE_CTX_KEY])
         except ValueError:
             ct = ConnectionType.unknown
-        ret = dict(
+        return dict(
             super().default_create_from_dict_kwargs(data),
             type_=ct.name,
             permissions_mode=data["permissions_mode"],
             initial_permissions=data["initial_permissions"],
         )
-
-        return ret
-
-
-class ConnectionMetaMixin(ConnectionSchema):
-    """
-    This is a base class for Schematic-based connections
-    To be removed after migration to attrs
-    """
-
-    meta = ma_fields.Dict(dump_only=True)  # In ConnectionBase.as_dict() meta was included
 
 
 class RequiredParameterInfoSchema(Schema):
@@ -84,4 +74,5 @@ class ConnectionOptionsSchema(Schema):
     allow_dashsql_usage = ma_fields.Boolean(dump_only=True)
     allow_dataset_usage = ma_fields.Boolean(dump_only=True)
     allow_typed_query_usage = ma_fields.Boolean(dump_only=True)
+    allow_pagination_usage = ma_fields.Boolean(dump_only=True)
     query_types = ma_fields.List(ma_fields.Nested(QueryTypeInfoSchema()), dump_only=True)

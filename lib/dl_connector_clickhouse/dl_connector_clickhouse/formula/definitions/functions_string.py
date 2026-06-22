@@ -6,7 +6,6 @@ from dl_formula.shortcuts import n
 
 from dl_connector_clickhouse.formula.constants import ClickHouseDialect as D
 
-
 V = TranslationVariant.make
 
 
@@ -24,7 +23,7 @@ DEFINITIONS_STRING = [
         ]
     ),
     # concat
-    base.Concat1.for_dialect((D.CLICKHOUSE)),
+    base.Concat1.for_dialect(D.CLICKHOUSE),
     base.ConcatMultiStrConst.for_dialect(D.CLICKHOUSE),
     base.ConcatMultiStr(
         variants=[
@@ -38,7 +37,7 @@ DEFINITIONS_STRING = [
             V(
                 D.CLICKHOUSE,
                 lambda x, y: x.like(
-                    "%{}%".format(base.quote_like(y.value)),
+                    f"%{base.quote_like(y.value)}%",
                 ),
             ),
         ]

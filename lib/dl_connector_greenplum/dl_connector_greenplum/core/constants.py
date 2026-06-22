@@ -1,9 +1,8 @@
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DataSourceType,
     SourceBackendType,
 )
-
 
 BACKEND_TYPE_GREENPLUM = SourceBackendType.declare("GREENPLUM")
 CONNECTION_TYPE_GREENPLUM = ConnectionType.declare("greenplum")

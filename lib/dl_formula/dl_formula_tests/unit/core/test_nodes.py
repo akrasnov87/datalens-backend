@@ -100,7 +100,7 @@ def test_copy():
 def test_light_copy():
     def _check_node_copy(
         src: nodes.FormulaItem,
-        to_replace_map: dict[int, nodes.FormulaItem] = None,
+        to_replace_map: dict[int, nodes.FormulaItem] | None = None,
         expected: nodes.FormulaItem = None,
     ):
         assert src.light_copy(src.children) == src
@@ -108,7 +108,7 @@ def test_light_copy():
         if to_replace_map is None:
             return
 
-        children = [to_replace_map[idx] if idx in to_replace_map else child for idx, child in enumerate(src.children)]
+        children = [to_replace_map.get(idx, child) for idx, child in enumerate(src.children)]
         actual = src.light_copy(children)
         assert actual == expected
 

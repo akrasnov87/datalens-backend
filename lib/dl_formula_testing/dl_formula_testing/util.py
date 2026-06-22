@@ -1,21 +1,18 @@
 from __future__ import annotations
 
 import datetime
-from typing import (
-    Optional,
-    Union,
-)
+from typing import Any
 
 import dateutil.parser
 import dateutil.relativedelta
 
 
 def now() -> datetime.datetime:
-    return datetime.datetime.utcnow().replace(microsecond=0)
+    return datetime.datetime.now(datetime.UTC).replace(microsecond=0)
 
 
 def today() -> datetime.date:
-    return datetime.datetime.utcnow().date()
+    return datetime.datetime.now(datetime.UTC).date()
 
 
 hour = datetime.timedelta(hours=1)
@@ -24,27 +21,27 @@ month = dateutil.relativedelta.relativedelta(months=1)
 year = dateutil.relativedelta.relativedelta(years=1)
 
 
-class approximately:
-    def __init__(self, value, rel_tol=1e-09, abs_tol=1e-09):  # type: ignore  # 2024-01-29 # TODO: Function is missing a type annotation  [no-untyped-def]
+class Approximately:
+    def __init__(self, value: Any, rel_tol: float = 1e-09, abs_tol: float = 1e-09) -> None:
         self._value = value
         self._rel_tol = rel_tol
         self._abs_tol = abs_tol
 
-    def __eq__(self, other):  # type: ignore  # 2024-01-29 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def __eq__(self, other: Any) -> bool:
         other = float(other)
         return abs(self._value - other) <= max(self._rel_tol * max(abs(self._value), abs(other)), self._abs_tol)
 
 
-class approx_datetime:
-    def __init__(self, value):  # type: ignore  # 2024-01-29 # TODO: Function is missing a type annotation  [no-untyped-def]
+class ApproxDatetime:
+    def __init__(self, value: Any) -> None:
         self._value = value
 
-    def __eq__(self, other):  # type: ignore  # 2024-01-29 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def __eq__(self, other: Any) -> bool:
         return abs(self._value - other) <= datetime.timedelta(seconds=2)
 
 
-class approx_timestamp(approximately):
-    def __init__(self, value):  # type: ignore  # 2024-01-29 # TODO: Function is missing a type annotation  [no-untyped-def]
+class ApproxTimestamp(Approximately):
+    def __init__(self, value: Any) -> None:
         super().__init__(value, abs_tol=1)
 
 
@@ -64,7 +61,7 @@ def to_datetime(date: datetime.date) -> datetime.datetime:
     return datetime.datetime(date.year, date.month, date.day)
 
 
-def dt_strip(value: Union[datetime.datetime, str]) -> datetime.datetime:
+def dt_strip(value: datetime.datetime | str) -> datetime.datetime:
     if isinstance(value, str):
         value = dateutil.parser.parse(value)
     assert isinstance(value, datetime.datetime)
@@ -72,10 +69,10 @@ def dt_strip(value: Union[datetime.datetime, str]) -> datetime.datetime:
 
 
 def utcize(dt: datetime.datetime) -> datetime.datetime:
-    return dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.replace(tzinfo=datetime.UTC)
 
 
-def utc_ts(*args, tzinfo: Optional[datetime.tzinfo] = None) -> float:  # type: ignore  # 2024-01-29 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+def utc_ts(*args: Any, tzinfo: datetime.tzinfo | None = None) -> float:
     if len(args) == 1:
         dt = args[0]
         if not isinstance(dt, datetime.datetime):

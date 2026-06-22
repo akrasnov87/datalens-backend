@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-import logging
-from typing import (
+from collections.abc import (
     Collection,
     Generator,
 )
+from contextlib import contextmanager
+import logging
+from typing import Any
 
 from sqlalchemy.engine import Engine
 import sqlalchemy.exc
@@ -18,9 +19,8 @@ from sqlalchemy.orm import (
 )
 
 from dl_app_tools.profiling_base import GenericProfiler
-from dl_constants.enums import SourceBackendType
+from dl_constants import SourceBackendType
 from dl_core import exc
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class CustomSession(Session):
         super().close()
         self.__closed = True
 
-    def execute(self, *args, **kwargs):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def execute(self, *args: Any, **kwargs: Any) -> Any:
         if self.__closed:
             raise exc.DBSessionError("Cannot execute on closed session")
         return super().execute(*args, **kwargs)
@@ -55,8 +55,8 @@ class CustomSession(Session):
 def get_db_session(db_engine: Engine, backend_type: SourceBackendType) -> Session:
     session_kwargs = {}
     session_kwargs["query_cls"] = get_sa_query_cls(backend_type=backend_type)
-    SessionCls = sessionmaker(bind=db_engine, class_=CustomSession)
-    return SessionCls(**session_kwargs)
+    session_cls = sessionmaker(bind=db_engine, class_=CustomSession)
+    return session_cls(**session_kwargs)
 
 
 _QUERY_FAIL_EXCEPTIONS: set[type[Exception]] = {

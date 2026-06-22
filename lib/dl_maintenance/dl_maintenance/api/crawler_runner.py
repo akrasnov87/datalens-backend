@@ -6,7 +6,6 @@ from dl_maintenance.api.common import MaintenanceEnvironmentManager
 from dl_maintenance.core.logging_config import configure_logging_for_shell
 from dl_maintenance.core.us_crawler_base import USEntryCrawler
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -40,12 +39,8 @@ async def run_crawler(
     finally:
         if configure_logging:
             print(
-                "\n".join(
-                    (
-                        red,
-                        "!!! LOGGING WAS CONFIGURED TO SEND LOGS TO CENTRAL STORAGE !!!",
-                        "!!! NOTICE THAT ALL FURTHER LOGS WILL BE SENT TO CENTRAL STORAGE !!!",
-                        nc,
-                    )
-                )
+                f"{red}\n"
+                "!!! LOGGING WAS CONFIGURED TO SEND LOGS TO CENTRAL STORAGE !!!\n"
+                "!!! NOTICE THAT ALL FURTHER LOGS WILL BE SENT TO CENTRAL STORAGE !!!\n"
+                f"{nc}"
             )

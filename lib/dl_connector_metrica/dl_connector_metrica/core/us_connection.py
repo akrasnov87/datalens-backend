@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Callable,
+    Sequence,
+)
 from datetime import date
 import logging
+from types import ModuleType
 from typing import (
     TYPE_CHECKING,
-    Callable,
+    Any,
     ClassVar,
-    Optional,
-    Sequence,
 )
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     UserDataType,
 )
@@ -39,7 +42,6 @@ from dl_connector_metrica.core.dto import (
     MetricaAPIConnDTO,
 )
 
-
 if TYPE_CHECKING:
     from dl_core.connection_executors import SyncConnExecutorBase
     from dl_core.services_registry.top_level import ServicesRegistry
@@ -55,9 +57,9 @@ def parse_metrica_ids(ids_str: str) -> Sequence[str]:
 
 
 class MetrikaBaseMixin(ConnectionBase):
-    metrica_host: Optional[str] = None
+    metrica_host: str | None = None
 
-    def __init__(self, *args, **kwargs):  # type: ignore  # TODO: fix
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._initial_counter_id = self.data.counter_id if self._data is not None else None
 
@@ -79,8 +81,7 @@ class MetrikaBaseMixin(ConnectionBase):
     def get_counter_creation_date(self):  # type: ignore  # TODO: fix
         assert isinstance(self.counter_id, str)
         ids = list(filter(lambda t: t, parse_metrica_ids(self.counter_id)))
-        min_date = min([self.get_metrica_api_cli().get_counter_creation_date(cid) for cid in ids])
-        return min_date
+        return min([self.get_metrica_api_cli().get_counter_creation_date(cid) for cid in ids])
 
     @property
     def counter_creation_date(self):  # type: ignore  # TODO: fix
@@ -92,8 +93,8 @@ class MetrikaBaseMixin(ConnectionBase):
     async def validate_new_data(
         self,
         services_registry: ServicesRegistry,
-        changes: Optional[dict] = None,
-        original_version: Optional[ConnectionBase] = None,
+        changes: dict | None = None,
+        original_version: ConnectionBase | None = None,
     ) -> None:
         await super().validate_new_data(
             services_registry=services_registry,
@@ -123,8 +124,8 @@ class MetrikaApiConnection(MetrikaBaseMixin, ConnectionBase):
     class DataModel(ConnectionBase.DataModel):
         token: str = attr.ib(repr=secrepr)
         counter_id: str = attr.ib()  # single counter id or comma-separated counters list
-        counter_creation_date: Optional[date] = attr.ib(default=None)  # minimal date in case of multiple counters
-        accuracy: Optional[float] = attr.ib(default=None)  # sample share (0; 1]
+        counter_creation_date: date | None = attr.ib(default=None)  # minimal date in case of multiple counters
+        accuracy: float | None = attr.ib(default=None)  # sample share (0; 1]
 
         @classmethod
         def get_secret_keys(cls) -> set[DataKey]:
@@ -149,11 +150,11 @@ class MetrikaApiConnection(MetrikaBaseMixin, ConnectionBase):
         )
 
     @property
-    def cache_ttl_sec_override(self) -> Optional[int]:
+    def cache_ttl_sec_override(self) -> int | None:
         return None
 
     @classmethod
-    def get_api_fields_info(cls):  # type: ignore  # TODO: fix
+    def get_api_fields_info(cls) -> ModuleType:
         return dl_sqlalchemy_metrica_api.api_info.metrika
 
     @classmethod
@@ -165,7 +166,7 @@ class MetrikaApiConnection(MetrikaBaseMixin, ConnectionBase):
         def user_type_converter(type_name: str) -> UserDataType:
             return UserDataType[type_name] if type_name != "datetime" else UserDataType.genericdatetime
 
-        raw_schema = tuple(
+        return tuple(
             SchemaColumn(
                 name=field["name"],
                 title=field["title"],
@@ -181,8 +182,6 @@ class MetrikaApiConnection(MetrikaBaseMixin, ConnectionBase):
             for field in fields_info
         )
 
-        return raw_schema
-
     def get_parameter_combinations(
         self,
         conn_executor_factory: Callable[[ConnectionBase], SyncConnExecutorBase],
@@ -191,7 +190,7 @@ class MetrikaApiConnection(MetrikaBaseMixin, ConnectionBase):
         offset: int | None = None,
         db_name: str | None = None,
     ) -> list[dict]:
-        return [dict(db_name=item.name) for item in MetrikaApiCounterSource]
+        return [{"db_name": item.name} for item in MetrikaApiCounterSource]
 
     def get_data_source_templates(
         self,
@@ -231,7 +230,7 @@ class AppMetricaApiConnection(MetrikaApiConnection):
         )
 
     @classmethod
-    def get_api_fields_info(cls):  # type: ignore  # TODO: fix
+    def get_api_fields_info(cls) -> ModuleType:
         return dl_sqlalchemy_metrica_api.api_info.appmetrica
 
     def get_parameter_combinations(
@@ -242,7 +241,7 @@ class AppMetricaApiConnection(MetrikaApiConnection):
         offset: int | None = None,
         db_name: str | None = None,
     ) -> list[dict]:
-        return [dict(db_name=item.name) for item in AppMetricaFieldsNamespaces]
+        return [{"db_name": item.name} for item in AppMetricaFieldsNamespaces]
 
     @property
     def allow_public_usage(self) -> bool:

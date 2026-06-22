@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import abc
-from typing import (
-    Optional,
-    TypeVar,
-)
+from typing import TypeVar
 
 import attr
 
@@ -13,7 +10,6 @@ from dl_api_commons.reporting.records import (
     ReportingRecord,
     RequestResultReportingRecord,
 )
-
 
 _RECORD_TV = TypeVar("_RECORD_TV", bound=ReportingRecord)
 
@@ -35,7 +31,7 @@ class ReportingRegistry(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def save_reporting_record(self, report: Optional[ReportingRecord]) -> None:
+    def save_reporting_record(self, report: ReportingRecord | None) -> None:
         pass
 
     @abc.abstractmethod
@@ -58,7 +54,7 @@ class DefaultReportingRegistry(ReportingRegistry):
     def clear_records(self) -> None:
         self._reporting_records.clear()
 
-    def save_reporting_record(self, report: Optional[ReportingRecord]) -> None:
+    def save_reporting_record(self, report: ReportingRecord | None) -> None:
         if report is not None:
             self._reporting_records.append(report)
 

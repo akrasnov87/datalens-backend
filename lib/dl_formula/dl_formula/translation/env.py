@@ -14,7 +14,7 @@ from dl_formula.core.datatype import (
     DataTypeParams,
 )
 from dl_formula.core.dialect import DialectCombo
-import dl_formula.translation.context as ctx_mod  # noqa
+import dl_formula.translation.context as ctx_mod
 
 
 class FunctionStatsSignature(NamedTuple):
@@ -68,7 +68,7 @@ class TranslationEnvironment:
     field_types: dict[str, DataType] = attr.ib(factory=dict)
     field_type_params: dict[str, DataTypeParams] = attr.ib(factory=dict)
 
-    translation_cache: NodeValueMap["ctx_mod.TranslationCtx"] = attr.ib(factory=NodeValueMap)
-    replacements: NodeValueMap["ctx_mod.TranslationCtx"] = attr.ib(factory=NodeValueMap)
+    translation_cache: NodeValueMap[ctx_mod.TranslationCtx] = attr.ib(factory=NodeValueMap)
+    replacements: NodeValueMap[ctx_mod.TranslationCtx] = attr.ib(factory=NodeValueMap)
 
     translation_stats: TranslationStats = attr.ib(kw_only=True, factory=TranslationStats)

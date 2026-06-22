@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import attr
 
@@ -11,7 +10,6 @@ from dl_formula.parser.factory import (
     get_parser,
 )
 
-
 _DEFAULT_PARSER_TYPE = ParserType.antlr_py
 
 LOGGER = logging.getLogger(__name__)
@@ -19,10 +17,10 @@ LOGGER = logging.getLogger(__name__)
 
 @attr.s
 class FormulaParserFactory:
-    _default_formula_parser_type: Optional[ParserType] = attr.ib(kw_only=True, default=None)
+    _default_formula_parser_type: ParserType | None = attr.ib(kw_only=True, default=None)
     _saved_parsers: dict[ParserType, FormulaParser] = attr.ib(init=False, factory=dict)
 
-    def get_formula_parser(self, parser_type: Optional[ParserType] = None) -> FormulaParser:
+    def get_formula_parser(self, parser_type: ParserType | None = None) -> FormulaParser:
         if parser_type is None:
             parser_type = self._default_formula_parser_type or _DEFAULT_PARSER_TYPE
         assert parser_type is not None
@@ -48,7 +46,7 @@ class FormulaParserFactory:
             "parser_type": parser_type.name,
         }
         LOGGER.info(
-            f"Formula parser global statistics ({parser_type.name})", extra=dict(function_parser_statistics=data)
+            "Formula parser global statistics (%s)", parser_type.name, extra={"function_parser_statistics": data}
         )
 
     def log_parser_stats_for_all_used_parsers(self) -> None:

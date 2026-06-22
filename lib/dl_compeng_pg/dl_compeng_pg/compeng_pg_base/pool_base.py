@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import (
-    AsyncGenerator,
-    TypeVar,
-)
-
+from typing import TypeVar
 
 _POOL_WRAPPER_TV = TypeVar("_POOL_WRAPPER_TV", bound="BasePgPoolWrapper")
 

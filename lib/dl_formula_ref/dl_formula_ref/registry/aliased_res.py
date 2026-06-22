@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import abc
 from collections import ChainMap
-from typing import (
-    Any,
+from collections.abc import (
     ItemsView,
     Iterable,
     MutableMapping,
 )
+from typing import (
+    Any,
+    Self,
+)
 
 import attr
-from typing_extensions import Self
 
 from dl_i18n.localizer_base import Translatable
 

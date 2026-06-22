@@ -11,7 +11,6 @@ from dl_api_commons.aio.middlewares.error_handling_outer import (
 )
 from dl_core.connection_executors.qe_serializer import ActionSerializer
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -24,11 +23,10 @@ class RQEErrorHandler(AIOHTTPErrorHandler):
                 response_body=ActionSerializer().serialize_exc(err),
                 level=ErrorLevel.info,
             )
-        else:
-            LOGGER.exception("RQE-async handler error: %r", err)
-            return ErrorData(
-                500,
-                http_reason="Internal server error",
-                response_body=ActionSerializer().serialize_exc(err),
-                level=ErrorLevel.error,
-            )
+        LOGGER.exception("RQE-async handler error: %r", err)
+        return ErrorData(
+            500,
+            http_reason="Internal server error",
+            response_body=ActionSerializer().serialize_exc(err),
+            level=ErrorLevel.error,
+        )

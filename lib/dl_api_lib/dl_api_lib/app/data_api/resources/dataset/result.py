@@ -5,7 +5,6 @@ import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    Optional,
 )
 
 from aiohttp import web
@@ -19,12 +18,12 @@ from dl_api_lib.query.formalization.raw_specs import RawQuerySpecUnion
 import dl_api_lib.schemas.data
 import dl_api_lib.schemas.main
 from dl_app_tools.profiling_base import generic_profiler_async
-from dl_constants.api_constants import DLHeadersCommon
-from dl_constants.enums import (
+from dl_constants import (
     FieldRole,
     FieldType,
     UserDataType,
 )
+from dl_constants.api_constants import DLHeadersCommon
 from dl_query_processing.enums import (
     EmptyQueryMode,
     GroupByPolicy,
@@ -41,7 +40,6 @@ from dl_query_processing.legend.field_legend import (
 )
 from dl_query_processing.merging.primitives import MergedQueryDataStream
 from dl_query_processing.postprocessing.primitives import PostprocessedRow
-
 
 if TYPE_CHECKING:
     from aiohttp.web_response import Response
@@ -108,8 +106,8 @@ class DatasetResultView(DatasetDataBaseView, abc.ABC):
         self,
         req_model: DataRequestModel,
         merged_stream: MergedQueryDataStream,
-        totals_query: Optional[str],
-        totals: Optional[PostprocessedRow],
+        totals_query: str | None,
+        totals: PostprocessedRow | None,
     ) -> dict[str, Any]:
         raise NotImplementedError()
 
@@ -118,7 +116,7 @@ class DatasetResultView(DatasetDataBaseView, abc.ABC):
         *,
         raw_query_spec_union: RawQuerySpecUnion,
         legend: Legend,
-    ) -> tuple[Optional[str], Optional[PostprocessedRow]]:
+    ) -> tuple[str | None, PostprocessedRow | None]:
         block_id = 0
         assert all(item.block_id is None or item.block_id == block_id for item in legend.items)
         streamable_items = legend.list_streamable_items()
@@ -159,7 +157,7 @@ class DatasetResultView(DatasetDataBaseView, abc.ABC):
             possible_data_lengths=(0, 1),
         )
 
-        first_item: Optional[PostprocessedRow] = None
+        first_item: PostprocessedRow | None = None
         if postprocessed_query.postprocessed_data:
             first_item = postprocessed_query.postprocessed_data[0]
 
@@ -183,8 +181,8 @@ class DatasetResultViewV1(DatasetResultView):
         self,
         req_model: DataRequestModel,
         merged_stream: MergedQueryDataStream,
-        totals_query: Optional[str],
-        totals: Optional[PostprocessedRow],
+        totals_query: str | None,
+        totals: PostprocessedRow | None,
     ) -> dict[str, Any]:
         return self._make_response_v1(
             req_model=req_model,
@@ -194,14 +192,14 @@ class DatasetResultViewV1(DatasetResultView):
         )
 
 
-class DatasetResultViewV1_5(DatasetResultView):
+class DatasetResultViewV1p5(DatasetResultView):
     """
     Accepts requests in v2 format, but responds in old v1 format (with YQL schema).
     To make the transition smoother for the frontend.
     """
 
     def load_req_model(self) -> DataRequestModel:
-        schema = dl_api_lib.schemas.data.ResultDataRequestV1_5Schema()
+        schema = dl_api_lib.schemas.data.ResultDataRequestV1p5Schema()
         req_model: DataRequestModel = schema.load(self.dl_request.json)
         return req_model
 
@@ -209,8 +207,8 @@ class DatasetResultViewV1_5(DatasetResultView):
         self,
         req_model: DataRequestModel,
         merged_stream: MergedQueryDataStream,
-        totals_query: Optional[str],
-        totals: Optional[PostprocessedRow],
+        totals_query: str | None,
+        totals: PostprocessedRow | None,
     ) -> dict[str, Any]:
         return self._make_response_v1(
             req_model=req_model,
@@ -234,7 +232,7 @@ class DatasetResultViewV2(DatasetResultView):
         self,
         req_model: DataRequestModel,
         merged_stream: MergedQueryDataStream,
-        totals_query: Optional[str],
-        totals: Optional[PostprocessedRow],
+        totals_query: str | None,
+        totals: PostprocessedRow | None,
     ) -> dict[str, Any]:
         return self._make_response_v2(merged_stream=merged_stream)

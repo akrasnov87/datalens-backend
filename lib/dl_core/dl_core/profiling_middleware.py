@@ -4,6 +4,8 @@ Prepare profiling stack for flask application
 
 from __future__ import annotations
 
+from typing import Any
+
 from flask import (
     Flask,
     request,
@@ -14,11 +16,11 @@ from dl_app_tools.profiling_base import GenericProfiler
 import dl_logging
 
 
-def set_up(app: Flask, accept_outer_stages=False, **kwargs):  # type: ignore  # TODO: fix
+def set_up(app: Flask, accept_outer_stages: bool = False, **kwargs: Any) -> None:
     def pre_log_profiling_stack():  # type: ignore  # TODO: fix
         if accept_outer_stages:
             profiling_stack = request.headers.get(headers.INTERNAL_HEADER_PROFILING_STACK)
-            GenericProfiler.reset_all(profiling_stack if profiling_stack else None)
+            GenericProfiler.reset_all(profiling_stack or None)
         else:
             GenericProfiler.reset_all()
 

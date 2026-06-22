@@ -8,7 +8,6 @@ import attr
 import dl_app_api_base.headers as headers
 import dl_app_api_base.request_context as request_context
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -29,8 +28,7 @@ class LoggingMiddleware:
 
         if elapsed_seconds < 1:
             return f"{elapsed_seconds * 1000:.3f} ms"
-        else:
-            return f"{elapsed_seconds:.3f} s"
+        return f"{elapsed_seconds:.3f} s"
 
     @aiohttp.web.middleware
     async def process(

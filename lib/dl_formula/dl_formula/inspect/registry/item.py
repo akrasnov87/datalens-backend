@@ -1,12 +1,9 @@
-from typing import (
-    NamedTuple,
-    Optional,
-)
+from typing import NamedTuple
 
 
 class BasicOpItemKey(NamedTuple):
     name: str
-    arg_cnt: Optional[int]
+    arg_cnt: int | None
     is_function: bool
     is_aggregate: bool
     is_window: bool
@@ -19,7 +16,7 @@ class BasicOpItem(NamedTuple):
     """
 
     name: str
-    arg_cnt: Optional[int]
+    arg_cnt: int | None
     is_function: bool
     is_aggregate: bool
     is_window: bool

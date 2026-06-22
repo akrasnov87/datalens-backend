@@ -41,17 +41,17 @@ See tests for more specifics.
 
 from __future__ import annotations
 
+from collections.abc import (
+    Callable,
+    Generator,
+    Sequence,
+)
 from types import MappingProxyType
 from typing import (
     Any,
-    Callable,
     ClassVar,
-    Generator,
-    Optional,
-    Sequence,
     TypeVar,
 )
-
 
 _ANY_TV = TypeVar("_ANY_TV")
 _DYNAMIC_ENUM_TV = TypeVar("_DYNAMIC_ENUM_TV", bound="DynamicEnum")
@@ -65,7 +65,7 @@ class AutoEnumValue:
 
     __slots__ = ("__name",)
 
-    __name: Optional[str]
+    __name: str | None
 
     def __init__(self) -> None:
         self.__name = None
@@ -74,14 +74,14 @@ class AutoEnumValue:
         self.__name = name
         owner.declare(name)
 
-    def __get__(self, instance: Optional[DynamicEnum], owner: type[_DYNAMIC_ENUM_TV]) -> _DYNAMIC_ENUM_TV:
+    def __get__(self, instance: DynamicEnum | None, owner: type[_DYNAMIC_ENUM_TV]) -> _DYNAMIC_ENUM_TV:
         if self.__name is None:  # has not been set yet
             raise RuntimeError("Property is not bound to any class")
 
         assert self.__name is not None
         return owner(self.__name)
 
-    def __set__(self, instance: Optional[DynamicEnum], value: Any) -> None:
+    def __set__(self, instance: DynamicEnum | None, value: Any) -> None:
         raise AttributeError
 
 
@@ -194,7 +194,7 @@ class DynamicEnum(metaclass=DynamicEnumMetaclass):
 
         return super().__new__(cls)
 
-    def __init__(self, value: str):
+    def __init__(self, value: str) -> None:
         if type(value) is not str:
             raise TypeError(f"Invalid value type {type(value)}")
 

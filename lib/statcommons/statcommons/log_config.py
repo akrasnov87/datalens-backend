@@ -3,9 +3,9 @@ import logging.config
 import os
 import socket
 import sys
+from typing import Any
 
 from .logs import LOGMUTATORS
-
 
 # Warning: an on-import network request; if there's a danger of a broken DNS
 # setup, use `socket.gethostname()`.
@@ -21,7 +21,7 @@ ENV_CONTEXT = {
 }
 
 
-def make_file_logger_syslog(name, params=None, **kwargs):
+def make_file_logger_syslog(name, params=None, **kwargs: Any):
     addr = "/dev/log-ext"
     if not os.path.exists(addr):
         addr = "/dev/log"

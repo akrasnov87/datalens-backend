@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from typing import (
-    Optional,
-    Sequence,
-)
+from collections.abc import Sequence
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     ComponentErrorLevel,
     ComponentType,
 )
@@ -31,8 +28,8 @@ class ComponentErrorPack:
 
     def get_errors(
         self,
-        code: Optional[Sequence[str]] = None,
-        code_prefix: Optional[Sequence[str]] = None,
+        code: Sequence[str] | None = None,
+        code_prefix: Sequence[str] | None = None,
     ) -> list[ComponentError]:
         if code is not None and code_prefix is not None:
             raise ValueError("Cannot specify both code and code_prefix")
@@ -49,8 +46,8 @@ class ComponentErrorPack:
 
     def remove_errors(
         self,
-        code: Optional[Sequence[str]] = None,
-        code_prefix: Optional[Sequence[str]] = None,
+        code: Sequence[str] | None = None,
+        code_prefix: Sequence[str] | None = None,
     ) -> None:
         for err in self.get_errors(code=code, code_prefix=code_prefix):
             self.errors.remove(err)
@@ -64,6 +61,9 @@ ERROR_CLS_BY_COMP_TYPE: dict[ComponentType, type[ComponentError]] = {
     ComponentType.field: ComponentError,
     ComponentType.obligatory_filter: ComponentError,
     ComponentType.result_schema: ComponentError,
+    ComponentType.extract_filter: ComponentError,
+    ComponentType.extract_sorting: ComponentError,
+    ComponentType.extract_properties: ComponentError,
 }
 
 
@@ -71,7 +71,7 @@ ERROR_CLS_BY_COMP_TYPE: dict[ComponentType, type[ComponentError]] = {
 class ComponentErrorRegistry:
     items: list[ComponentErrorPack] = attr.ib(factory=list)
 
-    def get_pack(self, id: str) -> Optional[ComponentErrorPack]:
+    def get_pack(self, id: str) -> ComponentErrorPack | None:
         for item in self.items:
             if item.id == id:
                 return item
@@ -80,8 +80,8 @@ class ComponentErrorRegistry:
     def remove_errors(
         self,
         id: str,
-        code: Optional[Sequence[str]] = None,
-        code_prefix: Optional[Sequence[str]] = None,
+        code: Sequence[str] | None = None,
+        code_prefix: Sequence[str] | None = None,
     ) -> None:
         """
         Remove errors for object with given ID.
@@ -95,6 +95,15 @@ class ComponentErrorRegistry:
         if not item.errors:
             self.items.remove(item)
 
+    def remove_errors_by_component_type(self, component_type: ComponentType) -> None:
+        """
+        Clear all errors for components of the given type
+        """
+
+        items_to_remove = [item for item in self.items if item.type == component_type]
+        for item in items_to_remove:
+            self.items.remove(item)
+
     def add_error(  # type: ignore  # TODO: fix
         self,
         id: str,
@@ -102,7 +111,7 @@ class ComponentErrorRegistry:
         message: str,
         code: Sequence[str],
         level: ComponentErrorLevel = ComponentErrorLevel.error,
-        details: Optional[dict] = None,
+        details: dict | None = None,
     ):
         details = details or {}
         error_cls = ERROR_CLS_BY_COMP_TYPE.get(type)

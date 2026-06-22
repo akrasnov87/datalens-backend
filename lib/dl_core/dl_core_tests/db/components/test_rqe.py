@@ -1,7 +1,7 @@
 import attr
 import pytest
 
-from dl_core.connection_executors.models.exc import QueryExecutorException
+from dl_core.connection_executors.models.exc import QueryExecutorError
 from dl_core_testing.testcases.remote_query_executor import BaseRemoteQueryExecutorTestClass
 from dl_core_tests.db.base import DefaultCoreTestClass
 import dl_logging
@@ -33,11 +33,11 @@ class TestRQE(DefaultCoreTestClass, BaseRemoteQueryExecutorTestClass):
             rqe_data=attr.evolve(query_executor_options, hmac_key=b"not_so_secret_key"),
         )
         async with remote_adapter:
-            with pytest.raises(QueryExecutorException, match=r"Invalid signature"):
+            with pytest.raises(QueryExecutorError, match=r"Invalid signature"):
                 await self.execute_request(remote_adapter, query="select 1")
 
     @staticmethod
-    def _validate_logging_ctx(record, outer_logging_ctx):
+    def _validate_logging_ctx(record, outer_logging_ctx) -> None:
         filtered_inner_ctx = {k: v for k, v in record.log_context.items() if k in outer_logging_ctx}
         assert filtered_inner_ctx == outer_logging_ctx
 
@@ -47,7 +47,7 @@ class TestRQE(DefaultCoreTestClass, BaseRemoteQueryExecutorTestClass):
             pytest.skip("Find a way to check logs of subprocess")
 
         caplog.set_level("INFO")
-        outer_logging_ctx = dict(some_str_key="some_val", some_int_key=123)
+        outer_logging_ctx = {"some_str_key": "some_val", "some_int_key": 123}
 
         with dl_logging.LogContext(context=outer_logging_ctx):
             result = await self.execute_request(remote_adapter, query="select 1")

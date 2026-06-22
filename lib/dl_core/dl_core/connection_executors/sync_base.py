@@ -1,20 +1,18 @@
 from __future__ import annotations
 
 import abc
-import logging
-from typing import (
-    TYPE_CHECKING,
+from collections.abc import (
     Iterable,
-    Optional,
     Sequence,
 )
+import logging
+from typing import TYPE_CHECKING
 
 import attr
 
 from dl_api_commons.base_models import RequestContextInfo
 from dl_core.connection_executors import ConnExecutorQuery
 from dl_core.db import SchemaInfo
-
 
 if TYPE_CHECKING:
     from dl_core.connection_models.common_models import (
@@ -72,7 +70,7 @@ class SyncConnExecutorBase(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def get_db_version(self, db_ident: DBIdent) -> Optional[str]:
+    def get_db_version(self, db_ident: DBIdent) -> str | None:
         pass
 
     @abc.abstractmethod

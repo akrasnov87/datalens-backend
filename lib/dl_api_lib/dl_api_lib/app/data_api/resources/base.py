@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
+from collections.abc import (
+    Callable,
+    Coroutine,
+)
 import enum
 import functools
 import inspect
 import itertools
 import typing
-from typing import (
-    Any,
-    Callable,
-    Coroutine,
-)
+from typing import Any
 
 from dl_api_commons.aiohttp.aiohttp_wrappers import (
     DLRequestView,
     RequiredResource,
 )
 from dl_api_lib.aio import aiohttp_wrappers
-
+from dl_obfuscator import SecretKeeper
 
 _METHOD_REQ_RESOURCES_ATTR_NAME = "__dl_required_resources__"
 
@@ -41,18 +41,17 @@ class BaseView(DLRequestView[aiohttp_wrappers.DSAPIRequest]):
                 return frozenset(
                     itertools.chain(cls._COMMON_REQUIRED_RESOURCES, getattr(method, _METHOD_REQ_RESOURCES_ATTR_NAME))
                 )
-            else:
-                return cls._COMMON_REQUIRED_RESOURCES
+            return cls._COMMON_REQUIRED_RESOURCES
 
         # If method is not implemented - we will not use any resource
         return frozenset()
 
     @staticmethod
     def with_resolved_entities(
-        coro: Callable[..., Coroutine[Any, Any, Any]]
+        coro: Callable[..., Coroutine[Any, Any, Any]],
     ) -> Callable[..., Coroutine[Any, Any, Any]]:
         @functools.wraps(coro)
-        async def wrapper(self: "BaseView", *args: Any, **kwargs: Any) -> Any:
+        async def wrapper(self: BaseView, *args: Any, **kwargs: Any) -> Any:
             await self.resolve_entities()
             return await coro(self, *args, **kwargs)
 
@@ -60,6 +59,15 @@ class BaseView(DLRequestView[aiohttp_wrappers.DSAPIRequest]):
 
     async def resolve_entities(self) -> None:
         pass
+
+    @staticmethod
+    def register_param_values(keeper: SecretKeeper, name: str, value: object) -> None:
+        if isinstance(value, str):
+            keeper.add_param(value, name)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                if isinstance(item, str):
+                    keeper.add_param(item, name)
 
 
 # TODO FIX: add ability to exclude resources for particular handles

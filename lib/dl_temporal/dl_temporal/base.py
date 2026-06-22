@@ -1,15 +1,12 @@
 import abc
 import dataclasses
 import enum
-import functools
 import logging
 from typing import (
     Any,
-    Awaitable,
-    Callable,
     ClassVar,
-    Generic,
     Protocol,
+    Self,
     TypeVar,
 )
 
@@ -22,16 +19,14 @@ import temporalio.workflow
 
 import dl_json
 
-
 with temporalio.workflow.unsafe.imports_passed_through():
-    import dl_logging
     import dl_pydantic
 
 
 LOGGER = logging.getLogger(__name__)
 
 
-class SearchAttribute(str, enum.Enum):
+class SearchAttribute(enum.StrEnum):
     RESULT_TYPE = "ResultType"
     RESULT_CODE = "ResultCode"
 
@@ -40,7 +35,7 @@ class SearchAttribute(str, enum.Enum):
         return temporalio.common.SearchAttributeKey.for_keyword(self.value)
 
 
-class ResultType(str, enum.Enum):
+class ResultType(enum.StrEnum):
     SUCCESS = "Success"
     ERROR = "Error"
 
@@ -49,10 +44,17 @@ def _generate_workflow_id() -> str:
     return str(temporalio.workflow.uuid4())
 
 
+class LoggingExcluded:
+    """Marker for `Annotated[T, LoggingExcluded]` fields to omit from logging dumps."""
+
+
 class BaseModel(dl_pydantic.BaseModel):
     def model_dump_for_logging(self) -> str:
-        data = self.model_dump(mode="json")
-        return dl_json.dumps_str(data)
+        exclude: set[str] = set()
+        for name, field in type(self).model_fields.items():
+            if LoggingExcluded in field.metadata:
+                exclude.add(name)
+        return dl_json.dumps_str(self.model_dump(mode="json", exclude=exclude))
 
     @pydantic.model_validator(mode="before")
     @classmethod
@@ -71,8 +73,7 @@ class ParentContext(BaseModel):
     trace_id: str | None = pydantic.Field(default=None)
 
 
-class _UnsetStr(str):
-    ...
+class _UnsetStr(str): ...
 
 
 class BaseResultModel(BaseModel):
@@ -94,9 +95,9 @@ class BaseResultModel(BaseModel):
 
 @dataclasses.dataclass(frozen=True)
 class DataConverter(temporalio.converter.DataConverter):
-    payload_converter_class: type[
-        temporalio.converter.PayloadConverter
-    ] = temporalio.contrib.pydantic.PydanticPayloadConverter
+    payload_converter_class: type[temporalio.converter.PayloadConverter] = (
+        temporalio.contrib.pydantic.PydanticPayloadConverter
+    )
 
 
 class BaseActivityParams(BaseModel):
@@ -108,13 +109,24 @@ class BaseActivityParams(BaseModel):
     schedule_to_start_timeout: dl_pydantic.JsonableTimedelta = dl_pydantic.JsonableTimedelta(minutes=10)
     parent_context: ParentContext = pydantic.Field(default_factory=ParentContext)
 
+    @pydantic.model_validator(mode="after")
+    def _validate_retryable_timeouts(self) -> Self:
+        if self.schedule_to_close_timeout <= self.start_to_close_timeout:
+            raise ValueError(
+                "schedule_to_close_timeout must be greater than start_to_close_timeout "
+                f"(got schedule_to_close_timeout={self.schedule_to_close_timeout}, "
+                f"start_to_close_timeout={self.start_to_close_timeout}); "
+                "an equal or smaller overall deadline makes per-try timeouts non-retryable",
+            )
+        return self
+
 
 class BaseActivityResult(BaseResultModel):
-    ...
+    is_error: ClassVar[bool] = False
 
 
 class BaseActivityError(BaseActivityResult):
-    ...
+    is_error: ClassVar[bool] = True
 
 
 ActivityParamsT = TypeVar("ActivityParamsT", bound=BaseActivityParams)
@@ -127,109 +139,41 @@ class ActivityProtocol(Protocol[ActivityParamsT, ActivityResultT]):
 
     # After python 3.13 migrate to typing.ReadOnly[type[ActivityParamsT]]
     # and move declaration to the class body.
-    Params: ClassVar[type[ActivityParamsT]]  # type: ignore
-    Result: ClassVar[type[ActivityResultT]]  # type: ignore
+    Params: ClassVar[type[ActivityParamsT]]
+    Result: ClassVar[type[ActivityResultT]]
 
-    async def run(self, params: ActivityParamsT) -> ActivityResultT:
-        ...
-
-
-_ActivityType = ActivityProtocol[ActivityParamsT, ActivityResultT]
+    async def run(self, params: ActivityParamsT) -> ActivityResultT: ...
 
 
-def _activity_info_to_logging_context(
-    activity_info: temporalio.activity.Info,
-) -> dict[str, Any]:
-    return {
-        "temporal.activity_type": activity_info.activity_type,
-        "temporal.activity_id": activity_info.activity_id,
-        "temporal.activity_attempt": activity_info.attempt,
-        "temporal.activity_full_id": f"{activity_info.workflow_id}.{activity_info.workflow_run_id}.{activity_info.activity_id}.{activity_info.attempt}",
-        "temporal.workflow_type": activity_info.workflow_type,
-        "temporal.workflow_id": activity_info.workflow_id,
-        "temporal.workflow_run_id": activity_info.workflow_run_id,
-        "temporal.workflow_full_id": f"{activity_info.workflow_id}.{activity_info.workflow_run_id}",
-        "temporal.workflow_namespace": activity_info.workflow_namespace,
-        "temporal.workflow_task_queue": activity_info.task_queue,
-    }
-
-
-def _activity_logging_middleware(
-    func: Callable[[_ActivityType, ActivityParamsT], Awaitable[ActivityResultT]],
-) -> Callable[[_ActivityType, ActivityParamsT], Awaitable[ActivityResultT]]:
-    @functools.wraps(func)
-    async def inner(
-        self: _ActivityType,
-        params: ActivityParamsT,
-    ) -> ActivityResultT:
-        logging_context = _activity_info_to_logging_context(
-            activity_info=temporalio.activity.info(),
-        )
-        logging_context["parent_request_id"] = params.parent_context.request_id
-
-        with dl_logging.LogContext(context=logging_context):
-            self.logger.info(
-                "TemporalActivity(name=%s).run: starting with params: %s",
-                self.name,
-                params.model_dump_for_logging(),
-            )
-
-            try:
-                result = await func(self, params)
-            except Exception:
-                self.logger.exception("TemporalActivity(name=%s).run: failed", self.name)
-                raise
-
-            if isinstance(result, BaseActivityError):
-                self.logger.error(
-                    "TemporalActivity(name=%s).run: finished with error: %s",
-                    self.name,
-                    result.model_dump_for_logging(),
-                )
-            elif isinstance(result, BaseActivityResult):
-                self.logger.info(
-                    "TemporalActivity(name=%s).run: completed with result: %s",
-                    self.name,
-                    result.model_dump_for_logging(),
-                )
-            else:
-                self.logger.error(
-                    "TemporalActivity(name=%s).run: finished with result of unexpected type: %s",
-                    self.name,
-                    type(result),
-                )
-
-            return result
-
-    return inner
-
-
-class BaseActivity(ActivityProtocol, Generic[ActivityParamsT, ActivityResultT]):
+class BaseActivity[ActivityParamsT: BaseActivityParams, ActivityResultT: BaseActivityResult](ActivityProtocol):
     name: ClassVar[str]
     logger: ClassVar[logging.Logger]
 
     @abc.abstractmethod
-    async def run(self, params: ActivityParamsT) -> ActivityResultT:
-        ...
+    async def run(self, params: ActivityParamsT) -> ActivityResultT: ...
 
 
-DEFAULT_WORKFLOW_EXECUTION_TIMEOUT = dl_pydantic.JsonableTimedelta(minutes=10)
+DEFAULT_WORKFLOW_EXECUTION_TIMEOUT = dl_pydantic.JsonableTimedelta(minutes=20)
+DEFAULT_WORKFLOW_RUN_TIMEOUT = dl_pydantic.JsonableTimedelta(minutes=10)
 
 
 class BaseWorkflowParams(BaseModel):
     execution_timeout: dl_pydantic.JsonableTimedelta = DEFAULT_WORKFLOW_EXECUTION_TIMEOUT
+    run_timeout: dl_pydantic.JsonableTimedelta | None = DEFAULT_WORKFLOW_RUN_TIMEOUT
     parent_close_policy: temporalio.workflow.ParentClosePolicy = temporalio.workflow.ParentClosePolicy.TERMINATE
     parent_context: ParentContext = pydantic.Field(default_factory=ParentContext)
 
 
 class BaseWorkflowResult(BaseResultModel):
+    is_error: ClassVar[bool] = False
+
     @property
     def search_attributes(self) -> list[temporalio.common.SearchAttributeUpdate]:
         return []
 
 
 class BaseWorkflowError(BaseWorkflowResult):
-    ...
+    is_error: ClassVar[bool] = True
 
 
 WorkflowParamsT = TypeVar("WorkflowParamsT", bound=BaseWorkflowParams)
@@ -243,133 +187,20 @@ class WorkflowProtocol(Protocol[SelfType, WorkflowParamsT, WorkflowResultT]):
 
     # After python 3.13 migrate to typing.ReadOnly[type[WorkflowParamsT]]
     # and move declaration to the class body.
-    Params: ClassVar[type[WorkflowParamsT]]  # type: ignore
-    Result: ClassVar[type[WorkflowResultT]]  # type: ignore
+    Params: ClassVar[type[WorkflowParamsT]]
+    Result: ClassVar[type[WorkflowResultT]]
 
-    async def run(self: SelfType, params: WorkflowParamsT) -> WorkflowResultT:
-        ...
-
-
-_WorkflowType = WorkflowProtocol[SelfType, WorkflowParamsT, WorkflowResultT]
+    async def run(self: SelfType, params: WorkflowParamsT) -> WorkflowResultT: ...
 
 
-def _workflow_info_to_logging_context(
-    workflow_info: temporalio.workflow.Info,
-) -> dict[str, Any]:
-    return {
-        "temporal.workflow_type": workflow_info.workflow_type,
-        "temporal.workflow_id": workflow_info.workflow_id,
-        "temporal.workflow_run_id": workflow_info.run_id,
-        "temporal.workflow_full_id": f"{workflow_info.workflow_id}.{workflow_info.run_id}",
-        "temporal.workflow_namespace": workflow_info.namespace,
-        "temporal.workflow_task_queue": workflow_info.task_queue,
-    }
-
-
-def _workflow_logging_middleware(
-    func: Callable[[_WorkflowType, WorkflowParamsT], Awaitable[WorkflowResultT]],
-) -> Callable[[_WorkflowType, WorkflowParamsT], Awaitable[WorkflowResultT]]:
-    @functools.wraps(func)
-    async def inner(
-        self: _WorkflowType,
-        params: WorkflowParamsT,
-    ) -> WorkflowResultT:
-        logging_context = _workflow_info_to_logging_context(
-            workflow_info=temporalio.workflow.info(),
-        )
-        logging_context["parent_request_id"] = params.parent_context.request_id
-
-        with dl_logging.LogContext(context=logging_context):
-            self.logger.info(
-                "TemporalWorkflow(name=%s).run: starting with params: %s",
-                self.name,
-                params.model_dump_for_logging(),
-            )
-
-            try:
-                result = await func(self, params)
-            except Exception:
-                self.logger.exception(
-                    "TemporalWorkflow(name=%s).run: failed",
-                    self.name,
-                )
-                raise
-
-            if isinstance(result, BaseWorkflowError):
-                self.logger.error(
-                    "TemporalWorkflow(name=%s).run: finished with error: %s",
-                    self.name,
-                    result.model_dump_for_logging(),
-                )
-            elif isinstance(result, BaseWorkflowResult):
-                self.logger.info(
-                    "TemporalWorkflow(name=%s).run: completed with result: %s",
-                    self.name,
-                    result.model_dump_for_logging(),
-                )
-            else:
-                self.logger.error(
-                    "TemporalWorkflow(name=%s).run: finished with result of unexpected type: %s",
-                    self.name,
-                    type(result),
-                )
-
-            return result
-
-    return inner
-
-
-def _search_attributes_middleware(
-    func: Callable[[_WorkflowType, WorkflowParamsT], Awaitable[WorkflowResultT]],
-) -> Callable[[_WorkflowType, WorkflowParamsT], Awaitable[WorkflowResultT]]:
-    @functools.wraps(func)
-    async def inner(
-        self: _WorkflowType,
-        params: WorkflowParamsT,
-    ) -> WorkflowResultT:
-        result = await func(self, params)
-        temporalio.workflow.upsert_search_attributes(result.search_attributes)
-        return result
-
-    return inner
-
-
-def _parent_context_middleware(
-    func: Callable[[_WorkflowType, WorkflowParamsT], Awaitable[WorkflowResultT]],
-) -> Callable[[_WorkflowType, WorkflowParamsT], Awaitable[WorkflowResultT]]:
-    @functools.wraps(func)
-    async def inner(
-        self: _WorkflowType,
-        params: WorkflowParamsT,
-    ) -> WorkflowResultT:
-        if params.parent_context.request_id is None:
-            params.parent_context.request_id = temporalio.workflow.info().run_id
-        return await func(self, params)
-
-    return inner
-
-
-class BaseWorkflow(WorkflowProtocol, Generic[SelfType, WorkflowParamsT, WorkflowResultT]):
+class BaseWorkflow[SelfType, WorkflowParamsT: BaseWorkflowParams, WorkflowResultT: BaseWorkflowResult](
+    WorkflowProtocol
+):
     name: ClassVar[str]
     logger: ClassVar[logging.Logger]
 
-    # Hereby the story why we need this __init_subclass__ madness:
-    # Original idea was to create def run in Base, that would use _run method in the subclass
-    # and everything was fun and dandy until temporalio kicked in and started to require the run method to be defined in the subclass
-    # After some research i decided to try different approaches:
-    # 1. Decorators, but the decorator will have to be used explicitly in the subclass, which is not very convenient
-    # 2. Leave basic run method and overwrite it in the subclass `async with def run(params): return await self.super().run(params)`
-    #    but it also requires explicit override and without it the temporalio will crush with unreadable error
-    # 3. Explicit metaclass, which adds override to the subclass, but it was typing mess due to Generic + Metaclass combination
-    # 4. This approach, which is not very elegant, but it works and is type-safe
-    def __init_subclass__(cls, **kwargs: Any) -> None:
-        cls.run = _workflow_logging_middleware(cls.run)  # type: ignore
-        cls.run = _search_attributes_middleware(cls.run)  # type: ignore
-        cls.run = _parent_context_middleware(cls.run)  # type: ignore
-
     @abc.abstractmethod
-    async def run(self, params: WorkflowParamsT) -> WorkflowResultT:
-        ...
+    async def run(self, params: WorkflowParamsT) -> WorkflowResultT: ...
 
     async def execute_activity(
         self,
@@ -399,6 +230,7 @@ class BaseWorkflow(WorkflowProtocol, Generic[SelfType, WorkflowParamsT, Workflow
             arg=params,
             id=workflow_id,
             execution_timeout=params.execution_timeout,
+            run_timeout=params.run_timeout,
             parent_close_policy=params.parent_close_policy,
             result_type=workflow.Result,
         )
@@ -416,15 +248,13 @@ class BaseWorkflow(WorkflowProtocol, Generic[SelfType, WorkflowParamsT, Workflow
             workflow=workflow.name,
             arg=params,
             execution_timeout=params.execution_timeout,
+            run_timeout=params.run_timeout,
             parent_close_policy=params.parent_close_policy,
             result_type=workflow.Result,
         )
 
 
 def define_activity(activity: type[ActivityProtocol]) -> type[ActivityProtocol]:
-    # can't use __init_subclass__ for consistency with WorkflowProtocol
-    # because double wrapping will happen for some reason
-    activity.run = _activity_logging_middleware(activity.run)  # type: ignore
     temporalio.activity.defn(name=activity.name)(activity.run)
     return activity
 

@@ -1,6 +1,7 @@
+from collections.abc import AsyncGenerator
+import contextlib
 import datetime
 import logging
-from typing import AsyncGenerator
 import uuid
 
 import pytest
@@ -14,16 +15,13 @@ import dl_temporal
 import dl_temporal.schedule
 import dl_temporal_tests.db.common as common
 
-
 LOGGER = logging.getLogger(__name__)
 
 
-class _TestWorkflowParams(dl_temporal.BaseWorkflowParams):
-    ...
+class _TestWorkflowParams(dl_temporal.BaseWorkflowParams): ...
 
 
-class _TestWorkflowResult(dl_temporal.BaseWorkflowResult):
-    ...
+class _TestWorkflowResult(dl_temporal.BaseWorkflowResult): ...
 
 
 class _TestWorkflow(dl_temporal.BaseWorkflow):
@@ -45,10 +43,8 @@ async def fixture_cleanup_schedules(
     temporal_client: dl_temporal.TemporalClient,
 ) -> AsyncGenerator[None, None]:
     async for entry in await temporal_client.list_schedules():
-        try:
+        with contextlib.suppress(dl_temporal.NotFoundError):
             await temporal_client.delete_schedule(entry.id)
-        except dl_temporal.NotFound:
-            pass
     yield
 
 

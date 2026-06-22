@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import (
     Any,
     ClassVar,
-    Optional,
 )
 
 import attr
@@ -49,12 +48,8 @@ class PrefilteredFieldMultiQuerySplitter(MultiQuerySplitterBase):
             return False
         if not all(self.is_pre_filter(formula) for formula in query.filters):
             return False
-        for formula in query.select:
-            # Check whether formula is a simple field expression
-            if not isinstance(formula.formula_obj.expr, formula_nodes.Field):
-                return False
-
-        return True
+        # Each selected formula must be a simple field expression
+        return all(isinstance(formula.formula_obj.expr, formula_nodes.Field) for formula in query.select)
 
     def split_query(
         self,
@@ -62,7 +57,7 @@ class PrefilteredFieldMultiQuerySplitter(MultiQuerySplitterBase):
         requirement_subtree: CompiledMultiQueryBase,
         query_id_gen: PrefixedIdGen,
         expr_id_gen: PrefixedIdGen,
-    ) -> Optional[CompiledMultiQueryPatch]:
+    ) -> CompiledMultiQueryPatch | None:
         # First check if we really need to do anything
         if self.is_simple_query(query):
             return None
@@ -173,8 +168,7 @@ class PrefilteredFieldMultiQuerySplitter(MultiQuerySplitterBase):
 
             subquery_filters: list[CompiledFormulaInfo] = []
             if original_from_id in prefilters_by_from_id:
-                for prefilter_formula in prefilters_by_from_id[original_from_id]:
-                    subquery_filters.append(prefilter_formula)
+                subquery_filters.extend(prefilters_by_from_id[original_from_id])
 
             subquery = CompiledQuery(
                 id=new_from_id,
@@ -196,7 +190,7 @@ class PrefilteredFieldMultiQuerySplitter(MultiQuerySplitterBase):
             )
             subqueries.append(subquery)
 
-        new_root_from_id: Optional[str] = None
+        new_root_from_id: str | None = None
         if query.joined_from.root_from_id is not None:
             new_root_from_id = avatar_subq_map[query.joined_from.root_from_id]
 
@@ -211,5 +205,4 @@ class PrefilteredFieldMultiQuerySplitter(MultiQuerySplitterBase):
             level_type=self.crop_to_level_type,
         )
 
-        patch = CompiledMultiQueryPatch(patch_multi_query=CompiledMultiQuery(queries=[cropped_query, *subqueries]))
-        return patch
+        return CompiledMultiQueryPatch(patch_multi_query=CompiledMultiQuery(queries=[cropped_query, *subqueries]))

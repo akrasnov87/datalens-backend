@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 import os
-from typing import Optional
+from typing import Any
 
 import attr
 
@@ -58,11 +58,11 @@ class RQEConfig(SettingsBase):
             ext_async_rqe=RQEBaseURL(scheme="http", host="[::1]", port=9877),  # type: ignore  # 2024-01-24 # TODO: Unexpected keyword argument "scheme" for "RQEBaseURL"  [call-arg]
         )
 
-    def clone(self, **kwargs):  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def clone(self, **kwargs: Any) -> RQEConfig:
         return attr.evolve(self, **kwargs)
 
 
-def rqe_config_from_env(env: Optional[SDict] = None, add_dummy_hmac_if_missing: bool = False) -> RQEConfig:
+def rqe_config_from_env(env: SDict | None = None, add_dummy_hmac_if_missing: bool = False) -> RQEConfig:
     """
     :return: RQE config (default with overrides from environment variables)
     """

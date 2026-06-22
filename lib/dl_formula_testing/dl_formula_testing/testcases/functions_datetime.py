@@ -14,7 +14,7 @@ from dl_formula.core.exc import TranslationError
 from dl_formula_testing.evaluator import DbEvaluator
 from dl_formula_testing.testcases.base import FormulaConnectorTestBase
 from dl_formula_testing.util import (
-    approx_datetime,
+    ApproxDatetime,
     dt_strip,
     now,
 )
@@ -42,15 +42,15 @@ class DefaultDateTimeFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase)
     def fixture_today(self, now: datetime.datetime) -> datetime.date:
         return now.date()
 
-    @pytest.mark.parametrize("func_name", ("NOW", "GENERICNOW"))
+    @pytest.mark.parametrize("func_name", ["NOW", "GENERICNOW"])
     def test_now(self, dbe: DbEvaluator, func_name: str, now: datetime.datetime) -> None:
-        assert dt_strip(dbe.eval(f"{func_name}()")) == approx_datetime(now)
+        assert dt_strip(dbe.eval(f"{func_name}()")) == ApproxDatetime(now)
 
     def test_today(self, dbe: DbEvaluator, today: datetime.date) -> None:
         assert dbe.eval("TODAY()") == today
 
     def test_dateadd_to_now(self, dbe: DbEvaluator, now: datetime.datetime) -> None:
-        assert dt_strip(dbe.eval('DATEADD(NOW(), "day", 1)')) == approx_datetime(now + datetime.timedelta(days=1))
+        assert dt_strip(dbe.eval('DATEADD(NOW(), "day", 1)')) == ApproxDatetime(now + datetime.timedelta(days=1))
 
     def test_dateadd_to_today(self, dbe: DbEvaluator, today: datetime.date) -> None:
         assert dbe.eval('DATEADD(TODAY(), "day", 1)') == today + datetime.timedelta(days=1)
@@ -68,7 +68,7 @@ class DefaultDateTimeFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase)
             assert dbe.eval('DATEADD(#2021-01-30#, "month", 1)') == datetime.date(2021, 2, 28)
             assert dbe.eval('DATEADD(#2021-03-30#, "month", -1)') == datetime.date(2021, 2, 28)
 
-    @pytest.mark.parametrize("lit", (pytest.param("##", id="generic"), pytest.param("#", id="regular")))
+    @pytest.mark.parametrize("lit", [pytest.param("##", id="generic"), pytest.param("#", id="regular")])
     def test_datetime_dateadd(self, dbe: DbEvaluator, lit: str) -> None:
         def _dt_lit(s: str) -> str:
             return f"{lit}{s}{lit}"
@@ -139,7 +139,7 @@ class DefaultDateTimeFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase)
                 dbe.eval(f'DATEADD({_dt_lit("2018-01-12 01:02:03")}, "year", INT("6"))')
             ) == datetime.datetime(2024, 1, 12, 1, 2, 3)
 
-    @pytest.mark.parametrize("lit", (pytest.param("##", id="generic"), pytest.param("#", id="regular")))
+    @pytest.mark.parametrize("lit", [pytest.param("##", id="generic"), pytest.param("#", id="regular")])
     def test_datetime_dateadd_deprecated(self, dbe: DbEvaluator, lit: str) -> None:
         if not self.supports_deprecated_dateadd:
             pytest.skip()
@@ -409,11 +409,11 @@ class DefaultDateTimeFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase)
 
     @pytest.mark.parametrize(
         "value_expr",
-        (
+        [
             "__LIT__('2019-01-01T00:01:02')",
             "'2019-01-01T00:01:02'",
             "#2019-01-01T00:01:02#",
-        ),
+        ],
     )
     def test_datetimetz_make(self, dbe: DbEvaluator, forced_literal_use: Any, value_expr: str) -> None:
         if not self.supports_datetimetz:
@@ -428,7 +428,7 @@ class DefaultDateTimeFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase)
 
         # -05:00, so +5hrs at UTC
         expected = datetime.datetime(2019, 1, 1, 5, 1, 2)
-        assert resp.astimezone(datetime.timezone.utc).replace(tzinfo=None) == expected
+        assert resp.astimezone(datetime.UTC).replace(tzinfo=None) == expected
 
     @pytest.fixture(params=["const", "lit"])
     def dttz_expr(self, request: Any, dbe: DbEvaluator, forced_literal_use: Any) -> str:
@@ -440,33 +440,40 @@ class DefaultDateTimeFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase)
         expr = f"'{value_iso}'"
         if request.param == "lit":
             expr = f"__LIT__({expr})"
-        expr = f"DATETIMETZ({expr}, '{tz}')"
-        return expr
+        return f"DATETIMETZ({expr}, '{tz}')"
 
     def test_datetimetz_funcs(self, dbe: DbEvaluator, dttz_expr: str, forced_literal_use: Any) -> None:
         resp = dbe.eval(f"AVG({dttz_expr})")
-        assert isinstance(resp, datetime.datetime) and resp.tzinfo
+        assert isinstance(resp, datetime.datetime)
+        assert resp.tzinfo
         resp = dbe.eval(f"MAX({dttz_expr})")
-        assert isinstance(resp, datetime.datetime) and resp.tzinfo
+        assert isinstance(resp, datetime.datetime)
+        assert resp.tzinfo
         resp = dbe.eval(f"MIN({dttz_expr})")
-        assert isinstance(resp, datetime.datetime) and resp.tzinfo
+        assert isinstance(resp, datetime.datetime)
+        assert resp.tzinfo
         resp = dbe.eval(f"DATEADD({dttz_expr}, 'month', 2)")
-        assert isinstance(resp, datetime.datetime) and resp.tzinfo
+        assert isinstance(resp, datetime.datetime)
+        assert resp.tzinfo
         assert dbe.eval(f"DATEPART({dttz_expr}, 'dayofweek', 'tue')") == 1
         assert dbe.eval(f"DATEPART({dttz_expr}, __LIT__('dayofweek'), 'wed')") == 7
         assert dbe.eval(f"DAYOFWEEK({dttz_expr})") == 2
         assert dbe.eval(f"DAYOFWEEK({dttz_expr}, 'thu')") == 6
         resp = dbe.eval(f"DATETRUNC({dttz_expr}, 'hour')")
-        assert isinstance(resp, datetime.datetime) and resp.tzinfo
+        assert isinstance(resp, datetime.datetime)
+        assert resp.tzinfo
         resp = dbe.eval(f"DATETRUNC({dttz_expr}, 'month')")
-        assert isinstance(resp, datetime.datetime) and resp.tzinfo
+        assert isinstance(resp, datetime.datetime)
+        assert resp.tzinfo
 
         if self.supports_datetrunc_3:
             resp = dbe.eval(f"DATETRUNC({dttz_expr}, 'month', 3)")
-            assert isinstance(resp, datetime.datetime) and resp.tzinfo
+            assert isinstance(resp, datetime.datetime)
+            assert resp.tzinfo
 
         resp = dbe.eval(f"DATETRUNC({dttz_expr}, 'quarter')")
-        assert isinstance(resp, datetime.datetime) and resp.tzinfo
+        assert isinstance(resp, datetime.datetime)
+        assert resp.tzinfo
         assert dbe.eval(f"DATE({dttz_expr})") == datetime.date(2019, 1, 1)
 
         assert dbe.eval(f"SECOND({dttz_expr})") == 2
@@ -481,11 +488,14 @@ class DefaultDateTimeFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase)
         # TODO: UTCNOW()
         # TODO: UTCTODAY()
         resp = dbe.eval(f"GREATEST({dttz_expr}, {dttz_expr})")
-        assert isinstance(resp, datetime.datetime) and resp.tzinfo
+        assert isinstance(resp, datetime.datetime)
+        assert resp.tzinfo
         resp = dbe.eval(f"GREATEST({dttz_expr}, {dttz_expr}, {dttz_expr}, {dttz_expr})")
-        assert isinstance(resp, datetime.datetime) and resp.tzinfo
+        assert isinstance(resp, datetime.datetime)
+        assert resp.tzinfo
         resp = dbe.eval(f"LEAST({dttz_expr}, {dttz_expr})")
-        assert isinstance(resp, datetime.datetime) and resp.tzinfo
+        assert isinstance(resp, datetime.datetime)
+        assert resp.tzinfo
         with pytest.raises(TranslationError):
             dbe.eval(f"GREATEST({dttz_expr}, #2018-07-12 11:07:13#)")
         with pytest.raises(TranslationError):

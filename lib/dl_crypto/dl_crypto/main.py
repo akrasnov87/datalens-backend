@@ -1,11 +1,11 @@
 from typing import (
     Protocol,
+    Self,
     TypedDict,
 )
 
 import attr
 from cryptography import fernet
-from typing_extensions import Self
 
 
 class EncryptedData(TypedDict):
@@ -16,12 +16,10 @@ class EncryptedData(TypedDict):
 
 class CryptoKeysProtocol(Protocol):
     @property
-    def map_id_key(self) -> dict[str, str]:
-        ...
+    def map_id_key(self) -> dict[str, str]: ...
 
     @property
-    def actual_key_id(self) -> str:
-        ...
+    def actual_key_id(self) -> str: ...
 
 
 @attr.define
@@ -45,11 +43,11 @@ class CryptoController:
 
         encoded_plain_text = plain_text.encode()
         cypher_text = self._map_key_id_fernet_instance[key_id].encrypt(encoded_plain_text).decode()
-        return dict(
-            key_id=key_id,
-            key_kind=self.key_kind,
-            cypher_text=cypher_text,
-        )
+        return {
+            "key_id": key_id,
+            "key_kind": self.key_kind,
+            "cypher_text": cypher_text,
+        }
 
     def decrypt(self, encrypted_data: EncryptedData | None) -> str | None:
         if encrypted_data is None:
@@ -58,8 +56,7 @@ class CryptoController:
         assert encrypted_data["key_kind"] == self.key_kind
         encoded_cypher_text = encrypted_data["cypher_text"].encode()
         key_id = encrypted_data["key_id"]
-        plain_text = self._map_key_id_fernet_instance[key_id].decrypt(encoded_cypher_text).decode()
-        return plain_text
+        return self._map_key_id_fernet_instance[key_id].decrypt(encoded_cypher_text).decode()
 
     def encrypt_with_actual_key(self, plain_text: str | None) -> EncryptedData | None:
         return self.encrypt(key_id=self._key_config.actual_key_id, plain_text=plain_text)

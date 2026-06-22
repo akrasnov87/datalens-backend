@@ -1,15 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import (
-    Generator,
-    Optional,
-)
 
 import attr
 import sqlalchemy as sa
 
-from dl_constants.enums import DataSourceRole
+from dl_constants import DataSourceRole
 from dl_core.backend_types import get_backend_type
 from dl_core.components.accessor import DatasetComponentAccessor
 from dl_core.components.ids import AvatarId
@@ -55,7 +52,7 @@ class DefaultPreparedComponentManager(PreparedComponentManagerBase):
             yield
         except exc.TableNameNotConfiguredError as err:
             if self._role == DataSourceRole.materialization:
-                raise exc.MaterializationNotFinished(
+                raise exc.MaterializationNotFinishedError(
                     message="Materialization is not yet finished",
                     query="<get_from_clause>",
                     inspector_query="<get_from_clause>",
@@ -70,7 +67,7 @@ class DefaultPreparedComponentManager(PreparedComponentManagerBase):
         avatar_id: AvatarId,
         alias: str,
         from_subquery: bool,
-        subquery_limit: Optional[int],
+        subquery_limit: int | None,
     ) -> PreparedSingleFromInfo:
         avatar = self._ds_accessor.get_avatar_strict(avatar_id=avatar_id)
         dsrc_coll_spec = self._ds_accessor.get_data_source_coll_spec_strict(source_id=avatar.source_id)
@@ -126,7 +123,7 @@ class DefaultPreparedComponentManager(PreparedComponentManagerBase):
         data_key = dsrc.get_cache_key_part()
         data_key = data_key.extend(part_type="avatar_id", part_content=avatar_id)
 
-        prep_src_info = PreparedSingleFromInfo(
+        return PreparedSingleFromInfo(
             id=avatar_id,
             alias=alias,
             data_source_list=(dsrc,),
@@ -141,4 +138,3 @@ class DefaultPreparedComponentManager(PreparedComponentManagerBase):
             target_connection_ref=target_connection_ref,
             data_key=data_key,
         )
-        return prep_src_info

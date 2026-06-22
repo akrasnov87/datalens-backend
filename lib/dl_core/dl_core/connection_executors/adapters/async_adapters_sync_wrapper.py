@@ -1,18 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Generator
 import logging
-from typing import (
-    TYPE_CHECKING,
-    Generator,
-    Optional,
-)
+from typing import TYPE_CHECKING
 import weakref
 
 import attr
 
 from dl_api_commons.aio.async_wrapper_for_sync_generator import (
-    EndOfStream,
+    EndOfStreamError,
     Job,
 )
 from dl_core.connection_executors.adapters.adapters_base import SyncDirectDBAdapter
@@ -28,7 +25,6 @@ from dl_core.connection_executors.models.db_adapter_data import (
     RawSchemaInfo,
 )
 from dl_utils.aio import ContextVarExecutor
-
 
 if TYPE_CHECKING:
     from dl_constants.types import TBIChunksGen
@@ -52,7 +48,7 @@ class AsyncWrapperForSyncAdapter(AsyncDBAdapter):
     _gen_wrappers_weak_set: set[Job] = attr.ib(init=False, factory=weakref.WeakSet)
 
     @attr.s(cmp=False, hash=False)
-    class AdapterExecuteJob(Job[ExecutionStep]):  # noqa
+    class AdapterExecuteJob(Job[ExecutionStep]):
         """Class to be instantiated on connection executor"""
 
         _adapter: SyncDirectDBAdapter = attr.ib(kw_only=True)
@@ -89,7 +85,7 @@ class AsyncWrapperForSyncAdapter(AsyncDBAdapter):
                     else:
                         # TODO FIX: Custom exception
                         raise ValueError(f"Unexpected type of execution message in queue: {type(msg)}")
-            except EndOfStream:
+            except EndOfStreamError:
                 return
             finally:
                 await gen_wrapper.cancel()
@@ -99,13 +95,13 @@ class AsyncWrapperForSyncAdapter(AsyncDBAdapter):
             raw_chunk_generator=data_generator(),
         )
 
-    def get_target_host(self) -> Optional[str]:
+    def get_target_host(self) -> str | None:
         return self._sync_adapter.get_target_host()
 
     async def test(self) -> None:
         await self._loop.run_in_executor(self._tpe, self._sync_adapter.test)
 
-    async def get_db_version(self, db_ident: DBIdent) -> Optional[str]:
+    async def get_db_version(self, db_ident: DBIdent) -> str | None:
         return await self._loop.run_in_executor(self._tpe, self._sync_adapter.get_db_version, db_ident)
 
     async def get_schema_names(self, db_ident: DBIdent) -> list[str]:
@@ -127,9 +123,7 @@ class AsyncWrapperForSyncAdapter(AsyncDBAdapter):
 
     async def close(self) -> None:
         LOGGER.info("Starting async executor wrapper close procedure")
-        fut_list = []
-        for wr in self._gen_wrappers_weak_set:
-            fut_list.append(wr.cancel())
+        fut_list = [wr.cancel() for wr in self._gen_wrappers_weak_set]
         if fut_list:
             LOGGER.info("Waiting for %s running generators to be closed", len(fut_list))
             await asyncio.gather(*fut_list, return_exceptions=True)

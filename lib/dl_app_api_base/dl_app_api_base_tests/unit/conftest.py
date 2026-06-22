@@ -1,23 +1,22 @@
+from collections.abc import AsyncGenerator
 import enum
 import http
 import logging
 import os
 import re
 from typing import (
-    AsyncGenerator,
     ClassVar,
+    override,
 )
 
 import aiohttp.web
 import attr
 import pytest
 import pytest_asyncio
-from typing_extensions import override
 
 import dl_app_api_base
 import dl_app_base
 import dl_pydantic
-
 
 DIR_PATH = os.path.dirname(__file__)
 LOGGER = logging.getLogger(__name__)
@@ -53,8 +52,7 @@ class Counter:
         return self.value
 
 
-class App(dl_app_api_base.HttpServerAppMixin):
-    ...
+class App(dl_app_api_base.HttpServerAppMixin): ...
 
 
 class HttpServerSettings(dl_app_api_base.HttpServerSettings):
@@ -100,8 +98,7 @@ class RequestContextDependencies(
     CounterRequestContextDependenciesMixin,
     ValueRequestContextDependenciesMixin,
     dl_app_api_base.HttpServerRequestContextDependencies,
-):
-    ...
+): ...
 
 
 @attr.define(kw_only=True, slots=False)
@@ -113,6 +110,7 @@ class RequestContext(
     _dependencies: RequestContextDependencies
 
 
+RequestContextVar = dl_app_api_base.RequestContextVar[RequestContext]
 RequestContextManager = dl_app_api_base.BaseRequestContextManager[
     RequestContextDependencies,
     RequestContext,
@@ -197,11 +195,11 @@ class HeadersHandler(dl_app_api_base.BaseHandler):
 
 
 class SpecTestHandler(dl_app_api_base.BaseHandler):
-    OPENAPI_TAGS = ["spec-test"]
+    OPENAPI_TAGS = ("spec-test",)
 
     class RequestSchema(dl_app_api_base.BaseRequestSchema):
         class Path(dl_pydantic.BaseSchema):
-            class PathEnum(str, enum.Enum):
+            class PathEnum(enum.StrEnum):
                 FOO = "foo"
                 BAR = "bar"
 
@@ -212,7 +210,7 @@ class SpecTestHandler(dl_app_api_base.BaseHandler):
             path_nested: PathNested
 
         class Query(dl_pydantic.BaseSchema):
-            class QueryEnum(str, enum.Enum):
+            class QueryEnum(enum.StrEnum):
                 FOO = "foo"
                 BAR = "bar"
 
@@ -223,7 +221,7 @@ class SpecTestHandler(dl_app_api_base.BaseHandler):
             query_nested: QueryNested
 
         class Body(dl_pydantic.BaseSchema):
-            class BodyEnum(str, enum.Enum):
+            class BodyEnum(enum.StrEnum):
                 FOO = "foo"
                 BAR = "bar"
 
@@ -238,7 +236,7 @@ class SpecTestHandler(dl_app_api_base.BaseHandler):
         body: Body
 
     class ResponseSchema(dl_app_api_base.BaseResponseSchema):
-        class ResponseEnum(str, enum.Enum):
+        class ResponseEnum(enum.StrEnum):
             FOO = "foo"
             BAR = "bar"
 
@@ -348,17 +346,23 @@ class AppFactory(dl_app_api_base.HttpServerAppFactoryMixin):
 
     @override
     @dl_app_base.singleton_class_method_result
-    async def _get_request_context_provider(
+    async def _get_request_context_var(  # type: ignore[override]  # RequestContextVar is invariant
         self,
-    ) -> dl_app_api_base.RequestContextProvider[RequestContext]:
-        return dl_app_api_base.RequestContextProvider()
+    ) -> RequestContextVar:
+        return RequestContextVar()
 
     @override
     @dl_app_base.singleton_class_method_result
-    async def _get_request_context_manager(  # type: ignore[override]
+    async def _get_request_context_provider(
         self,
-    ) -> RequestContextManager:
-        request_context_provider = await self._get_request_context_provider()
+    ) -> dl_app_api_base.RequestContextProviderProtocol[RequestContext]:
+        return dl_app_api_base.RequestContextProvider(context_var=await self._get_request_context_var())
+
+    @override
+    @dl_app_base.singleton_class_method_result
+    async def _get_request_context_manager(
+        self,
+    ) -> dl_app_api_base.RequestContextManagerProtocol[RequestContext]:
         return RequestContextManager(
             context_factory=RequestContext.factory,
             dependencies=RequestContextDependencies(
@@ -366,7 +370,7 @@ class AppFactory(dl_app_api_base.HttpServerAppFactoryMixin):
                 value=42,
                 request_auth_checkers=await self._get_request_auth_checkers(),
             ),
-            context_var=request_context_provider.context_var,
+            context_var=await self._get_request_context_var(),
         )
 
     @override

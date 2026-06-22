@@ -5,7 +5,7 @@ import pytest
 from dl_api_client.dsmaker.api.dataset_api import SyncHttpDatasetApiV1
 from dl_api_client.dsmaker.primitives import Dataset
 from dl_api_lib_tests.db.base import DefaultApiTestBase
-import dl_constants.enums as dl_constants_enums
+import dl_constants
 
 
 class TestValidationParameters(DefaultApiTestBase):
@@ -22,7 +22,7 @@ class TestValidationParameters(DefaultApiTestBase):
                     "field": {
                         "guid": "test_guid",
                         "title": "test_title",
-                        "calc_mode": dl_constants_enums.CalcMode.parameter.value,
+                        "calc_mode": dl_constants.CalcMode.parameter.value,
                         "cast": "integer",
                         "default_value": "123",
                         "value_constraint": {
@@ -49,7 +49,7 @@ class TestValidationParameters(DefaultApiTestBase):
                     "field": {
                         "guid": "test_guid",
                         "title": "test_title",
-                        "calc_mode": dl_constants_enums.CalcMode.parameter.value,
+                        "calc_mode": dl_constants.CalcMode.parameter.value,
                         "cast": "integer",
                         "default_value": "123",
                     },
@@ -77,7 +77,7 @@ class TestValidationParameters(DefaultApiTestBase):
                     "field": {
                         "guid": "test_guid",
                         "title": "test_title",
-                        "calc_mode": dl_constants_enums.CalcMode.parameter.value,
+                        "calc_mode": dl_constants.CalcMode.parameter.value,
                         "cast": "integer",
                         "default_value": "123",
                     },
@@ -117,7 +117,7 @@ class TestValidationParameters(DefaultApiTestBase):
                     "field": {
                         "guid": "test_guid",
                         "title": "test_title",
-                        "calc_mode": dl_constants_enums.CalcMode.parameter.value,
+                        "calc_mode": dl_constants.CalcMode.parameter.value,
                         "cast": "integer",
                         "default_value": "abc",
                     },
@@ -140,7 +140,7 @@ class TestValidationParameters(DefaultApiTestBase):
                     "field": {
                         "guid": "test_guid",
                         "title": "test_title",
-                        "calc_mode": dl_constants_enums.CalcMode.parameter.value,
+                        "calc_mode": dl_constants.CalcMode.parameter.value,
                         "cast": "integer",
                         "default_value": "123",
                         "value_constraint": {
@@ -167,7 +167,7 @@ class TestValidationParameters(DefaultApiTestBase):
                     "field": {
                         "guid": "test_guid",
                         "title": "test_title",
-                        "calc_mode": dl_constants_enums.CalcMode.parameter.value,
+                        "calc_mode": dl_constants.CalcMode.parameter.value,
                         "cast": "integer",
                         "default_value": "789",
                         "value_constraint": {
@@ -210,7 +210,7 @@ class TestValidationParameters(DefaultApiTestBase):
                     "field": {
                         "guid": "test_guid",
                         "title": "test_title",
-                        "calc_mode": dl_constants_enums.CalcMode.parameter.value,
+                        "calc_mode": dl_constants.CalcMode.parameter.value,
                         "cast": "string",
                         "default_value": "test",
                         "template_enabled": True,
@@ -228,3 +228,109 @@ class TestValidationParameters(DefaultApiTestBase):
         assert field.valid is False
         error = ds.component_errors.items[0].errors[0]
         assert error.code == "ERR.DS_API.SOURCE_CONFIG.PARAMETER_VALUE_CONSTRAINT_REQUIRED"
+
+    def test_add_unknown_sys_parameter_fails(
+        self,
+        control_api: SyncHttpDatasetApiV1,
+        saved_dataset: Dataset,
+    ):
+        ds_resp = control_api.apply_updates(
+            dataset=saved_dataset,
+            updates=[
+                {
+                    "action": "add_field",
+                    "field": {
+                        "guid": "test_guid",
+                        "title": "_sys.unknown",
+                        "calc_mode": dl_constants.CalcMode.parameter.value,
+                        "cast": "string",
+                        "default_value": "x",
+                    },
+                }
+            ],
+            fail_ok=True,
+        )
+        assert ds_resp.status_code == http.HTTPStatus.BAD_REQUEST
+        assert ds_resp.bi_status_code == "ERR.DS_API.VALIDATION.ERROR"
+
+        ds = ds_resp.dataset
+        field = ds.find_field("_sys.unknown")
+        assert field.valid is False
+        error = ds.component_errors.items[0].errors[0]
+        assert error.code == "ERR.DS_API.SOURCE_CONFIG.UNKNOWN_SYSTEM_PARAMETER"
+
+    def test_add_known_sys_parameter_ok(
+        self,
+        control_api: SyncHttpDatasetApiV1,
+        saved_dataset: Dataset,
+    ):
+        ds_resp = control_api.apply_updates(
+            dataset=saved_dataset,
+            updates=[
+                {
+                    "action": "add_field",
+                    "field": {
+                        "guid": "test_guid",
+                        "title": "_sys.user_id",
+                        "calc_mode": dl_constants.CalcMode.parameter.value,
+                        "cast": "string",
+                        "default_value": "anon",
+                    },
+                }
+            ],
+            fail_ok=True,
+        )
+        assert ds_resp.status_code == http.HTTPStatus.OK, ds_resp.response_errors
+
+    def test_add_non_parameter_with_sys_name_fails(
+        self,
+        control_api: SyncHttpDatasetApiV1,
+        saved_dataset: Dataset,
+    ):
+        # The `_sys.` prefix is reserved for ALL field kinds, not only parameters.
+        ds_resp = control_api.apply_updates(
+            dataset=saved_dataset,
+            updates=[
+                {
+                    "action": "add_field",
+                    "field": {
+                        "guid": "test_guid",
+                        "title": "_sys.user_id",
+                        "calc_mode": dl_constants.CalcMode.formula.value,
+                        "formula": "'x'",
+                    },
+                }
+            ],
+            fail_ok=True,
+        )
+        assert ds_resp.status_code == http.HTTPStatus.BAD_REQUEST
+        ds = ds_resp.dataset
+        field_errors = next(item for item in ds.component_errors.items if item.id == "test_guid")
+        assert any(e.code == "ERR.DS_API.SOURCE_CONFIG.UNKNOWN_SYSTEM_PARAMETER" for e in field_errors.errors)
+
+    def test_add_sys_user_id_wrong_type_fails(
+        self,
+        control_api: SyncHttpDatasetApiV1,
+        saved_dataset: Dataset,
+    ):
+        # A registered system parameter must declare its expected type (string for _sys.user_id).
+        ds_resp = control_api.apply_updates(
+            dataset=saved_dataset,
+            updates=[
+                {
+                    "action": "add_field",
+                    "field": {
+                        "guid": "test_guid",
+                        "title": "_sys.user_id",
+                        "calc_mode": dl_constants.CalcMode.parameter.value,
+                        "cast": "integer",
+                        "default_value": "1",
+                    },
+                }
+            ],
+            fail_ok=True,
+        )
+        assert ds_resp.status_code == http.HTTPStatus.BAD_REQUEST
+        ds = ds_resp.dataset
+        field_errors = next(item for item in ds.component_errors.items if item.id == "test_guid")
+        assert any(e.code == "ERR.DS_API.SOURCE_CONFIG.SYSTEM_PARAMETER_TYPE_MISMATCH" for e in field_errors.errors)

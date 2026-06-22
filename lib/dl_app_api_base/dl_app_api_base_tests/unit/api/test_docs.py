@@ -1,12 +1,12 @@
 import os
 
+import aiofiles
 import aiohttp
 import pytest
 
 import dl_app_api_base_tests.settings as test_settings
 import dl_app_api_ext_testing
 import dl_json
-
 
 SPEC_FILE_PATH = os.path.join(os.path.dirname(__file__), "data/expected_spec.json")
 
@@ -23,12 +23,12 @@ class TestHttpServerAppDocs(dl_app_api_ext_testing.DocsExtTestSuite):
         spec = await response.json()
 
         if settings.REWRITE_DOC_SPECS:
-            with open(SPEC_FILE_PATH, "w") as f:
-                f.write(dl_json.dumps_str_human_readable(spec))
-                f.write("\n")
+            async with aiofiles.open(SPEC_FILE_PATH, "w") as f:
+                await f.write(dl_json.dumps_str_human_readable(spec))
+                await f.write("\n")
 
-        with open(SPEC_FILE_PATH, "rb") as f:
-            raw_expected_spec = f.read()
+        async with aiofiles.open(SPEC_FILE_PATH, "rb") as f:
+            raw_expected_spec = await f.read()
             expected_spec = dl_json.loads_bytes(raw_expected_spec)
 
         assert (

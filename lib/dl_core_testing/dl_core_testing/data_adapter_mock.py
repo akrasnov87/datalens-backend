@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import json
-from typing import (
+from collections.abc import (
     Iterable,
-    Optional,
     Sequence,
     Sized,
 )
+import json
 
 from aiohttp import web
 import attr
@@ -34,17 +33,17 @@ class SC:
         )
     )
     nullable: bool = attr.ib(default=False)
-    title: Optional[str] = attr.ib(default=None)
+    title: str | None = attr.ib(default=None)
 
 
 @attr.s
 class Table:
     name: str = attr.ib()
     schema: list[SC] = attr.ib()
-    partition_key: list[str] = attr.ib(factory=lambda: [])
-    meta: dict[str, str] = attr.ib(factory=lambda: {})
-    data: Iterable[Sequence[TJSONLike]] = attr.ib(factory=lambda: [])
-    _data_length: Optional[int] = attr.ib(default=None)
+    partition_key: list[str] = attr.ib(factory=list)
+    meta: dict[str, str] = attr.ib(factory=dict)
+    data: Iterable[Sequence[TJSONLike]] = attr.ib(factory=list)
+    _data_length: int | None = attr.ib(default=None)
 
     @property
     def data_length(self) -> int:
@@ -59,9 +58,9 @@ class Table:
 
 @attr.s
 class TablesRegistry:
-    tbl_list: list[Table] = attr.ib(factory=lambda: [])
+    tbl_list: list[Table] = attr.ib(factory=list)
 
-    def get_table(self, table_name: str) -> Optional[Table]:
+    def get_table(self, table_name: str) -> Table | None:
         return next((t for t in self.tbl_list if t.name == table_name), None)
 
 

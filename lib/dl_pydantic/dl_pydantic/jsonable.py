@@ -2,39 +2,30 @@ import abc
 import datetime
 from typing import (
     Any,
-    Generic,
-    TypeVar,
+    Self,
 )
 import uuid
 
 import pydantic
 import pydantic_core
-from typing_extensions import Self
-
 
 JsonableTimedelta = datetime.timedelta
 JsonableUUID = uuid.UUID
 
 
-T = TypeVar("T")
-
-
-class StringJsonableTypeMixin(Generic[T]):
+class StringJsonableTypeMixin[T]:
     original_type: type[T]
 
     @classmethod
     @abc.abstractmethod
-    def from_string(cls, value: str) -> Self:
-        ...
+    def from_string(cls, value: str) -> Self: ...
 
     @abc.abstractmethod
-    def to_string(self) -> str:
-        ...
+    def to_string(self) -> str: ...
 
     @classmethod
     @abc.abstractmethod
-    def from_original(cls, value: Any) -> Self:
-        ...
+    def from_original(cls, value: Any) -> Self: ...
 
     @classmethod
     def __get_pydantic_core_schema__(
@@ -97,6 +88,12 @@ class JsonableDate(datetime.date, StringJsonableTypeMixin):
 
 
 class JsonableDatetime(datetime.datetime, StringJsonableTypeMixin):
+    """
+    Deprecated: kept only for backwards compatibility with schemas where
+    tzinfo may be absent. New code should use :class:`JsonableDatetimeWithTimeZone`,
+    which enforces tz-aware datetimes and prevents silent timezone loss on roundtrip.
+    """
+
     original_type = datetime.datetime
 
     @classmethod
@@ -110,10 +107,10 @@ class JsonableDatetime(datetime.datetime, StringJsonableTypeMixin):
         if self.tzinfo is None:
             return self.strftime("%Y-%m-%dT%H:%M:%S.%f")
 
-        if self.tzinfo == datetime.timezone.utc:
+        if self.tzinfo == datetime.UTC:
             return self.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
-        return self.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        return self.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
     @classmethod
     def from_original(cls, value: datetime.datetime) -> Self:
@@ -121,10 +118,18 @@ class JsonableDatetime(datetime.datetime, StringJsonableTypeMixin):
 
 
 class JsonableDatetimeWithTimeZone(JsonableDatetime):
+    """Tz-aware variant of :class:`JsonableDatetime`. Raises if `tzinfo` is missing."""
+
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         result = super().__new__(cls, *args, **kwargs)
 
-        if result.tzinfo is None:
-            raise ValueError("tzinfo is required")
+        # Per Python's definition, a datetime is aware iff both tzinfo is set
+        # AND tzinfo.utcoffset() returns a value. A tzinfo whose utcoffset()
+        # returns None is still naive and would fail later in astimezone().
+        if result.tzinfo is None or result.utcoffset() is None:
+            raise ValueError("tz-aware datetime is required")
 
         return result
+
+
+type JsonableDict = dict[str, pydantic.JsonValue]

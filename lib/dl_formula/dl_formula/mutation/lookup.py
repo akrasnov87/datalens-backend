@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import abc
-from typing import (
-    ClassVar,
-    Optional,
-    Sequence,
-)
+from collections.abc import Sequence
+from typing import ClassVar
 
 import attr
 
@@ -111,11 +108,11 @@ class AgoLookupFunctionMutator(DateLookupFunctionMutatorBase):
         if len(func_args) > 2:  # default unit is "day", so we're not interested
             unit_name = "day"
             try:
-                string_arg: nodes.LiteralString = [
+                string_arg: nodes.LiteralString = next(
                     arg for arg in func_args[2:] if isinstance(arg, nodes.LiteralString)
-                ][0]
+                )
                 unit_name = string_arg.value.lower()
-            except IndexError:
+            except StopIteration:
                 pass
 
             if unit_name in _MONTH_BASED_UNITS:
@@ -167,7 +164,7 @@ class AtDateLookupFunctionMutator(DateLookupFunctionMutatorBase):
         return []
 
 
-def _get_arg_error_node(node: nodes.FuncCall) -> Optional[aux_nodes.ErrorNode]:
+def _get_arg_error_node(node: nodes.FuncCall) -> aux_nodes.ErrorNode | None:
     func_name = node.name
     mutator = LOOKUP_MUTATOR_REGISTRY[func_name]
 
@@ -290,7 +287,7 @@ class LookupFunctionToQueryForkMutation(DimensionResolvingMutationBase):
             *mutator.get_bfb_filter_mutations(lookup_dimension, old.args)
         )
 
-        new_node = fork_nodes.QueryFork.make(
+        return fork_nodes.QueryFork.make(
             join_type=fork_nodes.JoinType.left,
             result_expr=result_expr,
             joining=joining,
@@ -299,7 +296,6 @@ class LookupFunctionToQueryForkMutation(DimensionResolvingMutationBase):
             bfb_filter_mutations=bfb_filter_mutations,
             meta=old.meta,
         )
-        return new_node
 
 
 @attr.s

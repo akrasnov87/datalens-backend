@@ -2,15 +2,10 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+from collections.abc import Generator
 import inspect
-import os
 import sys
-from typing import (
-    TYPE_CHECKING,
-    Generator,
-    Optional,
-    Union,
-)
+from typing import TYPE_CHECKING
 
 from dl_formula.core import exc
 from dl_formula.core.datatype import DataType
@@ -20,10 +15,7 @@ from dl_formula.core.dialect import (
 )
 from dl_formula.core.dialect import DialectCombo
 from dl_formula.core.dialect import StandardDialect as D
-from dl_formula.definitions.base import (
-    MultiVariantTranslation,
-    NodeTranslation,
-)
+from dl_formula.definitions.base import NodeTranslation
 from dl_formula.definitions.registry import OPERATION_REGISTRY
 import dl_formula.dot
 import dl_formula.inspect.expression
@@ -45,7 +37,6 @@ from .common import (
     make_graphviz_graph,
 )
 
-
 if TYPE_CHECKING:
     import dl_formula.core.nodes as nodes
 
@@ -53,7 +44,7 @@ if TYPE_CHECKING:
 formula_parser = get_parser()
 
 
-def dialect_type(s: Union[str, DialectCombo]) -> Union[DialectCombo, int]:
+def dialect_type(s: str | DialectCombo) -> DialectCombo | int:
     if isinstance(s, str):
         res = D.EMPTY
         for it in s.split(","):
@@ -118,10 +109,6 @@ graph_parser.add_argument("--render-to", help="Render graph to specified file", 
 
 dialect_parser = subparsers.add_parser("dialects", help="List available basic dialects")
 
-goto_parser = subparsers.add_parser("goto", help="Open PyCharm at the function definition")
-goto_parser.add_argument("func", help="function name")
-goto_parser.add_argument("--show", action="store_true", help="just print file name and line number")
-
 slice_parser = subparsers.add_parser(
     "slice", parents=[text_parser, diff_parser], help="Parse formula slice it into translation levels"
 )
@@ -146,7 +133,7 @@ class FormulaCliTool:
 
     @classmethod
     def parse(
-        cls, text: str, pretty: bool, suppress_errors: bool, pos: Optional[int] = None, with_meta: bool = False
+        cls, text: str, pretty: bool, suppress_errors: bool, pos: int | None = None, with_meta: bool = False
     ) -> None:
         if not text:
             # bulk mode, read from STDIN
@@ -160,8 +147,7 @@ class FormulaCliTool:
             if suppress_errors:
                 print(ERROR_TOKEN)
                 return
-            else:
-                raise
+            raise
 
         if pos is not None:
             tree = tree.get_by_pos(pos)  # type: ignore  # TODO: fix
@@ -195,7 +181,7 @@ class FormulaCliTool:
 
         _mark_positions(formula)
         for num, line in enumerate(chars):
-            print("{0:>2}: {1}".format(num, "".join(line)))
+            print("{:>2}: {}".format(num, "".join(line)))
 
     @staticmethod
     def graph(text: str, render_to: str, view: bool) -> None:
@@ -205,7 +191,7 @@ class FormulaCliTool:
 
     @classmethod
     def translate(
-        cls, text: str, tablename: Optional[str], dialect: DialectCombo, unknown_funcs: bool, suppress_errors: bool
+        cls, text: str, tablename: str | None, dialect: DialectCombo, unknown_funcs: bool, suppress_errors: bool
     ) -> None:
         if not text:
             # bulk mode, read from STDIN
@@ -222,8 +208,8 @@ class FormulaCliTool:
         try:
             formula = formula_parser.parse(text)
 
-            field_list = sorted(set(f.name for f in dl_formula.inspect.expression.used_fields(formula)))
-            field_types = {f: DataType.NULL for f in field_list}
+            field_list = sorted({f.name for f in dl_formula.inspect.expression.used_fields(formula)})
+            field_types = dict.fromkeys(field_list, DataType.NULL)
             if tablename:
                 field_names = {f: (tablename, f) for f in field_list}
             else:
@@ -242,8 +228,7 @@ class FormulaCliTool:
             if suppress_errors:
                 print(ERROR_TOKEN)
                 return
-            else:
-                raise
+            raise
 
     @staticmethod
     def list_dialects() -> None:
@@ -255,42 +240,6 @@ class FormulaCliTool:
                 ]
             )
         )
-
-    @staticmethod
-    def _get_func_base_class(name: str) -> Optional[type]:  # type: ignore  # TODO: fix
-        """Find the first (base) class for the given function"""
-        name = name.lower()
-        for _i, definition in OPERATION_REGISTRY.items():
-            if definition.name.lower() == name:  # type: ignore  # TODO: fix
-                item = definition
-                break
-        else:
-            return None
-
-        mro = inspect.getmro(type(item))  # `cls` itself plus all its bases
-        for earliest_super_cls in reversed(mro):
-            if (
-                issubclass(earliest_super_cls, MultiVariantTranslation)
-                and (earliest_super_cls.name or "").lower() == name
-            ):
-                return earliest_super_cls
-
-    @classmethod
-    def _get_func_source_info(cls, name: str) -> tuple[str, int]:
-        """Get file name and line number for given function"""
-        func_cls = cls._get_func_base_class(name)
-        filename = inspect.getsourcefile(func_cls)  # type: ignore  # TODO: fix
-        lineno = inspect.getsourcelines(func_cls)[1]  # type: ignore  # TODO: fix
-        return filename, lineno  # type: ignore  # TODO: fix
-
-    @classmethod
-    def goto_func(cls, name: str, show: bool) -> None:
-        editor_exe = os.environ.get("PYCHARM", "pycharm")
-        filename, lineno = cls._get_func_source_info(name)
-        if show:
-            print(filename, lineno)
-        else:
-            os.system('{0} --line {2} "{1}"'.format(editor_exe, filename, lineno))
 
     @classmethod
     def slice(cls, text: str, levels: list[str], diff: bool = False) -> None:
@@ -317,7 +266,7 @@ class FormulaCliTool:
                 char_table.insert(0, char_line)
 
             for i, char_line in reversed(list(enumerate(char_table))):
-                print("{0:<15}{1}".format(levels[i], "".join(char_line)))
+                print("{:<15}{}".format(levels[i], "".join(char_line)))
             print()
 
         else:
@@ -330,12 +279,12 @@ class FormulaCliTool:
     @classmethod
     def print_registry(cls) -> None:
         items_by_module: dict[str, list[NodeTranslation]] = defaultdict(list)
-        for _key, item in OPERATION_REGISTRY.items():
+        for item in OPERATION_REGISTRY.values():
             filename = inspect.getsourcefile(type(item))
             assert filename is not None
             items_by_module[filename].append(item)
 
-        prev_name: Optional[str]
+        prev_name: str | None
         for filename, item_list in sorted(items_by_module.items()):
             print(f"{filename}:")
             prev_name = None
@@ -375,9 +324,6 @@ class FormulaCliTool:
 
         elif args.command == "dialects":
             tool.list_dialects()
-
-        elif args.command == "goto":
-            tool.goto_func(name=args.func, show=args.show)
 
         elif args.command == "slice":
             tool.slice(text=args.text, levels=args.levels, diff=args.diff)

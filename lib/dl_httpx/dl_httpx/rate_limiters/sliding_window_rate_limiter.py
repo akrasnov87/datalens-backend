@@ -1,25 +1,26 @@
 import collections
+from collections.abc import (
+    AsyncIterator,
+    Iterator,
+)
 import contextlib
 import threading
 import time
 from typing import (
-    AsyncIterator,
-    Iterator,
     Literal,
     Protocol,
+    Self,
 )
 
 import attrs
 import pydantic
-from typing_extensions import Self
 
 import dl_httpx.rate_limiters.base as base
 import dl_httpx.utils.attrs as attrs_utils
 
 
 class DateTimeProvider(Protocol):
-    def get_now(self) -> float:
-        ...
+    def get_now(self) -> float: ...
 
 
 class DefaultDateTimeProvider:
@@ -72,7 +73,7 @@ class SlidingWindowRateLimiter:
             while self._timestamps and self._timestamps[0] < cutoff:
                 self._timestamps.popleft()
             if len(self._timestamps) >= self._max_requests:
-                raise base.RateLimitHttpxClientException()
+                raise base.RateLimitHttpxClientError()
             self._timestamps.append(now)
 
     @contextlib.contextmanager

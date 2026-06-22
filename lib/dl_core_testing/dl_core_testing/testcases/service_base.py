@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import abc
-import contextlib
-from typing import (
-    Any,
+from collections.abc import (
     AsyncGenerator,
     Callable,
+)
+import contextlib
+from importlib.resources import files
+from typing import (
+    Any,
     ClassVar,
     NamedTuple,
-    Optional,
 )
 
 import pytest
@@ -21,7 +23,7 @@ from dl_compeng_pg.compeng_pg_base.data_processor_service_pg import CompEngPgCon
 from dl_configs.crypto_keys import CryptoKeysConfig
 from dl_configs.rqe import RQEConfig
 from dl_configs.settings_submodels import RedisSettings
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     ProcessorType,
 )
@@ -36,7 +38,8 @@ from dl_core.services_registry.top_level import (
     DefaultServicesRegistry,
     ServicesRegistry,
 )
-from dl_core.united_storage_client import USAuthContextMaster
+from dl_core.united_storage_client import USAuthContextPrivateBase
+from dl_core.us_manager.dynamic_token_factory import DynamicUSMasterTokenFactory
 from dl_core.us_manager.mutation_cache.usentry_mutation_cache_factory import DefaultUSEntryMutationCacheFactory
 from dl_core.us_manager.us_manager_async import AsyncUSManager
 from dl_core.us_manager.us_manager_sync import SyncUSManager
@@ -56,31 +59,38 @@ from dl_utils.aio import ContextVarExecutor
 
 class USConfig(NamedTuple):
     us_base_url: str
-    us_auth_context: USAuthContextMaster
+    us_auth_context: USAuthContextPrivateBase
     us_crypto_keys_config: CryptoKeysConfig
 
 
 class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
     conn_type: ClassVar[ConnectionType]
     core_test_config: ClassVar[CoreTestEnvironmentConfiguration]
-    connection_settings: ClassVar[Optional[ConnectorSettings]] = None
-    inst_specific_sr_factory: ClassVar[Optional[InstallationSpecificServiceRegistryFactory]] = None
+    connection_settings: ClassVar[ConnectorSettings | None] = None
+    inst_specific_sr_factory: ClassVar[InstallationSpecificServiceRegistryFactory | None] = None
     data_caches_enabled: ClassVar[bool] = False
     compeng_enabled: ClassVar[bool] = False
 
     @pytest.fixture(scope="session")
     def conn_us_config(self) -> USConfig:
         us_env_config = self.core_test_config.get_us_config()
+        private_key = (files("dl_core_testing") / "keys" / "dynamic_us_master_token_private_key.pem").read_text()
+        dynamic_token_factory = DynamicUSMasterTokenFactory(
+            private_key=private_key,
+            token_lifetime_sec=3600,
+            min_ttl_sec=900.0,
+        )
         return USConfig(
             us_base_url=us_env_config.us_host,
-            us_auth_context=USAuthContextMaster(us_master_token=us_env_config.us_master_token),
+            us_auth_context=dynamic_token_factory.get_auth_context(
+                us_master_token=us_env_config.us_master_token,
+            ),
             us_crypto_keys_config=self.core_test_config.get_crypto_keys_config(),
         )
 
     @pytest.fixture(scope="session")
     def conn_bi_context(self) -> RequestContextInfo:
-        bi_context = RequestContextInfo.create_empty()
-        return bi_context
+        return RequestContextInfo.create_empty()
 
     @pytest.fixture(scope="session")
     def root_certificates(self) -> bytes:
@@ -105,7 +115,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
             await redis_client.connection_pool.disconnect()
 
     @pytest_asyncio.fixture(scope="function")
-    async def caches_redis_client_factory(self) -> AsyncGenerator[Optional[Callable[[bool], Redis]], None]:
+    async def caches_redis_client_factory(self) -> AsyncGenerator[Callable[[bool], Redis] | None, None]:
         if not self.data_caches_enabled:
             yield None
 
@@ -121,7 +131,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
     @pytest_asyncio.fixture(scope="function")
     async def data_processor_service_factory(
         self,
-    ) -> AsyncGenerator[Optional[Callable[[ProcessorType], DataProcessorService]], None]:
+    ) -> AsyncGenerator[Callable[[ProcessorType], DataProcessorService] | None, None]:
         """
         PG CompEng pool fixture.
 
@@ -149,9 +159,9 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
         conn_exec_factory_async_env: bool,
         conn_bi_context: RequestContextInfo,
         root_certificates_data: bytes,
-        caches_redis_client_factory: Optional[Callable[[bool], Optional[Redis]]] = None,
-        data_processor_service_factory: Optional[Callable[[bool], DataProcessorService]] = None,
-        entity_usage_checker: Optional[EntityUsageChecker] = None,
+        caches_redis_client_factory: Callable[[bool], Redis | None] | None = None,
+        data_processor_service_factory: Callable[[bool], DataProcessorService] | None = None,
+        entity_usage_checker: EntityUsageChecker | None = None,
         **kwargs: Any,
     ) -> ServicesRegistry:
         sr_future_ref: FutureRef[ServicesRegistry] = FutureRef()
@@ -184,7 +194,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
         sr_future_ref.fulfill(service_registry)
         return service_registry
 
-    @pytest.fixture(scope="session")
+    @pytest.fixture(scope="class")
     def conn_sync_service_registry(
         self,
         root_certificates: bytes,
@@ -197,7 +207,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
             root_certificates_data=root_certificates,
         )
 
-    @pytest.fixture(scope="session")
+    @pytest.fixture(scope="class")
     def conn_async_service_registry(
         self,
         root_certificates: bytes,
@@ -210,7 +220,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
             root_certificates_data=root_certificates,
         )
 
-    @pytest.fixture(scope="session")
+    @pytest.fixture(scope="class")
     def conn_default_service_registry(
         self,
         conn_exec_factory_async_env: bool,
@@ -228,7 +238,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
         conn_bi_context: RequestContextInfo,
         conn_default_service_registry: ServicesRegistry,
     ) -> SyncUSManager:
-        us_manager = SyncUSManager(
+        return SyncUSManager(
             bi_context=conn_bi_context,
             services_registry=conn_default_service_registry,
             us_base_url=conn_us_config.us_base_url,
@@ -236,7 +246,6 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
             crypto_keys_config=conn_us_config.us_crypto_keys_config,
             retry_policy_factory=dl_retrier.DefaultRetryPolicyFactory(),
         )
-        return us_manager
 
     @pytest.fixture(scope="class")
     def conn_default_async_us_manager(
@@ -246,7 +255,7 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
         conn_async_service_registry: ServicesRegistry,
         root_certificates: bytes,
     ) -> AsyncUSManager:
-        us_manager = AsyncUSManager(
+        return AsyncUSManager(
             bi_context=conn_bi_context,
             services_registry=conn_async_service_registry,
             us_base_url=conn_us_config.us_base_url,
@@ -255,7 +264,6 @@ class ServiceFixtureTextClass(metaclass=abc.ABCMeta):
             ca_data=root_certificates,
             retry_policy_factory=dl_retrier.DefaultRetryPolicyFactory(),
         )
-        return us_manager
 
 
 class DbServiceFixtureTextClass(metaclass=abc.ABCMeta):

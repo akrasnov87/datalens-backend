@@ -1,5 +1,5 @@
 import asyncio
-from typing import Generator
+from collections.abc import Generator
 import uuid
 
 import pytest
@@ -29,7 +29,7 @@ class BaseOracleTestClass(BaseConnectionTestClass[ConnectionSQLOracle]):
     def db_url(self) -> str:
         return test_config.DB_CORE_URL
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def connection_creation_params(self, _empty_table) -> dict:
         return dict(
             db_name=test_config.CoreConnectionSettings.DB_NAME,
@@ -37,7 +37,7 @@ class BaseOracleTestClass(BaseConnectionTestClass[ConnectionSQLOracle]):
             port=test_config.CoreConnectionSettings.PORT,
             username=test_config.CoreConnectionSettings.USERNAME,
             password=test_config.CoreConnectionSettings.PASSWORD,
-            **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level} if self.raw_sql_level is not None else {}),
         )
 
     @pytest.fixture(scope="class")
@@ -60,7 +60,7 @@ class BaseSSLOracleTestClass(BaseOracleTestClass):
     def db_url(self) -> str:
         return test_config.DB_CORE_URL_SSL
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def connection_creation_params(self, ssl_ca: str, _empty_table) -> dict:
         return dict(
             db_name=test_config.CoreSSLConnectionSettings.DB_NAME,
@@ -68,7 +68,7 @@ class BaseSSLOracleTestClass(BaseOracleTestClass):
             port=test_config.CoreSSLConnectionSettings.PORT,
             username=test_config.CoreSSLConnectionSettings.USERNAME,
             password=test_config.CoreSSLConnectionSettings.PASSWORD,
-            **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level} if self.raw_sql_level is not None else {}),
             ssl_enable=True,
             ssl_ca=ssl_ca,
         )

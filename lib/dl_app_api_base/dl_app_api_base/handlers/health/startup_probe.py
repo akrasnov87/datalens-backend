@@ -11,13 +11,12 @@ from dl_app_api_base.health import (
     SubsystemStatusSchema,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
 @attr.define(frozen=True, kw_only=True)
 class StartupProbeHandler(handlers.BaseHandler):
-    OPENAPI_TAGS = ["system"]
+    OPENAPI_TAGS = ("system",)
     OPENAPI_DESCRIPTION = "Startup probe, checks if all subsystems are ready"
 
     class ResponseSchema(handlers.BaseResponseSchema):

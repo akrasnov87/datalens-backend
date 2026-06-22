@@ -1,9 +1,7 @@
+from collections.abc import Mapping
 import http
 import logging
-from typing import (
-    Mapping,
-    Protocol,
-)
+from typing import Protocol
 
 import aiohttp.typedefs
 import aiohttp.web
@@ -12,7 +10,6 @@ import pydantic
 
 import dl_app_api_base.auth as auth
 import dl_app_api_base.handlers
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -30,8 +27,7 @@ class _InternalServerErrorResponseSchema(dl_app_api_base.handlers.ErrorResponseS
 
 
 class ErrorHandlerProtocol(Protocol):
-    def __call__(self, exc: Exception) -> aiohttp.web.StreamResponse | None:
-        ...
+    def __call__(self, exc: Exception) -> aiohttp.web.StreamResponse | None: ...
 
 
 class _UnauthorizedErrorResponseSchema(dl_app_api_base.handlers.ErrorResponseSchema):
@@ -76,7 +72,7 @@ class ErrorHandlingMiddleware:
     ) -> aiohttp.web.StreamResponse:
         try:
             return await handler(request)
-        except dl_app_api_base.handlers.ResponseException as e:
+        except dl_app_api_base.handlers.ResponseError as e:
             return e
         except Exception as exc:
             return self.handle_error(exc)

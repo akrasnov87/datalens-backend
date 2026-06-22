@@ -5,6 +5,7 @@ import datetime
 import decimal
 import itertools
 import logging
+from typing import Any
 import uuid
 
 import pyodbc
@@ -14,13 +15,12 @@ from sqlalchemy.dialects.mssql.pyodbc import MSDialect_pyodbc as UPSTREAM
 
 from dl_sqlalchemy_common.base import CompilerPrettyMixin
 
-
 LOGGER = logging.getLogger(__name__)
 
 
 class BIMSSQLDialectBasic(UPSTREAM):
-    @staticmethod  # noqa: C901
-    def _quote_simple_value(value):
+    @staticmethod
+    def _quote_simple_value(value) -> str | None:
         """Mainly from pymssql quoting, without the encoded output"""
 
         if value is None:
@@ -64,18 +64,13 @@ class BIMSSQLDialectBasic(UPSTREAM):
                 return "0x" + value.encode("hex")
 
         if isinstance(value, datetime.datetime):
-            return "{ts '%04d-%02d-%02d %02d:%02d:%02d.%03d'}" % (
-                value.year,
-                value.month,
-                value.day,
-                value.hour,
-                value.minute,
-                value.second,
-                value.microsecond / 1000,
+            return (
+                f"{{ts '{value.year:04d}-{value.month:02d}-{value.day:02d} "
+                f"{value.hour:02d}:{value.minute:02d}:{value.second:02d}.{value.microsecond // 1000:03d}'}}"
             )
 
         if isinstance(value, datetime.date):
-            return "{d '%04d-%02d-%02d'}" % (value.year, value.month, value.day)
+            return f"{{d '{value.year:04d}-{value.month:02d}-{value.day:02d}'}}"
 
         if isinstance(value, tuple) and len(value) == 1:
             # Sometimes a result of a query will be provided as a filter to another query, but
@@ -86,7 +81,7 @@ class BIMSSQLDialectBasic(UPSTREAM):
         return None
 
     @staticmethod
-    def translate_custom_parameters(params):
+    def translate_custom_parameters(params) -> list:
         def translate(param):
             if isinstance(param, tuple):
                 # Sometimes a result of a query will be provided as a filter to another query, but
@@ -113,17 +108,12 @@ class BIMSSQLDialectBasic(UPSTREAM):
         if parameters:
             statement = self.roll_parameters_into_statement(statement, parameters)
             # no need for parameters at this point, since they're all baked into the query
-            parameters = tuple()
+            parameters = ()
 
         try:
             cursor.execute(statement, self.translate_custom_parameters(parameters))
         except pyodbc.OperationalError:
-            LOGGER.error(
-                "pyodbc OperationalError. Full statement: {}\n Params: {}".format(
-                    statement,
-                    parameters,
-                )
-            )
+            LOGGER.error("pyodbc OperationalError. Full statement: %s\n Params: %s", statement, parameters)
             raise
 
     @upbase._db_plus_owner
@@ -138,39 +128,38 @@ class BIMSSQLDialectBasic(UPSTREAM):
 
             result = connection.execute(s.limit(1))
             return result.scalar() is not None
-        else:
-            tables = upbase.ischema.tables
+        tables = upbase.ischema.tables
 
-            s = upbase.sql.select(tables.c.table_name).where(
-                upbase.sql.and_(
-                    # Original: `tables.c.table_type == "BASE TABLE",`
-                    upbase.sql.or_(
-                        tables.c.table_type == "BASE TABLE",
-                        tables.c.table_type == "VIEW",
-                    ),
-                    # ...
-                    tables.c.table_name == tablename,
-                )
+        s = upbase.sql.select(tables.c.table_name).where(
+            upbase.sql.and_(
+                # Original: `tables.c.table_type == "BASE TABLE",`
+                upbase.sql.or_(
+                    tables.c.table_type == "BASE TABLE",
+                    tables.c.table_type == "VIEW",
+                ),
+                # ...
+                tables.c.table_name == tablename,
             )
+        )
 
-            if owner:
-                s = s.where(tables.c.table_schema == owner)
+        if owner:
+            s = s.where(tables.c.table_schema == owner)
 
-            c = connection.execute(s)
+        c = connection.execute(s)
 
-            return c.first() is not None
+        return c.first() is not None
 
 
 class BIMSSQLCompiler(UPSTREAM.statement_compiler, CompilerPrettyMixin):
-    def order_by_clause(self, select, **kw):
+    def order_by_clause(self, select, **kw: Any):
         sup = super().order_by_clause(select, **kw)
         return self._pretty.postprocess_block("ORDER BY", sup)
 
-    def limit_clause(self, cs, **kw):
+    def limit_clause(self, cs, **kw: Any):
         # Upstream: `return ""`
         return super().limit_clause(cs, **kw)
 
-    def visit_alias(self, alias, **kw):
+    def visit_alias(self, alias, **kw: Any):
         # Upstream only wraps its superclass.
         return super().visit_alias(alias, **kw)
 

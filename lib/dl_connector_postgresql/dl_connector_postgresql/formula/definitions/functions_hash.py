@@ -1,4 +1,4 @@
-from typing import Callable
+from collections.abc import Callable
 
 import sqlalchemy as sa
 from sqlalchemy.sql.elements import ClauseElement
@@ -7,7 +7,6 @@ from dl_formula.definitions.base import TranslationVariant
 import dl_formula.definitions.functions_hash as base
 
 from dl_connector_postgresql.formula.constants import PostgreSQLDialect as D
-
 
 V = TranslationVariant.make
 

@@ -1,7 +1,6 @@
-from typing import (
-    AbstractSet,
+from collections.abc import (
     Sequence,
-    Union,
+    Set,
 )
 
 from dl_formula.core.datatype import DataType
@@ -24,7 +23,7 @@ class ArgTypeMatcher:
 class ArgTypeSequence(ArgTypeMatcher):
     __slots__ = ("_exp_arg_types",)
 
-    def __init__(self, arg_types: Sequence[Union[DataType, AbstractSet[DataType]]]):
+    def __init__(self, arg_types: Sequence[DataType | Set[DataType]]) -> None:
         self._exp_arg_types = arg_types
 
     def match_arg_types(self, arg_types: Sequence[DataType]) -> bool:
@@ -44,8 +43,8 @@ class ArgTypeSequence(ArgTypeMatcher):
         expected_arg_type = self._exp_arg_types[pos]
         if isinstance(expected_arg_type, DataType):
             return {expected_arg_type}
-        else:  # set, frozenset
-            return set(expected_arg_type)
+        # set, frozenset
+        return set(expected_arg_type)
 
 
 class ArgTypeForAll(ArgTypeMatcher):
@@ -53,9 +52,9 @@ class ArgTypeForAll(ArgTypeMatcher):
 
     def __init__(
         self,
-        expected_types: Union[DataType, AbstractSet[DataType]],
-        require_type_match: Union[DataType, AbstractSet[DataType]] | None = None,
-    ):
+        expected_types: DataType | Set[DataType],
+        require_type_match: DataType | Set[DataType] | None = None,
+    ) -> None:
         self._exp_arg_types = {expected_types} if isinstance(expected_types, DataType) else expected_types
         self._require_type_match = (
             {require_type_match} if isinstance(require_type_match, DataType) else require_type_match
@@ -82,10 +81,10 @@ class ArgTypeSequenceThenForAll(ArgTypeMatcher):
 
     def __init__(
         self,
-        fixed_arg_types: Sequence[Union[DataType, AbstractSet[DataType]]],
-        for_all_types: Union[DataType, AbstractSet[DataType]],
-        for_all_require_type_match: Union[DataType, AbstractSet[DataType]] | None = None,
-    ):
+        fixed_arg_types: Sequence[DataType | Set[DataType]],
+        for_all_types: DataType | Set[DataType],
+        for_all_require_type_match: DataType | Set[DataType] | None = None,
+    ) -> None:
         self._fixed_arg_num = len(fixed_arg_types)
 
         self._fixed_arg_types_matcher = ArgTypeSequence(fixed_arg_types)
@@ -103,11 +102,10 @@ class ArgTypeSequenceThenForAll(ArgTypeMatcher):
         if pos < self._fixed_arg_num:
             # Return fixed type for this position
             return self._fixed_arg_types_matcher.get_possible_arg_types_at_pos(pos, self._fixed_arg_num)
-        else:
-            # Return 'for all' types for positions beyond fixed types
-            return self._for_all_types_matcher.get_possible_arg_types_at_pos(
-                pos - self._fixed_arg_num, total - self._fixed_arg_num
-            )
+        # Return 'for all' types for positions beyond fixed types
+        return self._for_all_types_matcher.get_possible_arg_types_at_pos(
+            pos - self._fixed_arg_num, total - self._fixed_arg_num
+        )
 
 
 class ArgFlagDispenser:
@@ -122,7 +120,7 @@ class ArgFlagDispenser:
 class ArgFlagSequence(ArgFlagDispenser):
     __slots__ = ("_arg_flags",)
 
-    def __init__(self, arg_flags: Sequence[ContextFlags | None]):
+    def __init__(self, arg_flags: Sequence[ContextFlags | None]) -> None:
         self._arg_flags = arg_flags
 
     def get_flags_for_pos(self, pos: int, total: int) -> ContextFlags | None:

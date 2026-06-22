@@ -1,6 +1,6 @@
 import pytest
 
-from dl_constants.enums import (
+from dl_constants import (
     JoinType,
     OrderDirection,
 )
@@ -25,7 +25,7 @@ from dl_query_processing.enums import (
     ExecutionLevel,
     QueryPart,
 )
-from dl_query_processing.exc import InconsistentSelectAggregation
+from dl_query_processing.exc import InconsistentSelectAggregationError
 from dl_query_processing.multi_query.mutators.splitter_based import SplitterMultiQueryMutator
 from dl_query_processing.multi_query.splitters.mask_based import (
     AddFormulaInfo,
@@ -40,7 +40,7 @@ from dl_query_processing.utils.name_gen import PrefixedIdGen
 
 
 class MyMultiQuerySplitter(MultiQuerySplitter):
-    def __init__(self):
+    def __init__(self) -> None:
         self._done_once = False
 
     def get_split_masks(
@@ -528,7 +528,7 @@ def test_field_splitter():
 
 def test_mutate_cropped_query_inconsistent_aggregation():
     """
-    Test that mutate_cropped_query raises InconsistentSelectAggregation
+    Test that mutate_cropped_query raises InconsistentSelectAggregationError
     """
     already_registered = LOWLEVEL_OP_REGISTRY.can_be_aggregate("sum")
     if not already_registered:
@@ -595,5 +595,5 @@ def test_mutate_cropped_query_inconsistent_aggregation():
         ),
     )
 
-    with pytest.raises(InconsistentSelectAggregation):
+    with pytest.raises(InconsistentSelectAggregationError):
         splitter.mutate_cropped_query(query)

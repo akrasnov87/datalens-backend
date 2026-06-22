@@ -1,8 +1,5 @@
-from typing import (
-    Any,
-    Mapping,
-    Optional,
-)
+from collections.abc import Mapping
+from typing import Any
 
 from marshmallow import ValidationError
 from marshmallow import fields as ma_fields
@@ -11,11 +8,11 @@ from dl_dynamic_enum import DynamicEnum
 
 
 class DynamicEnumField(ma_fields.Field):
-    def __init__(self, dyn_enum_cls: type[DynamicEnum], **kwargs: Any):
+    def __init__(self, dyn_enum_cls: type[DynamicEnum], **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._dyn_enum_cls = dyn_enum_cls
 
-    def _serialize(self, value: Any, attr: Optional[str], obj: Any, **kwargs: Any) -> Optional[str]:
+    def _serialize(self, value: Any, attr: str | None, obj: Any, **kwargs: Any) -> str | None:
         if value is None and self.allow_none:
             return None
 
@@ -24,7 +21,7 @@ class DynamicEnumField(ma_fields.Field):
 
         return value.value
 
-    def _deserialize(self, value: Any, attr: Optional[str], data: Optional[Mapping[str, Any]], **kwargs: Any) -> Any:
+    def _deserialize(self, value: Any, attr: str | None, data: Mapping[str, Any] | None, **kwargs: Any) -> Any:
         if value is None and self.allow_none:
             return None
 
@@ -34,5 +31,4 @@ class DynamicEnumField(ma_fields.Field):
         if not self._dyn_enum_cls.is_declared(value):
             raise ValidationError(f"Invalid value {value} for {attr}")
 
-        deserialized_value = self._dyn_enum_cls(value)
-        return deserialized_value
+        return self._dyn_enum_cls(value)

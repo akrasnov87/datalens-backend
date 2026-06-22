@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import difflib
-from typing import (
-    Any,
+from collections.abc import (
     Iterable,
-    Optional,
     Sequence,
 )
+import contextlib
+import difflib
+from typing import Any
 
 import attr
 import yaml
@@ -111,7 +111,7 @@ def dump_gron(
             yield line_tpl.format(name=name, value="true" if node else "false")
             return
         if isinstance(node, (str, bytes)):
-            yield line_tpl.format(name=name, value='"{}"'.format(node))  # type: ignore  # TODO: fix
+            yield line_tpl.format(name=name, value=f'"{node}"')  # type: ignore  # TODO: fix
             return
         if isinstance(node, dict):
             if init_values:
@@ -120,7 +120,7 @@ def dump_gron(
             if sort_keys:
                 items = sorted(items)  # type: ignore  # TODO: fix
             for key, value in items:
-                children = gron_walk(value, name="{}{}".format(name, quote_key(key)))
+                children = gron_walk(value, name=f"{name}{quote_key(key)}")
                 for child in children:
                     yield child
             return
@@ -128,7 +128,7 @@ def dump_gron(
             if init_values:
                 yield line_tpl.format(name=name, value="[]")
             for idx, value in enumerate(node):
-                children = gron_walk(value, name="{}[{}]".format(name, idx))
+                children = gron_walk(value, name=f"{name}[{idx}]")
                 for child in children:
                     yield child
             return
@@ -155,10 +155,8 @@ def make_diff(  # type: ignore  # TODO: fix
     result = result.strip()
 
     if colorize:
-        try:
+        with contextlib.suppress(Exception):
             result = _colorize_diff(result).strip()
-        except Exception:
-            pass
     return result
 
 
@@ -168,21 +166,20 @@ def get_diff_text(  # type: ignore  # TODO: fix
     unified_n: int = 1,  # recommended: 1 for gron, 5 for yaml
     dumper=dump_gron,
     colorize: bool = True,
-) -> Optional[str]:
+) -> str | None:
     if not isinstance(entry, USMigrationEntry):
         return None
 
     us_resp = entry._us_resp
-    value_a = dict(
-        data=dict(us_resp["data"]),  # type: ignore  # TODO: fix
-        unversioned_data=dict(us_resp.get("unversionedData") or {}),  # type: ignore  # TODO: fix
-        meta=us_resp["meta"],  # type: ignore  # TODO: fix
-    )
-    value_b = dict(
-        data=dict(us_manager.dump_data(entry)),
-        unversioned_data=dict(getattr(entry, "unversioned_data", {})),
-        meta=dict(entry.meta),
-    )
+    value_a = {
+        "data": dict(us_resp["data"]),  # type: ignore  # TODO: fix
+        "unversioned_data": dict(us_resp.get("unversionedData") or {}),  # type: ignore  # TODO: fix
+        "meta": us_resp["meta"],  # type: ignore  # TODO: fix
+    }
+    value_b = {
+        "data": dict(us_manager.dump_data(entry)),
+        "unversioned_data": dict(getattr(entry, "unversioned_data", {})),
+        "meta": dict(entry.meta),
+    }
 
-    result = make_diff(value_a=value_a, value_b=value_b, unified_n=unified_n, dumper=dumper, colorize=colorize)
-    return result
+    return make_diff(value_a=value_a, value_b=value_b, unified_n=unified_n, dumper=dumper, colorize=colorize)

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Hashable
 import hashlib
 from typing import (
     Any,
-    Hashable,
     NamedTuple,
-    Optional,
 )
 
 import attr
@@ -34,7 +33,7 @@ class CacheTTLInfo:
 @attr.s(frozen=True, auto_attribs=True)
 class BIQueryCacheOptions:
     cache_enabled: bool
-    key: Optional[LocalKeyRepresentation]
+    key: LocalKeyRepresentation | None
     ttl_sec: int
     refresh_ttl_on_read: bool
 
@@ -63,8 +62,8 @@ class DataKeyPart(NamedTuple):
 @attr.s(slots=True)
 class LocalKeyRepresentation:
     _key_parts: tuple[DataKeyPart, ...] = attr.ib(default=())
-    _key_parts_str: Optional[str] = attr.ib(init=False, default=None)
-    _key_parts_hash: Optional[str] = attr.ib(init=False, default=None)
+    _key_parts_str: str | None = attr.ib(init=False, default=None)
+    _key_parts_hash: str | None = attr.ib(init=False, default=None)
 
     def validate(self) -> None:
         if len(self.key_parts) == 0:
@@ -91,7 +90,7 @@ class LocalKeyRepresentation:
     def extend(self, part_type: str, part_content: Hashable) -> LocalKeyRepresentation:
         assert part_content is not None
         new_part = DataKeyPart(part_type=part_type, part_content=part_content)
-        return LocalKeyRepresentation(key_parts=self.key_parts + (new_part,))
+        return LocalKeyRepresentation(key_parts=(*self.key_parts, new_part))
 
     def multi_extend(self, *parts: DataKeyPart) -> LocalKeyRepresentation:
         return LocalKeyRepresentation(key_parts=self.key_parts + parts)

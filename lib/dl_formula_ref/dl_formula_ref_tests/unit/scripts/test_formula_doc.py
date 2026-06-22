@@ -26,7 +26,7 @@ def tool():
     return ToolRunner(parser=parser, tool_cls=FormulaDocTool)
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def example_data_patch(monkeypatch):
     # TODO: Maybe this should be the standard way to access this file
     # Workaround for accessing data file from the monobinary in CI tests
@@ -74,7 +74,7 @@ def test_versions(tool):
 
 def test_doc_full_dir(tool, example_data_patch):
     tmpdir = tempfile.mkdtemp()
-    stdout, stderr = tool.run(["generate", tmpdir])
+    _stdout, stderr = tool.run(["generate", tmpdir])
     assert stderr == ""
     assert os.path.exists(os.path.join(tmpdir, "function-ref", "CONCAT.md"))
     assert os.path.exists(os.path.join(tmpdir, "function-ref", "all.md"))

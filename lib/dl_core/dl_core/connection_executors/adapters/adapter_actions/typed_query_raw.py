@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import attr
 
-from dl_constants.enums import DashSQLQueryType
+from dl_constants import DashSQLQueryType
 from dl_core.connection_executors.adapters.adapter_actions.async_base import AsyncTypedQueryRawAdapterAction
 from dl_core.connection_executors.adapters.async_adapters_base import AsyncRawJsonExecutionResult
 from dl_core.connection_executors.models.db_adapter_data import DBAdapterQuery
@@ -14,7 +14,6 @@ from dl_dashsql.typed_query.primitives import (
     TypedQueryRawResultData,
 )
 from dl_utils.utils import hide_url_args
-
 
 if TYPE_CHECKING:
     from dl_core.connection_executors.adapters.async_adapters_base import AsyncDBAdapter
@@ -29,17 +28,16 @@ class TypedQueryRawToDBAQueryConverter:
 
     def make_dba_query(self, typed_query_raw: TypedQueryRaw) -> DBAdapterQuery:
         params = typed_query_raw.parameters
-        dba_query = DBAdapterQuery(
+        return DBAdapterQuery(
             query=params.path,
-            connector_specific_params=dict(
-                method=params.method,
-                content_type=params.content_type,
-                body=params.body,
-            ),
+            connector_specific_params={
+                "method": params.method,
+                "content_type": params.content_type,
+                "body": params.body,
+            },
             debug_compiled_query=f"{params.method} {hide_url_args(params.path)} [Content-Type: {params.content_type}]",
             inspector_query=f"{params.method} {hide_url_args(params.path)} [Content-Type: {params.content_type}]",  # TODO: BI-6448
         )
-        return dba_query
 
 
 @attr.s(frozen=True)
@@ -59,5 +57,4 @@ class AsyncTypedQueryRawAdapterActionViaStandardExecute(AsyncTypedQueryRawAdapte
             headers=dba_async_result.raw_data["headers"],
             body=dba_async_result.raw_data["body"],
         )
-        result = TypedQueryRawResult(query_type=typed_query_raw.query_type, data=result_data)
-        return result
+        return TypedQueryRawResult(query_type=typed_query_raw.query_type, data=result_data)

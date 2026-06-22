@@ -10,10 +10,9 @@ from dl_core.db.schema import (
     are_raw_schemas_same,
 )
 
-
 __all__ = (
-    "IndexInfo",
     "SAMPLE_ID_COLUMN_NAME",
+    "IndexInfo",
     "SchemaColumn",
     "SchemaInfo",
     "are_raw_schemas_same",

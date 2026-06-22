@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-    Sequence,
-)
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import attr
 
@@ -13,7 +10,6 @@ from dl_core.connection_executors.async_sa_executors import DefaultSqlAlchemyCon
 
 from dl_connector_bitrix_gds.core.adapter import BitrixGDSDefaultAdapter
 from dl_connector_bitrix_gds.core.target_dto import BitrixGDSConnTargetDTO
-
 
 if TYPE_CHECKING:
     from dl_connector_bitrix_gds.core.dto import BitrixGDSConnDTO
@@ -26,8 +22,8 @@ class BitrixGDSAsyncAdapterConnExecutor(DefaultSqlAlchemyConnExecutor[BitrixGDSD
     _conn_dto: BitrixGDSConnDTO = attr.ib()
 
     async def _make_target_conn_dto_pool(self) -> Sequence[BitrixGDSConnTargetDTO]:
-        redis_conn_params: Optional[RedisConnParams] = None
-        caches_ttl: Optional[int] = None
+        redis_conn_params: RedisConnParams | None = None
+        caches_ttl: int | None = None
 
         assert self._services_registry is not None
         rqe_caches_setting = self._services_registry.get_rqe_caches_settings()
@@ -42,7 +38,7 @@ class BitrixGDSAsyncAdapterConnExecutor(DefaultSqlAlchemyConnExecutor[BitrixGDSD
             )
             caches_ttl = rqe_caches_setting.caches_ttl
 
-        conn_params: Optional[dict]
+        conn_params: dict | None
         if isinstance(redis_conn_params, RedisConnParams):
             conn_params = attr.asdict(redis_conn_params)
         else:

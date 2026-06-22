@@ -1,7 +1,5 @@
-from typing import (
-    Callable,
-    ClassVar,
-)
+from collections.abc import Callable
+from typing import ClassVar
 
 import attr
 import sqlalchemy as sa
@@ -31,7 +29,6 @@ from dl_connector_trino.core.constants import (
 )
 from dl_connector_trino.core.dto import TrinoConnDTO
 from dl_connector_trino.core.settings import TrinoConnectorSettings
-
 
 TRINO_SYSTEM_CATALOGS = (
     "system",
@@ -108,6 +105,7 @@ class ConnectionTrinoBase(
                     source_type=SOURCE_TYPE_TRINO_TABLE,
                     localizer=localizer,
                     disabled=not self.is_subselect_allowed,
+                    disabled_text=self.subselect_disabled_text,
                     template_enabled=False,  # TODO BI-6411 enable dsrc templating
                     db_name_form_enabled=True,
                     db_name_form_title=localizer.translate(Translatable("source_templates-label-trino_catalog")),
@@ -121,6 +119,7 @@ class ConnectionTrinoBase(
                 source_type=SOURCE_TYPE_TRINO_SUBSELECT,
                 localizer=localizer,
                 disabled=not self.is_subselect_allowed,
+                disabled_text=self.subselect_disabled_text,
                 title="Subselect over Trino",
             )
         )
@@ -159,11 +158,11 @@ class ConnectionTrinoBase(
                 offset=offset,
             )
             return [
-                dict(
-                    db_name=db_name,
-                    schema_name=table.schema_name,
-                    table_name=table.table_name,
-                )
+                {
+                    "db_name": db_name,
+                    "schema_name": table.schema_name,
+                    "table_name": table.table_name,
+                }
                 for table in tables
             ]
 
@@ -179,11 +178,11 @@ class ConnectionTrinoBase(
                 db_name=catalog_name,
             )
             parameter_combinations.extend(
-                dict(
-                    db_name=catalog_name,
-                    schema_name=table.schema_name,
-                    table_name=table.table_name,
-                )
+                {
+                    "db_name": catalog_name,
+                    "schema_name": table.schema_name,
+                    "table_name": table.table_name,
+                }
                 for table in tables
             )
 

@@ -6,17 +6,16 @@ import dl_formula.definitions.functions_type as base
 
 from dl_connector_mssql.formula.constants import MssqlDialect as D
 
-
 V = TranslationVariant.make
 
 
 class MSSQLFuncBoolFromNumber(base.FuncBoolFromNumber):
-    variants = [
+    variants = (
         V(
             D.MSSQLSRV,
             lambda value: sa.case(whens=[(value.is_(None), sa.null()), (value != sa.literal(0), 1)], else_=0),
         ),
-    ]
+    )
     return_flags = 0  # type: ignore  # 2024-01-30 # TODO: Incompatible types in assignment (expression has type "int", base class "FuncBoolFromNumber" defined the type as "ContextFlag")  [assignment]
 
 

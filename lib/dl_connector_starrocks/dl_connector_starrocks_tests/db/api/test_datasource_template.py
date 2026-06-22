@@ -21,51 +21,47 @@ class BaseTableTestSourceTemplate(dl_api_lib_testing.BaseTableTestSourceTemplate
 
     @pytest.fixture(name="datasource_parameters")
     def fixture_datasource_parameters(self) -> dict[str, str]:
-        return dict(
-            table_name="{{table_name}}",
-            db_name=CoreConnectionSettings.CATALOG,
-            schema_name=CoreConnectionSettings.DB_NAME,
-        )
+        return {
+            "table_name": "{{table_name}}",
+            "db_name": CoreConnectionSettings.CATALOG,
+            "schema_name": CoreConnectionSettings.DB_NAME,
+        }
 
     @pytest.fixture(name="invalid_datasource_parameters")
     def fixture_invalid_datasource_parameters(self) -> dict[str, str]:
-        return dict(
-            table_name="{{invalid_parameter_name}}",
-            db_name=CoreConnectionSettings.CATALOG,
-            schema_name=CoreConnectionSettings.DB_NAME,
-        )
+        return {
+            "table_name": "{{invalid_parameter_name}}",
+            "db_name": CoreConnectionSettings.CATALOG,
+            "schema_name": CoreConnectionSettings.DB_NAME,
+        }
 
 
 class TestTableControlApiSourceTemplate(
     BaseTableTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplate,
     StarRocksDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestTableControlApiSourceTemplateSettingsDisabled(
     BaseTableTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplateSettingsDisabled,
     StarRocksDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestTableDataApiSourceTemplateConnectionDisabled(
     BaseTableTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplateConnectionDisabled,
     StarRocksDataApiTestBase,
-):
-    ...
+): ...
 
 
 class TestTableDataApiSourceTemplate(
     BaseTableTestSourceTemplate,
     dl_api_lib_testing.BaseTestDataApiSourceTemplate,
     StarRocksDataApiTestBase,
-):
-    ...
+): ...
 
 
 class BaseSubselectTestSourceTemplate(dl_api_lib_testing.BaseSubselectTestSourceTemplate):
@@ -83,29 +79,25 @@ class TestSubselectControlApiSourceTemplate(
     BaseSubselectTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplate,
     StarRocksDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestSubselectControlApiSourceTemplateSettingsDisabled(
     BaseSubselectTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplateSettingsDisabled,
     StarRocksDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestSubselectControlApiSourceTemplateConnectionDisabled(
     BaseSubselectTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplateConnectionDisabled,
     StarRocksDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestSubselectDataApiSourceTemplate(
     BaseSubselectTestSourceTemplate,
     dl_api_lib_testing.BaseTestDataApiSourceTemplate,
     StarRocksDataApiTestBase,
-):
-    ...
+): ...

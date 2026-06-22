@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import (
+    Callable,
+    Iterable,
+)
 import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
-    Iterable,
     NamedTuple,
 )
 
@@ -15,12 +17,12 @@ import attr
 from sqlalchemy.sql import TableClause
 
 from dl_cache_engine.primitives import LocalKeyRepresentation
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DataSourceType,
     JoinType,
 )
-from dl_constants.exc import DLBaseException
+from dl_constants.exc import DLBaseError
 from dl_core.base_models import (
     ConnectionRef,
     SourceFilterSpec,
@@ -35,6 +37,8 @@ from dl_core.db import (
 )
 from dl_core.exc import (
     ConnectionTemplateDisabledError,
+    ReferencedUSEntryAccessDeniedError,
+    ReferencedUSEntryNotFoundError,
     TemplateInvalidError,
 )
 from dl_core.query.bi_query import SqlSourceType
@@ -46,7 +50,6 @@ from dl_type_transformer.type_transformer import (
     TypeTransformer,
     get_type_transformer,
 )
-
 
 if TYPE_CHECKING:
     from dl_core.services_registry.top_level import ServicesRegistry
@@ -133,6 +136,7 @@ class DataSource(metaclass=abc.ABCMeta):
     preview_enabled: ClassVar[bool] = True
     default_chunk_row_count: ClassVar[int] = 10000
     chunk_size_bytes: ClassVar[int] = 3 * 1024**2
+    is_table_source: ClassVar[bool] = False
 
     compiler_cls: type[QueryCompiler] = QueryCompiler
     conn_type: ClassVar[ConnectionType]  # TODO unbind DataSource and Connection classes BI-4083
@@ -196,7 +200,30 @@ class DataSource(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     def get_parameters(self) -> dict:
-        return {}
+        return {"manual": self.manual}
+
+    @property
+    def manual(self) -> bool:
+        if self.spec.manual is not None:
+            return self.spec.manual
+        return self.get_default_manual()
+
+    def get_default_manual(self) -> bool:
+        if not self.is_table_source:
+            return True
+        try:
+            if self.is_templated():
+                return True
+        except Exception:
+            # Some connectors compute their templated value from connection state and may
+            # raise non-DL exceptions if the configuration isn't ready. Fall back to
+            # ``manual=False`` rather than crashing the whole validation request.
+            return False
+        return False
+
+    def is_manual_allowed(self) -> bool:
+        """Whether this data source can be used with ``manual=True`` given its connection state."""
+        return True
 
     @property
     def id(self) -> str | None:
@@ -221,12 +248,11 @@ class DataSource(metaclass=abc.ABCMeta):
         try:
             if strict:
                 return getattr(self.connection, attr_name)
-            else:
-                return getattr(self.connection, attr_name, None)
-        except DLBaseException as e:
+            return getattr(self.connection, attr_name, None)
+        except DLBaseError as e:
             if strict:
                 raise
-            LOGGER.warning(f"Error while getting {attr_name} from connection: {str(e)}")
+            LOGGER.warning("Error while getting %s from connection: %s", attr_name, e)
             return None
 
     @property
@@ -247,9 +273,8 @@ class DataSource(metaclass=abc.ABCMeta):
     @property
     def cache_enabled(self) -> bool:
         conn = self._connection
-        if conn is not None:
-            if not conn.allow_cache:
-                return False
+        if conn is not None and not conn.allow_cache:
+            return False
         return self._cache_enabled
 
     def get_schema_info(self, conn_executor_factory: Callable[[], SyncConnExecutorBase]) -> SchemaInfo:
@@ -274,7 +299,7 @@ class DataSource(metaclass=abc.ABCMeta):
         """
         raise NotImplementedError()
 
-    def _render_dataset_parameter_values(
+    def render_dataset_parameter_values(
         self,
         value: str,
     ) -> str:
@@ -297,7 +322,7 @@ class DataSource(metaclass=abc.ABCMeta):
             return False
 
         try:
-            return self._render_dataset_parameter_values(value) != value
+            return self.render_dataset_parameter_values(value) != value
         except ConnectionTemplateDisabledError:
             return False
         except TemplateInvalidError:
@@ -352,6 +377,13 @@ class DataSource(metaclass=abc.ABCMeta):
         return self.connection.is_cache_invalidation_enabled
 
     @property
+    def is_query_settings_enabled(self) -> bool:
+        try:
+            return self.connection.is_query_settings_enabled
+        except (ReferencedUSEntryNotFoundError, ReferencedUSEntryAccessDeniedError):
+            return False
+
+    @property
     def data_export_allowed_for_conn_type(self) -> bool:
         return self.connection.allow_background_data_export_for_conn_type
 
@@ -364,11 +396,10 @@ class DataSource(metaclass=abc.ABCMeta):
         else:
             compiled_sql_source = sql_source.compile(compile_kwargs={"literal_binds": True}).string
 
-        local_key_rep = local_key_rep.extend(
+        return local_key_rep.extend(
             part_type="data_source_sql",
             part_content=compiled_sql_source,
         )
-        return local_key_rep
 
 
 class IncompatibleDataSourceMixin(DataSource):

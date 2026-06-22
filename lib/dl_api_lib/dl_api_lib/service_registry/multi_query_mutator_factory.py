@@ -1,10 +1,10 @@
+from collections.abc import Sequence
 import logging
-from typing import Sequence
 
 import attr
 
 from dl_api_lib.query.registry import get_multi_query_mutator_factory_class
-from dl_constants.enums import (
+from dl_constants import (
     QueryProcessingMode,
     SourceBackendType,
 )
@@ -12,7 +12,6 @@ from dl_core.us_dataset import Dataset
 from dl_formula.core.dialect import DialectCombo
 from dl_query_processing.multi_query.factory import MultiQueryMutatorFactoryBase
 from dl_query_processing.multi_query.mutators.base import MultiQueryMutatorBase
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -36,10 +35,11 @@ class SRMultiQueryMutatorFactory:
             dialect=dialect,
         )
         LOGGER.info(
-            f"Resolved MQM factory for backend_type {backend_type.name} "
-            f"and dialect {dialect.common_name_and_version} "
-            f"in {self._query_proc_mode.name} mode "
-            f"to {factory_cls.__name__}"
+            "Resolved MQM factory for backend_type %s and dialect %s in %s mode to %s",
+            backend_type.name,
+            dialect.common_name_and_version,
+            self._query_proc_mode.name,
+            factory_cls.__name__,
         )
         return factory_cls
 

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from typing import (
-    AbstractSet,
-    Any,
+from collections.abc import (
     Iterable,
     Mapping,
-    Optional,
     Sequence,
-    Union,
+    Set,
 )
+from typing import Any
 
 from marshmallow.decorators import (
     POST_DUMP,
@@ -30,8 +28,8 @@ class OneOfSchemaWithDumpLoadHooks(OneOfSchema):
     """
 
     def dump(
-        self, obj: Any, *, many: Optional[bool] = None, **kwargs: Any
-    ) -> Union[Mapping[str, Any], Iterable[Mapping[str, Any]]]:
+        self, obj: Any, *, many: bool | None = None, **kwargs: Any
+    ) -> Mapping[str, Any] | Iterable[Mapping[str, Any]]:
         many = self.many if many is None else bool(many)
 
         if self._has_processors(PRE_DUMP):
@@ -48,11 +46,11 @@ class OneOfSchemaWithDumpLoadHooks(OneOfSchema):
 
     def load(
         self,
-        data: Union[Mapping[str, Any], Iterable[Mapping[str, Any]]],
+        data: Mapping[str, Any] | Iterable[Mapping[str, Any]],
         *,
-        many: Optional[bool] = None,
-        partial: Optional[Union[bool, Sequence[str], AbstractSet[str]]] = None,
-        unknown: Optional[str] = None,
+        many: bool | None = None,
+        partial: bool | Sequence[str] | Set[str] | None = None,
+        unknown: str | None = None,
         **kwargs: Any,
     ) -> Any:
         error_store = ErrorStore()
@@ -67,7 +65,7 @@ class OneOfSchemaWithDumpLoadHooks(OneOfSchema):
         if self._has_processors(PRE_LOAD):
             try:
                 processed_data = self._invoke_load_processors(
-                    PRE_LOAD, data, many=many, original_data=data, partial=partial  # type: ignore  # 2024-01-24 # TODO: Argument "partial" to "_invoke_load_processors" of "Schema" has incompatible type "bool | Sequence[str] | AbstractSet[str]"; expected "bool | Sequence[str] | set[str]"  [arg-type]
+                    PRE_LOAD, data, many=many, original_data=data, partial=partial  # type: ignore  # 2024-01-24 # TODO: Argument "partial" to "_invoke_load_processors" of "Schema" has incompatible type "bool | Sequence[str] | Set[str]"; expected "bool | Sequence[str] | set[str]"  [arg-type]
                 )
             except ValidationError as err:
                 errors = err.normalized_messages()
@@ -88,7 +86,7 @@ class OneOfSchemaWithDumpLoadHooks(OneOfSchema):
                         result,
                         many=many,
                         original_data=data,
-                        partial=partial,  # type: ignore  # 2024-01-24 # TODO: Argument "partial" to "_invoke_load_processors" of "Schema" has incompatible type "bool | Sequence[str] | AbstractSet[str]"; expected "bool | Sequence[str] | set[str]"  [arg-type]
+                        partial=partial,  # type: ignore  # 2024-01-24 # TODO: Argument "partial" to "_invoke_load_processors" of "Schema" has incompatible type "bool | Sequence[str] | Set[str]"; expected "bool | Sequence[str] | set[str]"  [arg-type]
                     )
                 except ValidationError as err:
                     errors = err.normalized_messages()

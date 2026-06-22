@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 import datetime
 from typing import (
     ClassVar,
-    Collection,
     TypeVar,
-    Union,
 )
 
 import pytest
@@ -39,9 +38,9 @@ class DefaultMainAggFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase):
     def test_date_avg_function(self, dbe: DbEvaluator, data_table: sa.Table) -> None:
         date_values = data_table.date_values  # type: ignore  # 2024-01-29 # TODO: "Table" has no attribute "date_values"  [attr-defined]
 
-        assert dbe.eval("AVG([date_value])", from_=data_table) == datetime.date.fromtimestamp(
-            sum(map(lambda date: utc_ts(date), date_values)) / len(date_values)
-        )
+        avg_ts = sum(utc_ts(date) for date in date_values) / len(date_values)
+        expected_date = datetime.datetime.fromtimestamp(avg_ts, tz=datetime.UTC).date()
+        assert dbe.eval("AVG([date_value])", from_=data_table) == expected_date
 
     def test_datetime_avg_function(self, dbe: DbEvaluator, data_table: sa.Table) -> None:
         datetime_values = data_table.datetime_values  # type: ignore  # 2024-01-29 # TODO: "Table" has no attribute "datetime_values"  [attr-defined]
@@ -49,7 +48,7 @@ class DefaultMainAggFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase):
         def dt_avg(values) -> datetime.datetime:  # type: ignore  # 2024-01-29 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
             tses = [utc_ts(dt) for dt in values]
             ts = sum(tses) / len(tses)
-            return datetime.datetime.utcfromtimestamp(ts)
+            return datetime.datetime.fromtimestamp(ts, tz=datetime.UTC).replace(tzinfo=None)
 
         # Sanity check:
         assert dt_avg(datetime_values[:1]) == datetime_values[0]
@@ -102,9 +101,7 @@ class DefaultMainAggFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase):
         # Zero matching elements
         assert (
             dbe.eval(
-                "AVG_IF([int_value], [int_value] > {max_val} and [int_value] < {min_val})".format(
-                    max_val=max(values), min_val=min(values)
-                ),
+                f"AVG_IF([int_value], [int_value] > {max(values)} and [int_value] < {min(values)})",
                 from_=data_table,
             )
             is None
@@ -139,7 +136,7 @@ class DefaultMainAggFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase):
 
         VALUE_TV = TypeVar("VALUE_TV")
 
-        def median(values: Collection[Union[VALUE_TV]]) -> VALUE_TV:
+        def median(values: Collection[VALUE_TV]) -> VALUE_TV:
             values = sorted(values)  # type: ignore  # 2024-01-30 # TODO: Value of type variable "SupportsRichComparisonT" of "sorted" cannot be "VALUE_TV"  [type-var]
             upper_middle = len(values) // 2 + 1
             return values[upper_middle]
@@ -175,7 +172,7 @@ class DefaultMainAggFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase):
         if not self.supports_top_concat:
             pytest.skip()
 
-        expected_values = set(str(val) for val in set(data_table.int_values))  # type: ignore  # 2024-01-29 # TODO: "Table" has no attribute "int_values"  [attr-defined]
+        expected_values = {str(val) for val in set(data_table.int_values)}  # type: ignore  # 2024-01-29 # TODO: "Table" has no attribute "int_values"  [attr-defined]
         res = dbe.eval("TOP_CONCAT([int_value], 3)", from_=data_table)
         assert not set(res.split(", ")) - expected_values, "should be a subset"
         res = dbe.eval("TOP_CONCAT([int_value], 3, '; ')", from_=data_table)

@@ -4,7 +4,7 @@ from typing import Any
 
 import marshmallow.fields as ma_fields
 
-from dl_constants.enums import DataSourceType
+from dl_constants import DataSourceType
 from dl_core.base_models import InternalMaterializationConnectionRef
 from dl_core.data_source.type_mapping import get_data_source_class
 from dl_core.data_source_spec.base import DataSourceSpec
@@ -24,11 +24,10 @@ from dl_core.us_manager.storage_schemas.index_info import DataSourceIndexInfoSto
 from dl_core.us_manager.storage_schemas.raw_schema import DataSourceRawSchemaEntryStorageSchema
 from dl_model_tools.schema.dynamic_enum_field import DynamicEnumField
 
-
 _DSRC_TOPLEVEL_PARAMS = ("connection_id", "created_from", "raw_schema")
 
 
-class DataSourceSpecStorageSchema(BaseStorageSchema):  # noqa
+class DataSourceSpecStorageSchema(BaseStorageSchema):
     TARGET_CLS = DataSourceSpec
 
     connection_id = ConnectionRefField(allow_none=True, load_default=None, attribute="connection_ref")
@@ -39,6 +38,7 @@ class DataSourceSpecStorageSchema(BaseStorageSchema):  # noqa
         allow_none=True,
     )
     created_from = DynamicEnumField(DataSourceType, attribute="source_type")
+    manual = ma_fields.Boolean(allow_none=True, load_default=None)
 
     def pre_process_input_data(self, data: dict[str, Any]) -> dict:
         data = data.copy()
@@ -49,7 +49,7 @@ class DataSourceSpecStorageSchema(BaseStorageSchema):  # noqa
             }
         return data
 
-    def post_process_output_data(self, data: dict[str, Any]) -> dict[str, Any]:  # noqa
+    def post_process_output_data(self, data: dict[str, Any]) -> dict[str, Any]:
         # TODO: Remove. Temporary hack for compatibility with old schemas:
         #  Pack all non-standard keys into "parameters" sub-dict
         parameters = {}
@@ -80,13 +80,13 @@ class DataSourceSpecStorageSchema(BaseStorageSchema):  # noqa
         return self.TARGET_CLS(**kw)
 
 
-class BaseSQLDataSourceSpecStorageSchema(DataSourceSpecStorageSchema):  # noqa
+class BaseSQLDataSourceSpecStorageSchema(DataSourceSpecStorageSchema):
     TARGET_CLS = SQLDataSourceSpecBase
 
     db_version = ma_fields.String(required=False, allow_none=True, load_default=None)
 
 
-class SubselectSQLDataSourceSpecStorageSchemaMixin(BaseSQLDataSourceSpecStorageSchema):  # noqa
+class SubselectSQLDataSourceSpecStorageSchemaMixin(BaseSQLDataSourceSpecStorageSchema):
     subsql = ma_fields.String(required=False, allow_none=True, load_default=None)
 
 
@@ -97,15 +97,15 @@ class SubselectDataSourceSpecStorageSchema(
     TARGET_CLS = SubselectDataSourceSpec
 
 
-class DbSQLDataSourceSpecStorageSchemaMixin(BaseSQLDataSourceSpecStorageSchema):  # noqa
+class DbSQLDataSourceSpecStorageSchemaMixin(BaseSQLDataSourceSpecStorageSchema):
     db_name = ma_fields.String(required=False, allow_none=True, load_default=None)
 
 
-class TableSQLDataSourceSpecStorageSchemaMixin(BaseSQLDataSourceSpecStorageSchema):  # noqa
+class TableSQLDataSourceSpecStorageSchemaMixin(BaseSQLDataSourceSpecStorageSchema):
     table_name = ma_fields.String(required=False, allow_none=True, load_default=None)
 
 
-class IndexedSQLDataSourceSpecStorageSchemaMixin(BaseSQLDataSourceSpecStorageSchema):  # noqa
+class IndexedSQLDataSourceSpecStorageSchemaMixin(BaseSQLDataSourceSpecStorageSchema):
     index_info_set = FrozenSetField(
         ma_fields.Nested(DataSourceIndexInfoStorageSchema),
         sort_output=True,
@@ -120,11 +120,11 @@ class SQLDataSourceSpecStorageSchema(
     TableSQLDataSourceSpecStorageSchemaMixin,
     IndexedSQLDataSourceSpecStorageSchemaMixin,
     BaseSQLDataSourceSpecStorageSchema,
-):  # noqa
+):
     TARGET_CLS = StandardSQLDataSourceSpec
 
 
-class SchemaSQLDataSourceSpecStorageSchemaMixin(BaseSQLDataSourceSpecStorageSchema):  # noqa
+class SchemaSQLDataSourceSpecStorageSchemaMixin(BaseSQLDataSourceSpecStorageSchema):
     schema_name = ma_fields.String(required=False, allow_none=True, load_default=None)
 
 

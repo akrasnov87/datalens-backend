@@ -1,24 +1,26 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Callable,
+    Sequence,
+)
 import datetime
 import math
 import random
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     NamedTuple,
-    Optional,
-    Sequence,
 )
 import uuid
 
 import attr
+from frozendict import frozendict
 import shortuuid
 import sqlalchemy as sa
 from sqlalchemy.sql.type_api import TypeEngine
 
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     SourceBackendType,
     UserDataType,
@@ -36,7 +38,6 @@ from dl_db_testing.database.dispenser import (
 from dl_db_testing.database.engine_wrapper import get_engine_wrapper_cls_for_url
 from dl_type_transformer.sa_types import make_sa_type
 from dl_type_transformer.type_transformer import get_type_transformer
-
 
 if TYPE_CHECKING:
     from dl_type_transformer.type_transformer import TypeTransformer
@@ -58,8 +59,8 @@ class Db(DbBase[CoreDbConfig]):
     def eval(
         self,
         expr: sa.sql.ClauseElement,
-        from_: Optional[sa.sql.ClauseElement] = None,
-        user_t: Optional[UserDataType] = None,
+        from_: sa.sql.ClauseElement | None = None,
+        user_t: UserDataType | None = None,
     ) -> Any:
         value = self.base_eval(expr, from_=from_)
         if user_t is not None:
@@ -70,7 +71,7 @@ class Db(DbBase[CoreDbConfig]):
 def make_db_config(
     conn_type: ConnectionType,
     url: str,
-    cluster: Optional[str] = None,
+    cluster: str | None = None,
 ) -> CoreDbConfig:
     engine_config_kwargs: dict[str, Any] = {}
     if cluster is not None:
@@ -78,11 +79,10 @@ def make_db_config(
     db_eng_config_cls = get_engine_wrapper_cls_for_url(url).CONFIG_CLS
     db_eng_config = db_eng_config_cls(url=url, **engine_config_kwargs)
 
-    db_config = CoreDbConfig(
+    return CoreDbConfig(
         engine_config=db_eng_config,
         conn_type=conn_type,
     )
-    return db_config
 
 
 def make_db_from_config(db_config: CoreDbConfig) -> Db:
@@ -94,7 +94,7 @@ def make_db_from_config(db_config: CoreDbConfig) -> Db:
 def make_db(
     conn_type: ConnectionType,
     url: str,
-    cluster: Optional[str] = None,
+    cluster: str | None = None,
 ) -> Db:
     # FIXME: Switch to accepting a fully ready config here
     db_config = make_db_config(conn_type=conn_type, url=url, cluster=cluster)
@@ -119,23 +119,25 @@ class DbTable(DbTableBase):
 class C:
     name: str = attr.ib()
     user_type: UserDataType = attr.ib()
-    nullable: Optional[bool] = attr.ib(default=None)
+    nullable: bool | None = attr.ib(default=None)
     _sa_type: TypeEngine = attr.ib(default=None)
     _vg: Callable[[int, datetime.datetime], Any] = attr.ib(default=None)
 
-    DEFAULT_VALUE_GENERATORS = {
-        UserDataType.string: lambda rn, **kwargs: f"str_value_{rn}",
-        UserDataType.integer: lambda rn, **kwargs: rn,
-        UserDataType.float: lambda rn, **kwargs: rn + (rn / 10),
-        UserDataType.date: lambda rn, ts, **kwargs: ts.date() + datetime.timedelta(days=rn),
-        UserDataType.datetime: lambda rn, ts, **kwargs: ts + datetime.timedelta(days=rn / math.pi),
-        UserDataType.genericdatetime: lambda rn, ts, **kwargs: ts + datetime.timedelta(days=rn / math.pi),
-        UserDataType.boolean: lambda rn, **kwargs: bool(int(rn) % 2),
-        UserDataType.uuid: lambda rn, **kwargs: str(uuid.UUID(int=rn)),
-        UserDataType.array_int: lambda rn, **kwargs: [rn * idx for idx in range(5)],
-        UserDataType.array_str: lambda rn, **kwargs: [f"str_{str(rn * idx)}" for idx in range(5)],
-        UserDataType.array_float: lambda rn, **kwargs: [float(rn * idx) * 1.1 for idx in range(5)],
-    }
+    DEFAULT_VALUE_GENERATORS = frozendict(
+        {
+            UserDataType.string: lambda rn, **kwargs: f"str_value_{rn}",
+            UserDataType.integer: lambda rn, **kwargs: rn,
+            UserDataType.float: lambda rn, **kwargs: rn + (rn / 10),
+            UserDataType.date: lambda rn, ts, **kwargs: ts.date() + datetime.timedelta(days=rn),
+            UserDataType.datetime: lambda rn, ts, **kwargs: ts + datetime.timedelta(days=rn / math.pi),
+            UserDataType.genericdatetime: lambda rn, ts, **kwargs: ts + datetime.timedelta(days=rn / math.pi),
+            UserDataType.boolean: lambda rn, **kwargs: bool(int(rn) % 2),
+            UserDataType.uuid: lambda rn, **kwargs: str(uuid.UUID(int=rn)),
+            UserDataType.array_int: lambda rn, **kwargs: [rn * idx for idx in range(5)],
+            UserDataType.array_str: lambda rn, **kwargs: [f"str_{rn * idx!s}" for idx in range(5)],
+            UserDataType.array_float: lambda rn, **kwargs: [float(rn * idx) * 1.1 for idx in range(5)],
+        }
+    )
 
     @attr.s(auto_attribs=True, frozen=True)
     class ArrayDataGetter:
@@ -160,15 +162,15 @@ class C:
         return make_sa_type(backend_type=backend_type, native_type=native_type, nullable=self.nullable)
 
     @classmethod
-    def array_data_getter(cls, data_container) -> "C.ArrayDataGetter":  # type: ignore  # TODO: fix
+    def array_data_getter(cls, data_container) -> C.ArrayDataGetter:  # type: ignore  # TODO: fix
         return cls.ArrayDataGetter(data_container)
 
     @classmethod
-    def int_value(cls, name: str = "int_value"):  # type: ignore  # TODO: fix
+    def int_value(cls, name: str = "int_value") -> C:
         return cls(name, UserDataType.integer)
 
     @classmethod
-    def datetime_value(cls, name: str = "datetime_value"):  # type: ignore  # TODO: fix
+    def datetime_value(cls, name: str = "datetime_value") -> C:
         return cls(name, UserDataType.datetime)
 
     @classmethod
@@ -200,7 +202,10 @@ TEST_SEED = random.getrandbits(128)
 
 
 def make_sample_data(
-    columns: list[C] = None, rows: int = 10, seed: int = TEST_SEED, start_value: int = 0  # type: ignore  # 2024-01-29 # TODO: Incompatible default for argument "columns" (default has type "None", argument has type "list[C]")  [assignment]
+    columns: list[C] | None = None,
+    rows: int = 10,
+    seed: int = TEST_SEED,
+    start_value: int = 0,
 ) -> list[dict[str, Any]]:
     rnd = random.Random(seed)
 
@@ -209,24 +214,23 @@ def make_sample_data(
     ts = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=ts_uts / 1000000)
     if columns is None:
         columns = C.full_house()
-    result = [
+    return [
         {col.name: col.vg(rn=idx, ts=ts, rnd=rnd) for col in columns}  # type: ignore  # TODO: fix
         for idx in range(start_value, start_value + rows)
     ]
-    return result
 
 
 # TODO FIX: Implement option to provide data via arguments
 def make_table(
     db: Db,
-    schema: Optional[str] = None,
+    schema: str | None = None,
     rows: int = 10,
     start_value: int = 0,
-    columns: Optional[list[C]] = None,
-    name: Optional[str] = None,
-    data: Optional[list[dict[str, Any]]] = None,
+    columns: list[C] | None = None,
+    name: str | None = None,
+    data: list[dict[str, Any]] | None = None,
     create_in_db: bool = True,
-    chunk_size: Optional[int] = None,
+    chunk_size: int | None = None,
 ) -> DbTable:
     backend_type = get_backend_type(conn_type=db.conn_type)
     columns = columns or C.full_house()
@@ -252,8 +256,8 @@ def make_table(
 
 def make_pg_table_with_enums(  # TODO: move to pg connector package
     db: Db,
-    schema: Optional[str] = None,
-    name: Optional[str] = None,
+    schema: str | None = None,
+    name: str | None = None,
 ) -> DbTable:
     table = db.table_from_columns(
         [
@@ -281,19 +285,19 @@ def make_pg_table_with_enums(  # TODO: move to pg connector package
 
 def make_table_with_arrays(
     db: Db,
-    schema: Optional[str] = None,
+    schema: str | None = None,
     rows: int = 10,
     start_value: int = 0,
-    columns: Optional[list[C]] = None,
-    name: Optional[str] = None,
-    data: Optional[list[dict[str, Any]]] = None,
+    columns: list[C] | None = None,
+    name: str | None = None,
+    data: list[dict[str, Any]] | None = None,
 ) -> DbTable:
     if columns is None:
         columns = C.full_house() + C.array_columns()
     return make_table(db=db, schema=schema, rows=rows, start_value=start_value, columns=columns, name=name, data=data)
 
 
-def make_schema(db: Db, schema_name: Optional[str] = None) -> str:
+def make_schema(db: Db, schema_name: str | None = None) -> str:
     schema_name = schema_name or f"sch_{shortuuid.uuid().lower()}"
     assert schema_name is not None
     db.create_schema(schema_name=schema_name)
@@ -304,7 +308,7 @@ class DbView(NamedTuple):
     db: Db
     name: str
     query: str
-    schema: str = None  # type: ignore  # TODO: fix
+    schema: str | None = None
 
     @property
     def as_table(self) -> DbTable:
@@ -316,14 +320,14 @@ class DbView(NamedTuple):
         )
 
 
-def make_view(db: Db, query: str, schema: str = None, name: str = None) -> DbView:  # type: ignore  # 2024-01-29 # TODO: Incompatible default for argument "schema" (default has type "None", argument has type "str")  [assignment]
-    name = name or "test_view_{}".format(uuid.uuid4().hex[:10])
+def make_view(db: Db, query: str, schema: str | None = None, name: str | None = None) -> DbView:
+    name = name or f"test_view_{uuid.uuid4().hex[:10]}"
     db.create_view(query=query, schema=schema, name=name)
     return DbView(db=db, schema=schema, name=name, query=query)
 
 
-def make_view_from_table(db_table: DbTable, name: str = None, schema: str = None) -> DbView:  # type: ignore  # 2024-01-29 # TODO: Incompatible default for argument "name" (default has type "None", argument has type "str")  [assignment]
-    return make_view(db=db_table.db, query=db_table.select_all_query, schema=schema or db_table.schema, name=name)  # type: ignore  # 2024-01-29 # TODO: Argument "schema" to "make_view" has incompatible type "str | None"; expected "str"  [arg-type]
+def make_view_from_table(db_table: DbTable, name: str | None = None, schema: str | None = None) -> DbView:
+    return make_view(db=db_table.db, query=db_table.select_all_query, schema=schema or db_table.schema, name=name)
 
 
 class MultiTables(NamedTuple):

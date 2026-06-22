@@ -1,9 +1,9 @@
+from collections.abc import Sequence
 import itertools
 from pathlib import Path
 import re
 import shutil
 import subprocess
-from typing import Sequence
 
 from dl_repmanager.metapkg_manager import MetaPackageManager
 from dl_repmanager.primitives import (
@@ -13,7 +13,7 @@ from dl_repmanager.primitives import (
 
 
 def run_poetry_lock(dir_path: Path) -> None:
-    subprocess.run(["poetry", "lock", "--no-update"], cwd=dir_path, check=True)
+    subprocess.run(["poetry", "lock", "--no-update"], cwd=dir_path, check=True)  # noqa: S607
 
 
 def sync_scoped_metapkg(
@@ -26,10 +26,7 @@ def sync_scoped_metapkg(
     use_target_lock: bool = False,
 ) -> None:
     def is_local_package_in_scope(dep_from_scoped_pkg: LocalReqPackageSpec) -> bool:
-        for package_dir in package_dirs_to_include:
-            if dep_from_scoped_pkg.path.is_relative_to(package_dir):
-                return True
-        return False
+        return any(dep_from_scoped_pkg.path.is_relative_to(package_dir) for package_dir in package_dirs_to_include)
 
     original_metapkg = MetaPackageManager(original_metapkg_path)
     scoped_metapkg = original_metapkg.as_new_location(scoped_metapkg_path)

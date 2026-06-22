@@ -154,7 +154,7 @@ class StrTypeFunctionClickHouseTestSuite(DefaultStrTypeFunctionFormulaConnectorT
 
 
 class GenericDatetimeTypeFunctionClickHouseTestSuite(DefaultGenericDatetimeTypeFunctionFormulaConnectorTestSuite):
-    @pytest.mark.parametrize("func_name", ("GENERICDATETIME", "DATETIME"))
+    @pytest.mark.parametrize("func_name", ["GENERICDATETIME", "DATETIME"])
     def test_genericdatetime2_ch(self, dbe: DbEvaluator, func_name: str) -> None:
         mos_tz = "Europe/Moscow"
         dt_naive = datetime.datetime(2019, 1, 3, 2, 4, 5)
@@ -187,12 +187,12 @@ class DateTypeFunctionClickHouseTestSuite(DefaultDateTypeFunctionFormulaConnecto
         ts = utc_ts(2019, 1, 2, 23, 4, 5)
         tz = "Europe/Moscow"
         expected = datetime.date(2019, 1, 3)
-        assert dbe.eval('DATE({}, "{}")'.format(int(ts), tz)) == expected
-        assert dbe.eval('DATE({}, "{}")'.format(float(ts), tz)) == expected
+        assert dbe.eval(f'DATE({int(ts)}, "{tz}")') == expected
+        assert dbe.eval(f'DATE({float(ts)}, "{tz}")') == expected
 
 
 class GenericDatetimeParseTypeFunctionClickHouseTestSuite(FormulaConnectorTestBase):
-    @pytest.mark.parametrize("func_name", ("GENERICDATETIME_PARSE", "DATETIME_PARSE"))
+    @pytest.mark.parametrize("func_name", ["GENERICDATETIME_PARSE", "DATETIME_PARSE"])
     def test_new_datetime_parse(self, dbe: DbEvaluator, func_name: str) -> None:
         if not dbe.dialect & D.and_above(D.CLICKHOUSE_21_8):
             pytest.skip()

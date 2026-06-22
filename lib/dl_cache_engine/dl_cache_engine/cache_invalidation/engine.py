@@ -1,9 +1,9 @@
-import logging
-import time
-from typing import (
+from collections.abc import (
     Awaitable,
     Callable,
 )
+import logging
+import time
 import uuid
 
 import attr
@@ -16,7 +16,6 @@ from dl_cache_engine.cache_invalidation.primitives import (
     CacheInvalidationKey,
 )
 from dl_cache_engine.cache_invalidation.schemas import deserialize_cache_invalidation_entry
-
 
 LOGGER = logging.getLogger(__name__)
 

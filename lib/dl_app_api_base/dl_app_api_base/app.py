@@ -1,28 +1,31 @@
-import re
-from typing import (
-    Generic,
+from collections.abc import (
     Iterator,
     Mapping,
+)
+import re
+from typing import (
     TypeVar,
+    override,
 )
 
 import aiohttp.typedefs
 import aiohttp.web
 import attr
 import pydantic
-from typing_extensions import override
 
 import dl_app_api_base.auth as auth
 import dl_app_api_base.error_handling as error_handling
 import dl_app_api_base.handlers as handlers
 import dl_app_api_base.headers as headers
 import dl_app_api_base.health as health
+import dl_app_api_base.metrics as metrics
 import dl_app_api_base.middlewares as middlewares
 import dl_app_api_base.openapi as openapi
 import dl_app_api_base.request_context as request_context
 import dl_app_base
 import dl_auth
 import dl_dynconfig
+import dl_prometheus
 import dl_settings
 
 
@@ -44,10 +47,10 @@ class HttpServerAppSettingsMixin(dl_app_base.BaseAppSettings):
         default_factory=dl_dynconfig.NullSourceSettings
     )
     APP_INFO: AppInfoSettings = pydantic.Field(default_factory=AppInfoSettings)
+    METRICS: metrics.MetricsSettings = pydantic.Field(default_factory=metrics.MetricsSettings)
 
 
-class HttpServerAppDynconfigMixin(dl_dynconfig.DynConfig):
-    ...
+class HttpServerAppDynconfigMixin(dl_dynconfig.DynConfig): ...
 
 
 @attr.define(frozen=True, kw_only=True)
@@ -86,8 +89,7 @@ AppType = TypeVar("AppType", bound=HttpServerAppMixin)
 class HttpServerRequestContextDependencies(
     auth.AuthRequestContextDependenciesMixin,
     request_context.BaseRequestContextDependencies,
-):
-    ...
+): ...
 
 
 class HttpServerRequestContext(
@@ -98,6 +100,7 @@ class HttpServerRequestContext(
     _dependencies: HttpServerRequestContextDependencies
 
 
+HttpServerRequestContextVar = request_context.RequestContextVar[HttpServerRequestContext]
 HttpServerRequestContextProvider = request_context.RequestContextProvider[HttpServerRequestContext]
 HttpServerRequestContextManager = request_context.BaseRequestContextManager[
     HttpServerRequestContextDependencies,
@@ -106,9 +109,8 @@ HttpServerRequestContextManager = request_context.BaseRequestContextManager[
 
 
 @attr.define(kw_only=True, slots=False)
-class HttpServerAppFactoryMixin(
+class HttpServerAppFactoryMixin[AppType: HttpServerAppMixin](
     dl_app_base.BaseAppFactory[AppType],
-    Generic[AppType],
 ):
     settings: HttpServerAppSettingsMixin
 
@@ -124,6 +126,21 @@ class HttpServerAppFactoryMixin(
             aiohttp_app_port=self.settings.HTTP_SERVER.PORT,
         )
 
+    @override
+    @dl_app_base.singleton_class_method_result
+    async def _get_shutdown_callbacks(
+        self,
+    ) -> list[dl_app_base.Callback]:
+        result = await super()._get_shutdown_callbacks()
+        metrics_registry = await self._get_metrics_registry()
+        result.append(
+            dl_app_base.Callback.from_sync_function(
+                function=metrics_registry.close,
+                name="metrics_registry.close",
+            )
+        )
+        return result
+
     @dl_app_base.singleton_class_method_result
     async def _get_aiohttp_app(
         self,
@@ -138,23 +155,28 @@ class HttpServerAppFactoryMixin(
         return app
 
     @dl_app_base.singleton_class_method_result
+    async def _get_request_context_var(
+        self,
+    ) -> HttpServerRequestContextVar:
+        return HttpServerRequestContextVar()
+
+    @dl_app_base.singleton_class_method_result
     async def _get_request_context_provider(
         self,
-    ) -> HttpServerRequestContextProvider:
-        return HttpServerRequestContextProvider()
+    ) -> request_context.RequestContextProviderProtocol[HttpServerRequestContext]:
+        return HttpServerRequestContextProvider(context_var=await self._get_request_context_var())
 
     @dl_app_base.singleton_class_method_result
     async def _get_request_context_manager(
         self,
-    ) -> HttpServerRequestContextManager:
-        request_context_provider = await self._get_request_context_provider()
+    ) -> request_context.RequestContextManagerProtocol[HttpServerRequestContext]:
         return HttpServerRequestContextManager(
             context_factory=HttpServerRequestContext.factory,
             dependencies=HttpServerRequestContextDependencies(
                 request_auth_checkers=await self._get_request_auth_checkers(),
                 user_auth_provider_factories=await self._get_user_auth_provider_factories(),
             ),
-            context_var=request_context_provider.context_var,
+            context_var=await self._get_request_context_var(),
         )
 
     @dl_app_base.singleton_class_method_result
@@ -280,13 +302,74 @@ class HttpServerAppFactoryMixin(
             request_context_provider=request_context_provider,
         )
 
+        metrics_middleware = await self._get_metrics_middleware()
+
         return [
             request_context_middlewares.process,
             logging_context_middleware.process,
             logging_middleware.process,
+            metrics_middleware.process,
             error_handling_middleware.process,
             auth_middleware.process,
         ]
+
+    @dl_app_base.singleton_class_method_result
+    async def _get_http_requests_total(
+        self,
+    ) -> metrics.HttpRequestsTotal:
+        return metrics.HttpRequestsTotal.from_settings(self.settings.METRICS.HTTP_REQUESTS_TOTAL)
+
+    @dl_app_base.singleton_class_method_result
+    async def _get_http_request_duration_seconds(
+        self,
+    ) -> metrics.HttpRequestDurationSeconds:
+        return metrics.HttpRequestDurationSeconds.from_settings(self.settings.METRICS.HTTP_REQUEST_DURATION_SECONDS)
+
+    @dl_app_base.singleton_class_method_result
+    async def _get_readiness_subsystem_status(
+        self,
+    ) -> health.ReadinessSubsystemStatus:
+        return health.ReadinessSubsystemStatus.from_settings(self.settings.METRICS.READINESS_SUBSYSTEM_STATUS)
+
+    @dl_app_base.singleton_class_method_result
+    async def _get_metrics(
+        self,
+    ) -> list[dl_prometheus.MetricBase]:
+        return [
+            await self._get_http_requests_total(),
+            await self._get_http_request_duration_seconds(),
+            await self._get_readiness_subsystem_status(),
+        ]
+
+    @dl_app_base.singleton_class_method_result
+    async def _get_metrics_registry(
+        self,
+    ) -> dl_prometheus.MetricsRegistryProtocol:
+        metrics_list = await self._get_metrics()
+        multiproc_dir = self.settings.METRICS.MULTIPROC_DIR
+        if multiproc_dir is not None:
+            return dl_prometheus.MultiprocessMetricsRegistry(
+                metrics_dir=multiproc_dir,
+                metrics=metrics_list,
+            )
+        return dl_prometheus.MetricsRegistry(metrics=metrics_list)
+
+    @dl_app_base.singleton_class_method_result
+    async def _get_metrics_middleware(
+        self,
+    ) -> metrics.MetricsMiddleware:
+        return metrics.MetricsMiddleware(
+            http_requests_total=await self._get_http_requests_total(),
+            http_request_duration_seconds=await self._get_http_request_duration_seconds(),
+        )
+
+    @dl_app_base.singleton_class_method_result
+    async def _get_metrics_handler(
+        self,
+    ) -> metrics.MetricsHandler:
+        return metrics.MetricsHandler(
+            metrics_registry=await self._get_metrics_registry(),
+        )
 
     async def _setup_routes(self, app: aiohttp.web.Application) -> None:
         routes = await self._get_aiohttp_app_routes()
@@ -356,6 +439,14 @@ class HttpServerAppFactoryMixin(
             ),
         )
 
+        result.append(
+            handlers.Route(
+                method="GET",
+                path=self.settings.METRICS.PATH,
+                handler=await self._get_metrics_handler(),
+            ),
+        )
+
         return result
 
     @dl_app_base.singleton_class_method_result
@@ -403,17 +494,18 @@ class HttpServerAppFactoryMixin(
     ) -> health.ReadinessService:
         return health.ReadinessService(
             subsystems=await self._get_aiohttp_subsystem_readiness_callbacks(),
+            readiness_subsystem_status=await self._get_readiness_subsystem_status(),
         )
 
     async def _setup_openapi(self, app: aiohttp.web.Application) -> None:
         open_api_spec = await self._get_aiohttp_open_api_spec()
         open_api_handler = openapi.OpenApiHandler(raw_spec=open_api_spec.raw)
-        app.router.add_route("GET", self.settings.OPEN_API.SPEC_PATH, open_api_handler.process)
+        app.router.add_route("GET", self.settings.OPEN_API.spec_path, open_api_handler.process)
 
         if self.settings.OPEN_API.SWAGGER_UI_ENABLED:
             swagger_handler = openapi.SwaggerHandler.from_dependencies(
                 openapi.SwaggerHandlerDependencies(
-                    url_prefix=self.settings.OPEN_API.EXTERNAL_DOCS_PATH,
+                    url_prefix=self.settings.OPEN_API.external_docs_path,
                     config_url=self.settings.OPEN_API.SPEC_REL_URL,
                 )
             )

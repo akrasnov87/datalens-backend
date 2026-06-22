@@ -4,12 +4,10 @@ import datetime
 import decimal
 import logging
 import re
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any
 from urllib.parse import quote_plus
 
+from frozendict import frozendict
 import pyodbc
 import sqlalchemy as sa
 from sqlalchemy import exc as sa_exc
@@ -39,7 +37,6 @@ from dl_connector_mssql.core.exc import (
     SyncMssqlSourceDoesNotExistError,
 )
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -58,18 +55,20 @@ class MSSQLDefaultAdapter(BaseClassicAdapter):
         ]
     )  # {...}s are are left unquoted for future formatting in `get_conn_line`
 
-    def _get_db_version(self, db_ident: DBIdent) -> Optional[str]:
+    def _get_db_version(self, db_ident: DBIdent) -> str | None:
         return self.execute(DBAdapterQuery("SELECT @@VERSION", db_name=db_ident.db_name)).get_all()[0][0]
 
-    _type_code_to_sa = {
-        int: ms_types.INTEGER,
-        float: ms_types.FLOAT,
-        decimal.Decimal: ms_types.DECIMAL,
-        bool: ms_types.BIT,
-        str: ms_types.NTEXT,
-        datetime.datetime: ms_types.DATETIME,
-        datetime.date: ms_types.DATE,
-    }
+    _type_code_to_sa = frozendict(
+        {
+            int: ms_types.INTEGER,
+            float: ms_types.FLOAT,
+            decimal.Decimal: ms_types.DECIMAL,
+            bool: ms_types.BIT,
+            str: ms_types.NTEXT,
+            datetime.datetime: ms_types.DATETIME,
+            datetime.date: ms_types.DATE,
+        }
+    )
 
     MSSQL_LIST_SOURCES_ALL_SCHEMAS_SQL = "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES;"
 
@@ -203,51 +202,55 @@ class MSSQLDefaultAdapter(BaseClassicAdapter):
     _EXC_CODE_RE = re.compile(
         r"\(\'[0-9A-Z]+\', [\'\"]\[(?P<state>[0-9A-Z]+)\] " r"\[FreeTDS\][^(]+" r"\((?P<code>\d+)\)"
     )
-    _EXC_CODE_MAP = {
-        # [42S22] Invalid column name '.+'. (207)
-        207: exc.ColumnDoesNotExist,
-        # [42S02] Invalid object name '.+'. (208)
-        208: SyncMssqlSourceDoesNotExistError,
-        # [22007] Conversion failed when converting date and/or time from character string. (241)
-        241: exc.DataParseError,
-        # [22012] Divide by zero error encountered. (8134)
-        8134: exc.DivisionByZero,
-        # [08S01] Read from the server failed (20004)
-        20004: exc.SourceConnectError,
-        # [08S01] Write to the server failed (20006)
-        20006: exc.SourceConnectError,
-        # [01000] Unexpected EOF from the server (20017)
-        20017: exc.SourceClosedPrematurely,
-        # ?
-        # [23000] The statement terminated. The maximum recursion 100
-        #         has been exhausted before statement completion. (530)
-        # [42000] Snapshot isolation transaction failed in database '.+'
-        #         because the object accessed by the statement has been modified
-        #         by a DDL statement... (3961)
-        # [42000] Transaction (Process ID \d+) was deadlocked on lock... (1205)
-        # [42000] The batch could not be analyzed because of compile errors. (11501)
-    }
+    _EXC_CODE_MAP = frozendict(
+        {
+            # [42S22] Invalid column name '.+'. (207)
+            207: exc.ColumnDoesNotExistError,
+            # [42S02] Invalid object name '.+'. (208)
+            208: SyncMssqlSourceDoesNotExistError,
+            # [22007] Conversion failed when converting date and/or time from character string. (241)
+            241: exc.DataParseError,
+            # [22012] Divide by zero error encountered. (8134)
+            8134: exc.DivisionByZeroError,
+            # [08S01] Read from the server failed (20004)
+            20004: exc.SourceConnectError,
+            # [08S01] Write to the server failed (20006)
+            20006: exc.SourceConnectError,
+            # [01000] Unexpected EOF from the server (20017)
+            20017: exc.SourceClosedPrematurelyError,
+            # ?
+            # [23000] The statement terminated. The maximum recursion 100
+            #         has been exhausted before statement completion. (530)
+            # [42000] Snapshot isolation transaction failed in database '.+'
+            #         because the object accessed by the statement has been modified
+            #         by a DDL statement... (3961)
+            # [42000] Transaction (Process ID \d+) was deadlocked on lock... (1205)
+            # [42000] The batch could not be analyzed because of compile errors. (11501)
+        }
+    )
 
-    _EXC_STATE_MAP = {
-        # [08001] Unable to connect to data source (0)
-        "08001": exc.SourceConnectError,
-        # [HY000] Could not perform COMMIT or ROLLBACK (0)
-        "HY000": CommitOrRollbackFailed,
-        # [HYT00] Query timeout expired (0)
-        "HYT00": exc.SourceTimeout,
-    }
+    _EXC_STATE_MAP = frozendict(
+        {
+            # [08001] Unable to connect to data source (0)
+            "08001": exc.SourceConnectError,
+            # [HY000] Could not perform COMMIT or ROLLBACK (0)
+            "HY000": CommitOrRollbackFailed,
+            # [HYT00] Query timeout expired (0)
+            "HYT00": exc.SourceTimeoutError,
+        }
+    )
 
     EXTRA_EXC_CLS = (pyodbc.Error, sa_exc.DBAPIError)
 
     @classmethod
-    def get_exc_class(cls, err_msg: str) -> Optional[type[exc.DatabaseQueryError]]:
+    def get_exc_class(cls, err_msg: str) -> type[exc.DatabaseQueryError] | None:
         err_match = cls._EXC_CODE_RE.match(err_msg)
         if err_match is not None:
             code = int(err_match.group("code"))
             state = err_match.group("state").upper()
             if code in cls._EXC_CODE_MAP:
                 return cls._EXC_CODE_MAP[code]
-            elif state in cls._EXC_STATE_MAP:
+            if state in cls._EXC_STATE_MAP:
                 return cls._EXC_STATE_MAP[state]
             return exc.DatabaseQueryError
 

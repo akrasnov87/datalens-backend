@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from dl_constants.enums import DashSQLQueryType
+from dl_constants import DashSQLQueryType
 from dl_core.us_connection_base import (
     ConnectionSettingsMixin,
     DataSourceTemplate,
@@ -43,6 +43,20 @@ class ConnectionClickhouse(
     def experimental_features_enabled(self) -> bool:
         return self.data.experimental_features
 
+    @property
+    def is_query_settings_enabled(self) -> bool:
+        if not self._connector_settings.QUERY_SETTINGS.ENABLED:
+            return False
+        return self.is_subselect_allowed
+
+    @property
+    def query_settings_allowed_names(self) -> frozenset[str] | None:
+        return self._connector_settings.QUERY_SETTINGS.ALLOWED
+
+    @property
+    def query_settings_forbidden_names(self) -> frozenset[str]:
+        return self._connector_settings.QUERY_SETTINGS.FORBIDDEN
+
     def get_data_source_template_templates(self, localizer: Localizer) -> list[DataSourceTemplate]:
         result: list[DataSourceTemplate] = []
 
@@ -53,6 +67,7 @@ class ConnectionClickhouse(
                     source_type=SOURCE_TYPE_CH_TABLE,
                     localizer=localizer,
                     disabled=not self.is_subselect_allowed,
+                    disabled_text=self.subselect_disabled_text,
                     template_enabled=self.is_datasource_template_allowed,
                     db_name_form_enabled=True,
                 )
@@ -64,6 +79,7 @@ class ConnectionClickhouse(
                 source_type=SOURCE_TYPE_CH_SUBSELECT,
                 localizer=localizer,
                 disabled=not self.is_subselect_allowed,
+                disabled_text=self.subselect_disabled_text,
                 template_enabled=self.is_datasource_template_allowed,
             )
         )

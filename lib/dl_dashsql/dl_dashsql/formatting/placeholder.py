@@ -7,7 +7,7 @@ import re
 
 import attr
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_dashsql.formatting.base import (
     QueryBoundParameterWrapper,
     QueryFormatter,
@@ -88,8 +88,7 @@ class PlaceholderQueryFormatter(QueryFormatter):
             if self._unknown_param_policy == UnknownParameterPolicy.ignore:
                 # Do not perform any replacement
                 return original_text
-            else:
-                raise ValueError(self._unknown_param_policy)
+            raise ValueError(self._unknown_param_policy)
 
         new_param_name: str
         if orig_param_name in format_state.param_name_map:
@@ -109,9 +108,8 @@ class PlaceholderQueryFormatter(QueryFormatter):
         format_state.bound_params.append(param)
         format_state.used_param_names.add(new_param_name)
 
-        placeholder = self._placeholder_style.make_placeholder(
+        return self._placeholder_style.make_placeholder(
             param_name=new_param_name,
             param_idx=param_idx,
             user_type=incoming_param.user_type,
         )
-        return placeholder

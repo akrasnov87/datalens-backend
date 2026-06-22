@@ -1,11 +1,10 @@
 import enum
 
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DataSourceType,
     SourceBackendType,
 )
-
 
 BACKEND_TYPE_MYSQL = SourceBackendType.declare("MYSQL")
 CONNECTION_TYPE_MYSQL = ConnectionType.declare("mysql")

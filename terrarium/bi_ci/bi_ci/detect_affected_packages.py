@@ -3,10 +3,10 @@ from collections import (
     defaultdict,
     deque,
 )
+from collections.abc import Iterator
 import json
 import os
 from pathlib import Path
-from typing import Iterator
 
 import attr
 
@@ -61,8 +61,7 @@ def get_leafs(dependencies: dict[str, list[str]]) -> set[str]:
     all_values = []
     for deps in dependencies.values():
         all_values.extend(deps)
-    leafs = set(all_values) - set([k for k in dependencies.keys() if len(dependencies[k]) > 0])
-    return leafs
+    return set(all_values) - {k for k in dependencies if len(dependencies[k]) > 0}
 
 
 def get_deep_deps(dependencies: dict[str, list[str]]) -> dict[str, set[str]]:
@@ -140,11 +139,10 @@ def process(
 
 
 def main() -> None:
-    if override := os.environ.get("TEST_TARGET_OVERRIDE", ""):
-        if override != "__ALL__":
-            overrides = override.strip().split(",")
-            print(f"affected={json.dumps(overrides)}")
-            return
+    if (override := os.environ.get("TEST_TARGET_OVERRIDE", "")) and override != "__ALL__":
+        overrides = override.strip().split(",")
+        print(f"affected={json.dumps(overrides)}")
+        return
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo")

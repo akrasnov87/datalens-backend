@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import Mapping
 from functools import singledispatchmethod
-from typing import (
-    Mapping,
-    Optional,
-)
 
 import attr
 import tabulate
@@ -32,12 +29,12 @@ class RichTextRenderEnvironment:
 
 class RichTextRenderer(abc.ABC):
     @abc.abstractmethod
-    def render(self, rtext: RichText, env: Optional[RichTextRenderEnvironment] = None) -> str:
+    def render(self, rtext: RichText, env: RichTextRenderEnvironment | None = None) -> str:
         raise NotImplementedError
 
 
 class MdRichTextRenderer(RichTextRenderer):
-    def render(self, rtext: RichText, env: Optional[RichTextRenderEnvironment] = None) -> str:
+    def render(self, rtext: RichText, env: RichTextRenderEnvironment | None = None) -> str:
         if env is None:
             env = RichTextRenderEnvironment()
         assert env is not None
@@ -112,5 +109,5 @@ class MdRichTextRenderer(RichTextRenderer):
         if len(value.audience_types) == 1:
             return f"{{% if audience == '{value.audience_types[0]}' %}}{content}{{% endif %}}"
 
-        audience_types_str = "[{}]".format(", ".join(["'{}'".format(aud) for aud in value.audience_types]))
+        audience_types_str = "[{}]".format(", ".join([f"'{aud}'" for aud in value.audience_types]))
         return f"{{% if audience in {audience_types_str} %}}{content}{{% endif %}}"

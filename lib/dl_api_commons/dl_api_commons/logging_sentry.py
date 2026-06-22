@@ -11,7 +11,6 @@ from dl_obfuscator import (
     get_request_obfuscation_engine,
 )
 
-
 log = logging.getLogger()
 
 SECRET_VAR_RE = re.compile(
@@ -44,7 +43,7 @@ SECRET_VAR_CONTENT_RE = re.compile(
     ")"
 )
 
-S3_TBL_FUNC_RE = re.compile("s3\([^,]*['\"]http([^,]+,){3}")  # noqa
+S3_TBL_FUNC_RE = re.compile("s3\([^,]*['\"]http([^,]+,){3}")
 
 
 def is_secret_var(var_name: str) -> bool:
@@ -88,16 +87,15 @@ def cleanup_local_vars(local_vars: dict) -> None:
 
 
 def cleanup_event_headers(original_headers: dict[str, str]) -> dict[str, str]:
-    return {
-        name: value
-        for name, value in RequestObfuscator().clean_secret_data_in_headers(
+    return dict(
+        RequestObfuscator().clean_secret_data_in_headers(
             (
                 original_name,
                 original_value,
             )
             for original_name, original_value in original_headers.items()
         )
-    }
+    )
 
 
 def cleanup_event_request_section(req_section: dict[str, str | dict[str, str]]) -> dict[str, str | dict[str, str]]:
@@ -110,14 +108,14 @@ def cleanup_event_request_section(req_section: dict[str, str | dict[str, str]]) 
     elif isinstance(secret_original_headers, dict):
         clean_req_section["headers"] = cleanup_event_headers(secret_original_headers)
     else:
-        log.error(f"Unexpected type of request headers section in outgoing Sentry event: {type(req_section)}")
+        log.error("Unexpected type of request headers section in outgoing Sentry event: %s", type(req_section))
 
     return clean_req_section
 
 
 def cleanup_common_secret_data(
     event: dict,
-    hint: dict,  # noqa
+    hint: dict,
 ) -> dict:
     for exc_data in event.get("exception", {}).get("values"):
         for frame in exc_data.get("stacktrace", {}).get("frames", ()):
@@ -131,7 +129,7 @@ def cleanup_common_secret_data(
     elif isinstance(secret_original_req_section, dict):
         event["request"] = cleanup_event_request_section(secret_original_req_section)
     else:
-        log.error(f"Unexpected type of request section in outgoing Sentry event: {type(secret_original_req_section)}")
+        log.error("Unexpected type of request section in outgoing Sentry event: %s", type(secret_original_req_section))
 
     _obfuscate_sentry_event(event)
 

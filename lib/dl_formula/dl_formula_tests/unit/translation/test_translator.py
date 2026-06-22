@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.sql.elements import BinaryExpression
@@ -32,7 +30,6 @@ from dl_formula.translation.translator import (
     translate_and_compile,
 )
 
-
 FIELD_TYPES = {
     "f1": DataType.FLOAT,
     "n1": DataType.INTEGER,
@@ -48,13 +45,13 @@ FIELD_TYPES = {
 }
 
 
-def T(
+def translate_node(
     x,
     dialect=D.DUMMY,
     restrict_funcs=False,
-    field_types: dict[str, DataType] = None,
-    table_name: str = None,
-    env: Optional[TranslationEnvironment] = None,
+    field_types: dict[str, DataType] | None = None,
+    table_name: str | None = None,
+    env: TranslationEnvironment | None = None,
 ):
     field_types = field_types or FIELD_TYPES
     if table_name:
@@ -73,7 +70,7 @@ def T(
 
 def test_translate_error_node():
     with pytest.raises(exc.TranslationError) as exc_info:
-        T(ErrorNode.make(err_code=exc.InconsistentAggregationError.default_code, message="Hello"))
+        translate_node(ErrorNode.make(err_code=exc.InconsistentAggregationError.default_code, message="Hello"))
 
     err_ctx = exc_info.value.errors[0]
     assert err_ctx.code == exc.InconsistentAggregationError.default_code
@@ -81,21 +78,24 @@ def test_translate_error_node():
 
 
 def test_translate_parenthesized_expressions():
-    assert T(ParenthesizedExpr.make(expr=LiteralInteger.make(123)), dialect=D.DUMMY) == "123"
+    assert translate_node(ParenthesizedExpr.make(expr=LiteralInteger.make(123)), dialect=D.DUMMY) == "123"
 
 
 def test_translate_descending():
-    assert T(OrderDescending.make(expr=LiteralInteger.make(123)), dialect=D.DUMMY) == "123 DESC"
-    assert T(OrderDescending.make(expr=OrderDescending.make(expr=LiteralInteger.make(123))), dialect=D.DUMMY) == "123"
+    assert translate_node(OrderDescending.make(expr=LiteralInteger.make(123)), dialect=D.DUMMY) == "123 DESC"
+    assert (
+        translate_node(OrderDescending.make(expr=OrderDescending.make(expr=LiteralInteger.make(123))), dialect=D.DUMMY)
+        == "123"
+    )
 
 
 def test_operator_null_error():
     with pytest.raises(exc.TranslationError):
-        T(Binary.make("==", Field.make("n1"), Null()), dialect=D.DUMMY)
+        translate_node(Binary.make("==", Field.make("n1"), Null()), dialect=D.DUMMY)
 
 
 def test_translate_multiple_errors():
-    try:
+    with pytest.raises(exc.TranslationError) as exc_info:
         translate(
             Formula(
                 FuncCall.make(
@@ -111,24 +111,21 @@ def test_translate_multiple_errors():
             dialect=D.DUMMY,
             collect_errors=True,
         )
-        raised = False
-    except exc.TranslationError as err:
-        raised = True
-        assert len(err.errors) == 2
-        assert err.errors[0].token == "UNKNOWN_1"
-        assert err.errors[0].position.start == 4
-        assert err.errors[0].code == ("FORMULA", "TRANSLATION", "UNKNOWN_FUNCTION")
-        assert err.errors[1].token == "Unknown F"
-        assert err.errors[1].position.start == 104
-        assert err.errors[1].code == ("FORMULA", "TRANSLATION", "UNKNOWN_FIELD")
 
-    assert raised
+    err = exc_info.value
+    assert len(err.errors) == 2
+    assert err.errors[0].token == "UNKNOWN_1"
+    assert err.errors[0].position.start == 4
+    assert err.errors[0].code == ("FORMULA", "TRANSLATION", "UNKNOWN_FUNCTION")
+    assert err.errors[1].token == "Unknown F"
+    assert err.errors[1].position.start == 104
+    assert err.errors[1].code == ("FORMULA", "TRANSLATION", "UNKNOWN_FIELD")
 
 
 def test_internal_functions():
     env = TranslationEnvironment(dialect=D.DUMMY, required_scopes=Scope.EXPLICIT_USAGE)
     with pytest.raises(exc.TranslationError) as exc_info:
-        T(
+        translate_node(
             FuncCall.make(name="__str", args=[LiteralString.make("qwerty")]),
             env=env,
             restrict_funcs=True,
@@ -161,7 +158,7 @@ def test_translation_cache():
     assert sub_node in env.translation_cache
 
     node = FuncCall.make(name="+", args=[Field.make("qwerty"), LiteralInteger.make(456)])
-    assert T(node, env=env) == "123 + 456"
+    assert translate_node(node, env=env) == "123 + 456"
     assert node in env.translation_cache
 
     # ensure cache is not polluted with TypeCoerce
@@ -181,4 +178,7 @@ def test_translation_replacements():
             expression=sa.literal(123),
         ),
     )
-    assert T(FuncCall.make(name="+", args=[Field.make("qwerty"), LiteralInteger.make(456)]), env=env) == "123 + 456"
+    assert (
+        translate_node(FuncCall.make(name="+", args=[Field.make("qwerty"), LiteralInteger.make(456)]), env=env)
+        == "123 + 456"
+    )

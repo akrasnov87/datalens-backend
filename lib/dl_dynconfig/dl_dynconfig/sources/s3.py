@@ -1,25 +1,24 @@
+from collections.abc import AsyncGenerator
 import contextlib
 import datetime
 import logging
 from typing import (
     Any,
-    AsyncGenerator,
     Literal,
     Protocol,
+    Self,
     TypeVar,
 )
 
 import aiobotocore.session
 import attrs
 import pydantic
-from typing_extensions import Self
 import yaml
 
 import dl_dynconfig.sources.base as base
 import dl_dynconfig.sources.cached as cached
 import dl_dynconfig.utils.types as types_utils
 import dl_settings
-
 
 T = TypeVar("T")
 
@@ -35,14 +34,11 @@ class BaseS3SourceSettings(dl_settings.BaseSettings):
 
 
 class S3AuthProviderProtocol(Protocol):
-    async def get_access_key_id(self) -> str:
-        ...
+    async def get_access_key_id(self) -> str: ...
 
-    async def get_secret_access_key(self) -> str:
-        ...
+    async def get_secret_access_key(self) -> str: ...
 
-    async def get_session_token(self) -> str | None:
-        ...
+    async def get_session_token(self) -> str | None: ...
 
 
 @attrs.define(kw_only=True)

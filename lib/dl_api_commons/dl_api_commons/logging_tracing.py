@@ -1,17 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 import logging
 from typing import (
     Any,
     ClassVar,
-    Sequence,
 )
 
 import attr
 import opentracing
 
 from dl_api_commons.logging import RequestLoggingContextController
-
 
 LOGGER = logging.getLogger(__name__)
 

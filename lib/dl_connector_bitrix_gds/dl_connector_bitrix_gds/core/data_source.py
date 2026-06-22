@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from typing import (
-    ClassVar,
-    Optional,
-)
+from typing import ClassVar
 
-from dl_constants.enums import (
+from dl_constants import (
     DataSourceType,
     JoinType,
 )
@@ -34,7 +31,7 @@ class BitrixGDSDataSource(PseudoSQLDataSource):
     conn_type = CONNECTION_TYPE_BITRIX24
 
     @property
-    def db_version(self) -> Optional[str]:
+    def db_version(self) -> str | None:
         return None
 
     @classmethod

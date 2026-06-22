@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import AbstractSet
+from collections.abc import Set
 
 import attr
 
-from dl_constants.enums import CalcMode
+from dl_constants import CalcMode
 from dl_core.components.dependencies.field_avatar_base import FieldAvatarDependencyManagerBase
 from dl_core.components.dependencies.field_deep_base import FieldDeepInterDependencyManagerBase
 from dl_core.components.ids import (
@@ -19,7 +19,7 @@ class FieldAvatarDependencyManager(FieldAvatarDependencyManagerBase):
     _result_schema: ResultSchema = attr.ib(kw_only=True)
     _deep: FieldDeepInterDependencyManagerBase = attr.ib(kw_only=True)
 
-    def get_field_avatar_references(self, dep_field_id: FieldId) -> AbstractSet[AvatarId]:
+    def get_field_avatar_references(self, dep_field_id: FieldId) -> Set[AvatarId]:
         deep_refs = self._deep.get_field_deep_references(dep_field_id=dep_field_id) | {dep_field_id}
 
         avatar_refs: set[AvatarId] = set()

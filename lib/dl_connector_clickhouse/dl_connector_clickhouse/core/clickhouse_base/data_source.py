@@ -4,7 +4,7 @@ import abc
 import logging
 from typing import ClassVar
 
-from dl_constants.enums import JoinType
+from dl_constants import JoinType
 from dl_core.data_source.sql import (
     BaseSQLDataSource,
     StandardSQLDataSource,
@@ -12,7 +12,6 @@ from dl_core.data_source.sql import (
 )
 
 from dl_connector_clickhouse.core.clickhouse_base.constants import CONNECTION_TYPE_CLICKHOUSE
-
 
 LOGGER = logging.getLogger(__name__)
 

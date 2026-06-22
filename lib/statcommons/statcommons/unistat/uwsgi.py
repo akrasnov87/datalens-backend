@@ -1,14 +1,6 @@
-# coding: utf8
 """
 uwsgi as source of signals for unistat.
 """
-
-from __future__ import (
-    absolute_import,
-    division,
-    print_function,
-    unicode_literals,
-)
 
 from collections import OrderedDict
 import json
@@ -21,7 +13,6 @@ from .common import (
     get_sys_memstatus,
     maybe_float_size,
 )
-
 
 __all__ = ("uwsgi_unistat",)
 
@@ -80,7 +71,7 @@ def uwsgi_collect_sensors(data, add_sensor):
         w_by_s.setdefault(key, [])
     for status, items in w_by_s.items():
         add_sensor(
-            "workers_{}".format(status),
+            f"workers_{status}",
             len(items),
             suffixes=["_ammx", "_ahhh"],
         )
@@ -91,18 +82,17 @@ def uwsgi_collect_sensors(data, add_sensor):
     if avg_rts:
         add_sensor("max_avg_rt_sec", float(max(avg_rts)) / 1e6)
 
-    # pylint: disable=invalid-name
-    GiB = 2**30  # Gibi- (for gibibytes)
+    gib = 2**30  # Gibi- (for gibibytes)
     page_size = 4096  # 4KiB, linux constant
-    pages_per_gib = GiB / page_size  # 262144
+    pages_per_gib = gib / page_size  # 262144
 
     mem_datas = [  # all values in GiB
-        dict(
-            rss_gib=maybe_float_size(worker["rss"], GiB),
-            vsz_gib=maybe_float_size(worker["vsz"], GiB),
-            vmsize_gib=maybe_float_size(worker.get("sys_memstatus", {}).get("size"), pages_per_gib),
-            vmrss_gib=maybe_float_size(worker.get("sys_memstatus", {}).get("resident"), pages_per_gib),
-        )
+        {
+            "rss_gib": maybe_float_size(worker["rss"], gib),
+            "vsz_gib": maybe_float_size(worker["vsz"], gib),
+            "vmsize_gib": maybe_float_size(worker.get("sys_memstatus", {}).get("size"), pages_per_gib),
+            "vmrss_gib": maybe_float_size(worker.get("sys_memstatus", {}).get("resident"), pages_per_gib),
+        }
         for worker in data["workers"]
     ]
 
@@ -114,7 +104,7 @@ def uwsgi_collect_sensors(data, add_sensor):
         if not series:
             continue
         for func_name, func in (("max", max), ("all", sum)):
-            add_sensor("{}_worker_{}".format(func_name, key), func(series))
+            add_sensor(f"{func_name}_worker_{key}", func(series))
 
     cores = [core for worker in data["workers"] for core in worker["cores"]]
     running_cores = [core for core in cores if core.get("req_info")]
@@ -148,7 +138,6 @@ def process_uwsgi_data_for_unistat(data, common_prefix=None, line_prefix=None):
 def process_uwsgi_data_for_prometheus(data, label_prefix=""):
     results = []
 
-    # pylint: disable=unused-argument
     def add_sensor(label, value, suffixes=None):
         results.append((label_prefix + label, value))
 
@@ -163,8 +152,7 @@ def _get_uwsgi_data(sock_path=None):
     if not sock_path:
         raise Exception("UWSGI_STATS socket path env variable is not set")
 
-    data = _collect_uwsgi_info(sock_path)
-    return data
+    return _collect_uwsgi_info(sock_path)
 
 
 def uwsgi_prometheus(sock_path=None, label_prefix=""):
@@ -172,7 +160,6 @@ def uwsgi_prometheus(sock_path=None, label_prefix=""):
     return process_uwsgi_data_for_prometheus(data, label_prefix=label_prefix)
 
 
-# pylint: disable=too-many-locals
 def uwsgi_unistat(sock_path=None, common_prefix=None, line_prefix=None):
     data = _get_uwsgi_data(sock_path=sock_path)
     return process_uwsgi_data_for_unistat(data, common_prefix=common_prefix, line_prefix=line_prefix)

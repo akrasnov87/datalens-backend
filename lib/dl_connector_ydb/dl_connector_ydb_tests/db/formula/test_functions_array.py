@@ -1,9 +1,6 @@
+from collections.abc import Generator
 import contextlib
 from functools import reduce
-from typing import (
-    Generator,
-    Optional,
-)
 
 import pytest
 import sqlalchemy as sa
@@ -41,7 +38,7 @@ class ArrayFunctionYDBTestSuite(DefaultArrayFunctionFormulaConnectorTestSuite):
 
 class YQLViewTableTestBase(YQLTestBase):
     @contextlib.contextmanager
-    def make_data_table(self, dbe: DbEvaluator, table_schema_name: Optional[str]) -> Generator[sa.Table, None, None]:
+    def make_data_table(self, dbe: DbEvaluator, table_schema_name: str | None) -> Generator[sa.Table, None, None]:
         sample_data = generate_sample_data(add_arrays=True)
 
         table_spec = self.generate_table_spec(table_name_prefix="test_view")
@@ -92,7 +89,7 @@ class TestArrayFunctionYDB(YQLViewTableTestBase, ArrayFunctionYDBTestSuite):
         super().test_unnest_array(dbe, data_table)
 
     @pytest.mark.parametrize(
-        "bi_func, eval_func",
+        ("bi_func", "eval_func"),
         [
             ("ARR_MIN", min),
             ("ARR_MAX", max),
@@ -105,8 +102,8 @@ class TestArrayFunctionYDB(YQLViewTableTestBase, ArrayFunctionYDBTestSuite):
         inp_int = (1, 2, 3, -1)
         inp_float = (1.2, 12, 0.1, 12.0)
 
-        bi_inp_int = ", ".join((str(item) for item in inp_int))
-        bi_inp_float = ", ".join((str(item) for item in inp_float))
+        bi_inp_int = ", ".join(str(item) for item in inp_int)
+        bi_inp_float = ", ".join(str(item) for item in inp_float)
 
         assert dbe.eval(f"{bi_func}(ARRAY({bi_inp_int}))", from_=data_table) == eval_func(inp_int)
         assert dbe.eval(f"{bi_func}(REPLACE([arr_int_value], NULL, 1))", from_=data_table) == eval_func((0, 23, 456, 1))

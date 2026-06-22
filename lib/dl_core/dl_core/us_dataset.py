@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import logging
-from typing import (
-    TYPE_CHECKING,
+from collections.abc import (
     Collection,
     Generator,
 )
+import logging
+from typing import TYPE_CHECKING
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     AggregationFunction,
     DataSourceCreatedVia,
     DataSourceRole,
@@ -45,9 +45,10 @@ from dl_core.us_entry import (
     BaseAttrsDataModel,
     USEntry,
 )
+from dl_core.us_extract import ExtractProperties
 from dl_i18n.localizer_base import Localizer
 from dl_rls.rls import RLS
-
+from dl_utils.utils import DataKey
 
 if TYPE_CHECKING:
     from dl_core.components.ids import FieldIdGenerator
@@ -77,12 +78,24 @@ class Dataset(USEntry):
         component_errors: ComponentErrorRegistry = attr.ib(factory=ComponentErrorRegistry)
         obligatory_filters: list[ObligatoryFilter] = attr.ib(factory=list)
         cache_invalidation_source: CacheInvalidationSource = attr.ib(factory=CacheInvalidationSource)
+        query_settings: dict[str, str] = attr.ib(factory=dict)
+
+        extract: ExtractProperties = attr.ib(factory=ExtractProperties)
 
         @attr.s
         class ResultSchemaAux:
             inter_dependencies: FieldInterDependencyInfo = attr.ib(factory=FieldInterDependencyInfo)
 
         result_schema_aux: ResultSchemaAux = attr.ib(factory=ResultSchemaAux)
+
+        @classmethod
+        def get_unversioned_keys(cls) -> set[DataKey]:
+            return {
+                DataKey(parts=("extract", "status")),
+                DataKey(parts=("extract", "errors")),
+                DataKey(parts=("extract", "last_completed")),
+                DataKey(parts=("extract", "data_dataset_revision")),
+            }
 
     @property
     def rls(self) -> RLS:
@@ -108,7 +121,7 @@ class Dataset(USEntry):
 
     def get_own_materialized_tables(self, source_id: str | None = None) -> Generator[str, None, None]:
         for dsrc_coll_spec in self.data.source_collections or ():
-            if not dsrc_coll_spec or source_id and dsrc_coll_spec.id != source_id:
+            if not dsrc_coll_spec or (source_id and dsrc_coll_spec.id != source_id):
                 continue
             if not isinstance(dsrc_coll_spec, DataSourceCollectionSpec):
                 continue
@@ -119,6 +132,44 @@ class Dataset(USEntry):
                 assert isinstance(dsrc_spec, StandardSQLDataSourceSpec)
                 if dsrc_spec.table_name is not None:
                     yield dsrc_spec.table_name
+
+    def find_source_type(
+        self,
+        connection_id: str | None,
+    ) -> DataSourceType | None:
+        """
+        If dataset has a source with the given ID, returns it's source type.
+
+        When dataset has multiple source types for the same connection_id, returns first of them and prints a warning.
+        """
+
+        if connection_id is None:
+            return None
+
+        connection_ref = connection_ref_from_id(connection_id=connection_id)
+
+        source_types = set()
+        for dsrc_coll_spec in self.data.source_collections:
+            if (
+                isinstance(dsrc_coll_spec, DataSourceCollectionSpec)
+                and dsrc_coll_spec.origin is not None
+                and dsrc_coll_spec.origin.connection_ref == connection_ref
+            ):
+                source_types.add(dsrc_coll_spec.origin.source_type)
+
+        if len(source_types) > 1:
+            source_types_str = ", ".join(source_type.value for source_type in source_types)
+            LOGGER.warning(
+                "Connection %s in dataset %s has multiple source types: %s",
+                connection_id,
+                self.uuid,
+                source_types_str,
+            )
+
+        if len(source_types) == 1:
+            return source_types.pop()
+
+        return None
 
     def find_data_source_configuration(
         self,
@@ -141,10 +192,7 @@ class Dataset(USEntry):
 
         def spec_matches_parameters(existing_spec: DataSourceSpec) -> bool:
             # FIXME: Refactor
-            for key, value in parameters.items():
-                if getattr(existing_spec, key, None) != value:
-                    return False
-            return True
+            return all(getattr(existing_spec, key, None) == value for key, value in parameters.items())
 
         connection_ref = connection_ref_from_id(connection_id=connection_id)
 
@@ -175,8 +223,8 @@ class Dataset(USEntry):
             title = resolve_id_collisions(item=title, existing_items=existing_titles, formatter="{} ({})")
 
         if field_id_generator is None:
-            FieldIdGeneratorClass = FIELD_ID_GENERATOR_MAP[DEFAULT_FIELD_ID_GENERATOR_TYPE]
-            field_id_generator = FieldIdGeneratorClass(dataset=self)
+            field_id_generator_class = FIELD_ID_GENERATOR_MAP[DEFAULT_FIELD_ID_GENERATOR_TYPE]
+            field_id_generator = field_id_generator_class(dataset=self)
 
         guid = field_id_generator.make_field_id(title=title)
 
@@ -185,7 +233,7 @@ class Dataset(USEntry):
             # Auto-hide because it's unselectable.
             hidden = True
 
-        column_data = {
+        return {
             "title": title,
             "guid": guid,
             "hidden": hidden,
@@ -204,7 +252,6 @@ class Dataset(USEntry):
                 source=column.name,
             ),
         }
-        return column_data
 
     @property
     def result_schema(self) -> ResultSchema:
@@ -223,6 +270,10 @@ class Dataset(USEntry):
 
     @property
     def revision_id(self) -> str | None:
+        """
+        Returns backend-driven revision_id value
+        """
+
         return self.data.revision_id
 
     @property
@@ -246,28 +297,35 @@ class Dataset(USEntry):
 
     def get_import_warnings_list(self, localizer: Localizer) -> list[dict]:
         warnings_list = []
-        CODE_PREFIX = "NOTIF.WB_IMPORT.DS."
+        code_prefix = "NOTIF.WB_IMPORT.DS."
 
         if self.rls.items:
             warnings_list.append(
-                dict(
-                    message=localizer.translate(Translatable("notif_rls")),
-                    level=NotificationLevel.info,
-                    code=CODE_PREFIX + "RLS",
-                )
+                {
+                    "message": localizer.translate(Translatable("notif_rls")),
+                    "level": NotificationLevel.info,
+                    "code": code_prefix + "RLS",
+                }
             )
         return warnings_list
 
     def get_export_warnings_list(self, localizer: Localizer) -> list[dict]:
         warnings_list = []
-        CODE_PREFIX = "NOTIF.WB_EXPORT.DS."
+        code_prefix = "NOTIF.WB_EXPORT.DS."
 
         if self.rls.items:
             warnings_list.append(
-                dict(
-                    message=localizer.translate(Translatable("notif_rls")),
-                    level=NotificationLevel.info,
-                    code=CODE_PREFIX + "RLS",
-                )
+                {
+                    "message": localizer.translate(Translatable("notif_rls")),
+                    "level": NotificationLevel.info,
+                    "code": code_prefix + "RLS",
+                }
             )
         return warnings_list
+
+    def reset_extract_properties(self) -> None:
+        """
+        Reset extract properties and settings to default values.
+        """
+
+        self.data.extract = ExtractProperties()

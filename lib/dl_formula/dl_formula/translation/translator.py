@@ -1,12 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import datetime
 from functools import singledispatchmethod
 from itertools import chain
-from typing import (
-    Optional,
-    Union,
-)
 
 import sqlalchemy as sa
 from sqlalchemy.sql.elements import ClauseElement
@@ -44,10 +41,10 @@ class SqlAlchemyTranslator:
     def __init__(
         self,
         env: TranslationEnvironment,
-        restrict_funcs: Optional[bool] = None,
-        restrict_fields: Optional[bool] = None,
+        restrict_funcs: bool | None = None,
+        restrict_fields: bool | None = None,
         collect_stats: bool = False,
-    ):
+    ) -> None:
         self._env = env
         self._restrict_funcs = restrict_funcs if restrict_funcs is not None else self.default_restrict_funcs
         self._restrict_fields = restrict_fields if restrict_fields is not None else self.default_restrict_fields
@@ -67,7 +64,7 @@ class SqlAlchemyTranslator:
         - check argument count
         """
 
-        def translator_cb(obj: nodes.FormulaItem) -> Union[nodes.FormulaItem, ClauseElement]:
+        def translator_cb(obj: nodes.FormulaItem) -> nodes.FormulaItem | ClauseElement:
             """Callback that can translate a formula node for usage from function implementation"""
             return self.translate_node(  # type: ignore  # TODO: fix
                 obj,
@@ -159,8 +156,8 @@ class SqlAlchemyTranslator:
     def translate(
         self,
         formula: nodes.Formula,
-        collect_errors: Optional[bool] = None,
-        context_flags: Optional[int] = None,
+        collect_errors: bool | None = None,
+        context_flags: int | None = None,
     ) -> TranslationCtx:
         """
         Translate ``Formula`` object into an SQLAlchemy selectable,
@@ -197,9 +194,12 @@ class SqlAlchemyTranslator:
             pass  # coercion to BOOL results in extra ' = 1', so don't do it
         elif ctx.data_type in (DataType.CONST_DATE, DataType.DATE):
             ctx.set_expression(sa.type_coerce(ctx.expression, sa.Date))
-        elif ctx.data_type in (DataType.CONST_DATETIME, DataType.DATETIME):
-            ctx.set_expression(sa.type_coerce(ctx.expression, sa.DateTime))
-        elif ctx.data_type in (DataType.CONST_GENERICDATETIME, DataType.GENERICDATETIME):
+        elif ctx.data_type in (
+            DataType.CONST_DATETIME,
+            DataType.DATETIME,
+            DataType.CONST_GENERICDATETIME,
+            DataType.GENERICDATETIME,
+        ):
             ctx.set_expression(sa.type_coerce(ctx.expression, sa.DateTime))
 
     def translate_node(self, node: nodes.FormulaItem, ctx: TranslationCtx, postprocess: bool = True) -> TranslationCtx:
@@ -219,10 +219,8 @@ class SqlAlchemyTranslator:
             self._translate_node(node, ctx)
 
         ctx.flush()
-        try:
+        with contextlib.suppress(exc.CacheError):  # node is not cacheable
             self._env.translation_cache.add(node=node, value=ctx.copy())
-        except exc.CacheError:
-            pass  # node is not cacheable
 
         if postprocess:
             self._postprocess_context(ctx)
@@ -275,7 +273,7 @@ class SqlAlchemyTranslator:
     @_translate_node.register(nodes.LiteralArrayString)
     @_translate_node.register(nodes.LiteralTreeString)
     def _translate_node_literal(self, node: nodes.BaseLiteral, ctx: TranslationCtx) -> None:
-        data_type_params: Optional[DataTypeParams] = None
+        data_type_params: DataTypeParams | None = None
         if isinstance(node, nodes.LiteralDatetimeTZ):
             data_type_params = DataTypeParams(timezone="UTC")  # not certain
         ctx.set_type(
@@ -295,7 +293,7 @@ class SqlAlchemyTranslator:
             ctx.set_expression(node.value)
 
     @_translate_node.register(nodes.Null)
-    def _translate_node_null(self, node: Optional[nodes.Null], ctx: TranslationCtx) -> None:
+    def _translate_node_null(self, node: nodes.Null | None, ctx: TranslationCtx) -> None:
         ctx.set_type(DataType.NULL)
         ctx.set_expression(sa.null())
 
@@ -387,16 +385,16 @@ class SqlAlchemyTranslator:
 
 def translate(
     formula: nodes.Formula,
-    dialect: Optional[DialectCombo] = None,
+    dialect: DialectCombo | None = None,
     required_scopes: int = Scope.EXPLICIT_USAGE,
-    restrict_funcs: Optional[bool] = None,
-    restrict_fields: Optional[bool] = None,
-    collect_errors: Optional[bool] = None,
+    restrict_funcs: bool | None = None,
+    restrict_fields: bool | None = None,
+    collect_errors: bool | None = None,
     collect_stats: bool = False,
-    field_types: Optional[dict[str, DataType]] = None,
-    context_flags: Optional[int] = None,
-    field_names: Optional[dict[str, tuple[str, ...]]] = None,
-    env: Optional[TranslationEnvironment] = None,
+    field_types: dict[str, DataType] | None = None,
+    context_flags: int | None = None,
+    field_names: dict[str, tuple[str, ...]] | None = None,
+    env: TranslationEnvironment | None = None,
 ) -> TranslationCtx:
     """Translate ``Formula`` tree object into an SQLAlchemy representation that can be used for queries"""
 
@@ -425,16 +423,16 @@ def translate(
 
 def translate_and_compile(
     formula: nodes.Formula,
-    dialect: Optional[DialectCombo] = None,
+    dialect: DialectCombo | None = None,
     required_scopes: int = Scope.EXPLICIT_USAGE,
-    restrict_funcs: Optional[bool] = None,
-    restrict_fields: Optional[bool] = None,
-    collect_errors: Optional[bool] = None,
+    restrict_funcs: bool | None = None,
+    restrict_fields: bool | None = None,
+    collect_errors: bool | None = None,
     collect_stats: bool = False,
-    field_types: Optional[dict[str, DataType]] = None,
-    context_flags: Optional[int] = None,
-    field_names: Optional[dict[str, tuple[str, ...]]] = None,
-    env: Optional[TranslationEnvironment] = None,
+    field_types: dict[str, DataType] | None = None,
+    context_flags: int | None = None,
+    field_names: dict[str, tuple[str, ...]] | None = None,
+    env: TranslationEnvironment | None = None,
 ) -> str:
     """Translate ``Formula`` tree object into an SQLAlchemy representation and compile it into raw SQL"""
 
@@ -464,5 +462,4 @@ def translate_and_compile(
         compile_kwargs={"literal_binds": True},
         dialect=sa_dialect,
     )
-    compiled_text = sa_compiled_expr.string
-    return compiled_text
+    return sa_compiled_expr.string

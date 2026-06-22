@@ -3,7 +3,6 @@ import dl_formula.definitions.operators_unary as base
 
 from dl_connector_starrocks.formula.constants import StarRocksDialect as D
 
-
 V = TranslationVariant.make
 
 
@@ -15,7 +14,7 @@ DEFINITIONS_UNARY = [
     # StarRocks doesn't support IS FALSE syntax for booleans, use equality instead
     base.UnaryIsFalseBoolean(
         variants=[
-            V(D.STARROCKS, lambda x: x == False),  # noqa: E712
+            V(D.STARROCKS, lambda x: x == False),
         ]
     ),
     # istrue
@@ -25,7 +24,7 @@ DEFINITIONS_UNARY = [
     # StarRocks doesn't support IS TRUE syntax for booleans, use equality instead
     base.UnaryIsTrueBoolean(
         variants=[
-            V(D.STARROCKS, lambda x: x == True),  # noqa: E712
+            V(D.STARROCKS, lambda x: x == True),
         ]
     ),
     # neg

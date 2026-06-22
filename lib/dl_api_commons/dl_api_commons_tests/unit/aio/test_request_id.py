@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import logging
-from typing import (
+from collections.abc import (
     Awaitable,
     Callable,
     Sequence,
 )
+import logging
 
 from aiohttp import web
 from aiohttp.test_utils import TestClient
@@ -19,7 +19,6 @@ from dl_api_commons.aio.middlewares.commit_rci import commit_rci_middleware
 from dl_api_commons.aio.middlewares.request_bootstrap import RequestBootstrap
 from dl_api_commons.aio.middlewares.request_id import RequestId
 from dl_api_commons.aiohttp.aiohttp_wrappers import DLRequestBase
-
 
 pytestmark = [pytest.mark.asyncio]
 
@@ -135,8 +134,7 @@ async def test_uncommitted_committed_rci(app_factory: _AppFactory) -> None:
         assert dl_request is not None
         if dl_request.is_rci_committed():
             return web.json_response({}, status=500, reason="RCI is committed but it was not expected")
-        else:
-            return web.json_response({"request_id": dl_request.temp_rci.request_id})
+        return web.json_response({"request_id": dl_request.temp_rci.request_id})
 
     app = await app_factory(
         _AppConfig(

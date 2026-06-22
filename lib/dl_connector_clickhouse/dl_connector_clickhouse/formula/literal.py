@@ -1,5 +1,4 @@
 import datetime
-from typing import Union
 
 import sqlalchemy as sa
 
@@ -22,8 +21,7 @@ class ClickHouseLiteralizer(Literalizer):
         if tzinfo:
             tzname = getattr(tzinfo, "zone", tzinfo.tzname(value))
             return sa.func.toDateTime(value.isoformat(), tzname)
-        else:
-            return sa.func.toDateTime(value.isoformat())
+        return sa.func.toDateTime(value.isoformat())
 
     def literal_date(self, value: datetime.date, dialect: DialectCombo) -> Literal:
         if dialect & D.and_above(D.CLICKHOUSE_22_10):
@@ -33,5 +31,5 @@ class ClickHouseLiteralizer(Literalizer):
     def literal_bool(self, value: bool, dialect: DialectCombo) -> Literal:
         return sa.literal(int(value))
 
-    def literal_array(self, value: Union[tuple, list], dialect: DialectCombo) -> Literal:
+    def literal_array(self, value: tuple | list, dialect: DialectCombo) -> Literal:
         return sa.func.array(*value)

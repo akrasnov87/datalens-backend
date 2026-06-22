@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import abc
-from enum import Enum
-from typing import (
+from collections.abc import (
     Callable,
-    ClassVar,
     Iterable,
     Mapping,
 )
+from enum import Enum
+from typing import ClassVar
 
 import attr
 import sqlalchemy as sa
@@ -21,7 +21,6 @@ import dl_formula.definitions.functions_datetime as base
 from dl_formula.definitions.literals import un_literal
 
 from dl_connector_mysql.formula.constants import MySQLDialect as D
-
 
 V = TranslationVariant.make
 
@@ -48,12 +47,11 @@ class MySQLDatetruncSubtractUnitStep(MySQLDatetruncStep):
     unit_value_clause: Callable[[ClauseElement], ClauseElement] = attr.ib()
 
     def step(self, date_clause: ClauseElement) -> ClauseElement:
-        subtract_units_expr = sa.func.TIMESTAMPADD(
+        return sa.func.TIMESTAMPADD(
             sa.text(self.unit_to_subtract.name),
             -self.unit_value_clause(date_clause).self_group(),
             date_clause,
         )
-        return subtract_units_expr
 
 
 @attr.s(frozen=True)
@@ -95,7 +93,7 @@ class MySQLDatetruncBuildMixin:
     DATE_BUILD_DATA: ClassVar[Mapping[str, MySQLDatetruncStep]] = {}
 
     @classmethod
-    def make_datetrunc(cls, date, unit):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def make_datetrunc(cls, date: ClauseElement, unit: ClauseElement) -> ClauseElement:
         norm_unit = base.norm_datetrunc_unit(unit)
         if norm_unit not in cls.DATE_BUILD_DATA:
             return date
@@ -136,9 +134,7 @@ class FuncDatetrunc2DateMySQL(MySQLDatetruncBuildMixin, base.FuncDatetrunc2Date)
         "week": trunc_week,
     }
 
-    variants = [
-        V(D.MYSQL, lambda date, unit: FuncDatetrunc2DateMySQL.make_datetrunc(date, unit)),
-    ]
+    variants = (V(D.MYSQL, lambda date, unit: FuncDatetrunc2DateMySQL.make_datetrunc(date, unit)),)
 
 
 class FuncDatetrunc2DatetimeMySQL(MySQLDatetruncBuildMixin, base.FuncDatetrunc2Datetime):
@@ -153,12 +149,8 @@ class FuncDatetrunc2DatetimeMySQL(MySQLDatetruncBuildMixin, base.FuncDatetrunc2D
         "second": MySQLDatetruncRoundSecondsStep(1),
     }
 
-    variants = [
-        V(D.MYSQL, lambda date, unit: FuncDatetrunc2DatetimeMySQL.make_datetrunc(date, unit)),
-    ]
-    argument_types = [
-        ArgTypeSequence([{DataType.DATETIME, DataType.GENERICDATETIME}, DataType.CONST_STRING]),
-    ]
+    variants = (V(D.MYSQL, lambda date, unit: FuncDatetrunc2DatetimeMySQL.make_datetrunc(date, unit)),)
+    argument_types = (ArgTypeSequence([{DataType.DATETIME, DataType.GENERICDATETIME}, DataType.CONST_STRING]),)
 
 
 DEFINITIONS_DATETIME = [

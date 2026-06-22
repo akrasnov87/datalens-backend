@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import datetime
 from functools import singledispatchmethod
-from typing import (
-    Any,
-    Union,
-)
+from typing import Any
 
 import sqlalchemy as sa
 import sqlalchemy.dialects.postgresql as sa_postgresql
@@ -28,7 +25,7 @@ class TypeDefiningCast(Cast):
     (in compeng asyncpg postgres prepared statements).
     """
 
-    def __init__(self, *args, **kwargs):  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         assert isinstance(self.clause, sa.sql.elements.BindParameter), "This Cast is only meant for constants"
 
@@ -42,15 +39,7 @@ class TypeDefiningCast(Cast):
         return self.clause.value
 
 
-Literal = Union[
-    BaseLiteral,  # unwrapped formula node
-    # various SA wrappers and types:
-    BindParameter,
-    TypeDefiningCast,
-    sa.sql.functions.Function,  # CH cast via toDatTime
-    Null,
-    sa_postgresql.array,
-]
+Literal = BaseLiteral | BindParameter | TypeDefiningCast | sa.sql.functions.Function | Null | sa_postgresql.array
 
 
 class Literalizer:
@@ -86,7 +75,7 @@ class Literalizer:
 
     @_literal.register(list)
     @_literal.register(tuple)
-    def _literal_array(self, value: Union[tuple, list], dialect: DialectCombo) -> Literal:
+    def _literal_array(self, value: tuple | list, dialect: DialectCombo) -> Literal:
         return self.literal_array(value, dialect=dialect)
 
     def literal_int(self, value: int, dialect: DialectCombo) -> Literal:
@@ -107,7 +96,7 @@ class Literalizer:
     def literal_str(self, value: str, dialect: DialectCombo) -> Literal:
         return sa.literal(value)
 
-    def literal_array(self, value: Union[tuple, list], dialect: DialectCombo) -> Literal:
+    def literal_array(self, value: tuple | list, dialect: DialectCombo) -> Literal:
         return sa.literal(value)
 
     def literal(self, value: Any, dialect: DialectCombo) -> Literal:

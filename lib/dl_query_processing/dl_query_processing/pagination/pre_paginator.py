@@ -1,15 +1,7 @@
-from typing import (
-    Optional,
-    TypeVar,
-)
-
 from dl_query_processing.legend.block_legend import BlockLegend
 
 
-_VAL_TV = TypeVar("_VAL_TV")
-
-
-def ifnull(value: _VAL_TV, null_value: _VAL_TV) -> _VAL_TV:
+def ifnull[VAL_TV](value: VAL_TV, null_value: VAL_TV) -> VAL_TV:
     if value is not None:
         return value
     return null_value
@@ -25,8 +17,8 @@ class QueryPrePaginator:
         self,
         block_legend: BlockLegend,
         block_ind: int,
-        limit: Optional[int],
-        offset: Optional[int],
+        limit: int | None,
+        offset: int | None,
     ) -> BlockLegend:
         """
         Set pagination for block specified by index ``block_ind``
@@ -36,7 +28,7 @@ class QueryPrePaginator:
             limit=limit,
             offset=offset,
         )
-        updated_blocks = block_legend.blocks[:block_ind] + [updated_block] + block_legend.blocks[block_ind + 1 :]
+        updated_blocks = [*block_legend.blocks[:block_ind], updated_block, *block_legend.blocks[block_ind + 1 :]]
         return block_legend.clone(blocks=updated_blocks)
 
     def pre_paginate(self, block_legend: BlockLegend) -> BlockLegend:

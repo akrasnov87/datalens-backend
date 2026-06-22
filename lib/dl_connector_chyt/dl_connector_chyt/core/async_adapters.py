@@ -14,7 +14,6 @@ from dl_connector_chyt.core.target_dto import BaseCHYTConnTargetDTO
 from dl_connector_chyt.core.utils import CHYTUtils
 from dl_connector_clickhouse.core.clickhouse_base.adapters import BaseAsyncClickHouseAdapter
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -31,7 +30,16 @@ class AsyncCHYTAdapter(BaseAsyncClickHouseAdapter):
             req_id=self._req_ctx_info.request_id,
         )
 
+    def _apply_output_format(
+        self,
+        query: str,
+        params: dict[str, str],
+    ) -> tuple[str, dict[str, str]]:
+        # The CHYT-over-YT proxy is not validated for the `default_format` request param,
+        # so keep forcing JSONCompact via the inline `FORMAT` clause (unchanged behavior).
+        return query + "\n" + "FORMAT JSONCompact", params
+
     async def _make_query(self, dba_q: DBAdapterQuery, mirroring_mode: bool = False) -> ClientResponse:
         resp = await super()._make_query(dba_q=dba_q, mirroring_mode=mirroring_mode)
-        LOGGER.info(f"CHYT Response headers: {resp.headers}")
+        LOGGER.info("CHYT Response headers: %s", resp.headers)
         return resp

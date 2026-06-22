@@ -1,22 +1,19 @@
 from __future__ import annotations
 
-from typing import (
-    NamedTuple,
-    Optional,
-)
+from typing import NamedTuple
 
 
 class Position(NamedTuple):
-    start: Optional[int] = None
-    end: Optional[int] = None
-    start_row: Optional[int] = None
-    end_row: Optional[int] = None
-    start_col: Optional[int] = None
-    end_col: Optional[int] = None
+    start: int | None = None
+    end: int | None = None
+    start_row: int | None = None
+    end_row: int | None = None
+    start_col: int | None = None
+    end_col: int | None = None
 
 
 class PositionConverter:
-    def __init__(self, text: str):
+    def __init__(self, text: str) -> None:
         self._text: str = text
         self._pos_by_line: list[int] = [0]  # a list of starting positions for each line number
         for line in text.split("\n"):

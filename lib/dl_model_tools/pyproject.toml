@@ -12,10 +12,11 @@ attrs = "*"
 dl-constants = {path = "../dl_constants"}
 dl-dynamic-enum = {path = "../dl_dynamic_enum"}
 dl-type-transformer = {path = "../dl_type_transformer"}
+frozendict = "*"
 marshmallow = "*"
 marshmallow-oneofschema = "*"
 msgpack = "*"
-python = ">=3.10, <3.13"
+python = ">=3.12, <3.13"
 
 [tool.poetry.group.tests.dependencies]
 dl-testing = {path = "../dl_testing"}
@@ -55,7 +56,6 @@ requires = [
 ]
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_model_tools_tests/"
 skip_compose = "true"
 target_path = "unit"

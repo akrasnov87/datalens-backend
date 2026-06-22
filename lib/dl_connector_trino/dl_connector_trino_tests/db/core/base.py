@@ -13,7 +13,7 @@ from trino.dbapi import connect
 from trino.exceptions import TrinoQueryError
 from trino.sqlalchemy.datatype import parse_sqltype
 
-from dl_constants.enums import SourceBackendType
+from dl_constants import SourceBackendType
 from dl_core_testing.database import (
     C,
     CoreDbConfig,
@@ -134,7 +134,7 @@ class BaseTrinoTestClass(BaseConnectionTestClass[ConnectionTrino]):
             ssl_enable=test_config.CoreConnectionSettings.SSL_ENABLE,
             ssl_ca=None,
             listing_sources=test_config.CoreConnectionSettings.LISTING_SOURCES,
-            **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level} if self.raw_sql_level is not None else {}),
         )
 
     @pytest.fixture(scope="class")
@@ -147,15 +147,15 @@ class BaseTrinoTestClass(BaseConnectionTestClass[ConnectionTrino]):
 class BaseTrinoConnectionWithListingSourcesDisabled(BaseTrinoTestClass):
     @pytest.fixture(scope="session")
     def connection_creation_params(self) -> dict:
-        return dict(
-            host=test_config.CoreConnectionSettings.HOST,
-            port=test_config.CoreConnectionSettings.PORT,
-            username=test_config.CoreConnectionSettings.USERNAME,
-            auth_type=TrinoAuthType.none,
-            ssl_enable=test_config.CoreConnectionSettings.SSL_ENABLE,
-            ssl_ca=None,
-            listing_sources=ListingSources.off,
-        )
+        return {
+            "host": test_config.CoreConnectionSettings.HOST,
+            "port": test_config.CoreConnectionSettings.PORT,
+            "username": test_config.CoreConnectionSettings.USERNAME,
+            "auth_type": TrinoAuthType.none,
+            "ssl_enable": test_config.CoreConnectionSettings.SSL_ENABLE,
+            "ssl_ca": None,
+            "listing_sources": ListingSources.off,
+        }
 
 
 class BaseTrinoSslTestClass(BaseTrinoTestClass):
@@ -166,7 +166,7 @@ class BaseTrinoSslTestClass(BaseTrinoTestClass):
     @pytest.fixture(scope="session")
     def ssl_ca(self) -> str:
         uri = f"{test_config.CoreSslConnectionSettings.CERT_PROVIDER_URL}/ca.pem"
-        response = requests.get(uri)
+        response = requests.get(uri, timeout=30)
         assert response.status_code == 200, response.text
 
         return response.text
@@ -179,14 +179,14 @@ class BaseTrinoSslTestClass(BaseTrinoTestClass):
 
     @pytest.fixture(scope="session")
     def ssl_connection_creation_params(self, ssl_ca: str) -> dict:
-        return dict(
-            host=test_config.CoreSslConnectionSettings.HOST,
-            port=test_config.CoreSslConnectionSettings.PORT,
-            username=test_config.CoreSslConnectionSettings.USERNAME,
-            ssl_enable=test_config.CoreSslConnectionSettings.SSL_ENABLE,
-            ssl_ca=ssl_ca,
-            listing_sources=test_config.CoreSslConnectionSettings.LISTING_SOURCES,
-        )
+        return {
+            "host": test_config.CoreSslConnectionSettings.HOST,
+            "port": test_config.CoreSslConnectionSettings.PORT,
+            "username": test_config.CoreSslConnectionSettings.USERNAME,
+            "ssl_enable": test_config.CoreSslConnectionSettings.SSL_ENABLE,
+            "ssl_ca": ssl_ca,
+            "listing_sources": test_config.CoreSslConnectionSettings.LISTING_SOURCES,
+        }
 
 
 class BaseTrinoPasswordTestClass(BaseTrinoSslTestClass):
@@ -196,12 +196,11 @@ class BaseTrinoPasswordTestClass(BaseTrinoSslTestClass):
             test_config.CorePasswordConnectionSettings.USERNAME,
             test_config.CorePasswordConnectionSettings.PASSWORD,
         )
-        session = auth.set_http_session(https_session)
-        return session
+        return auth.set_http_session(https_session)
 
     @pytest.fixture(scope="class")
     def engine_params(self, password_session: requests.Session) -> dict:
-        engine_params = {
+        return {
             "connect_args": frozendict(
                 {
                     "http_scheme": "https",
@@ -209,26 +208,24 @@ class BaseTrinoPasswordTestClass(BaseTrinoSslTestClass):
                 }
             ),
         }
-        return engine_params
 
     @pytest.fixture(scope="session")
     def connection_creation_params(self, ssl_connection_creation_params: dict) -> dict:
-        return ssl_connection_creation_params | dict(
-            auth_type=TrinoAuthType.password,
-            password=test_config.CorePasswordConnectionSettings.PASSWORD,
-        )
+        return ssl_connection_creation_params | {
+            "auth_type": TrinoAuthType.password,
+            "password": test_config.CorePasswordConnectionSettings.PASSWORD,
+        }
 
 
 class BaseTrinoJwtTestClass(BaseTrinoSslTestClass):
     @pytest.fixture(scope="session")
     def jwt_session(self, https_session: requests.Session) -> requests.Session:
         auth = JWTAuthentication(test_config.CoreJwtConnectionSettings.JWT)
-        session = auth.set_http_session(https_session)
-        return session
+        return auth.set_http_session(https_session)
 
     @pytest.fixture(scope="class")
     def engine_params(self, jwt_session: requests.Session) -> dict:
-        engine_params = {
+        return {
             "connect_args": frozendict(
                 {
                     "http_scheme": "https",
@@ -236,11 +233,10 @@ class BaseTrinoJwtTestClass(BaseTrinoSslTestClass):
                 }
             ),
         }
-        return engine_params
 
     @pytest.fixture(scope="session")
     def connection_creation_params(self, ssl_connection_creation_params: dict) -> dict:
-        return ssl_connection_creation_params | dict(
-            auth_type=TrinoAuthType.jwt,
-            jwt=test_config.CoreJwtConnectionSettings.JWT,
-        )
+        return ssl_connection_creation_params | {
+            "auth_type": TrinoAuthType.jwt,
+            "jwt": test_config.CoreJwtConnectionSettings.JWT,
+        }

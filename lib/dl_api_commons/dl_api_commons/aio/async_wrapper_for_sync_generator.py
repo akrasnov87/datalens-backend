@@ -3,20 +3,14 @@ from __future__ import annotations
 import abc
 import asyncio
 from asyncio import AbstractEventLoop
+from collections.abc import Generator
 from concurrent.futures.thread import ThreadPoolExecutor
 import enum
 import logging
 import threading
-from typing import (
-    Generator,
-    Generic,
-    Optional,
-    TypeVar,
-    Union,
-)
+import typing
 
 import attr
-
 
 try:
     from asyncio.exceptions import TimeoutError
@@ -36,22 +30,22 @@ class JobState(enum.Enum):
     error = enum.auto()
 
 
-class _ErrorInWorkerThread(Exception):
+class _ErrorInWorkerThreadError(Exception):
     """
     Exception is thrown by sync control methods to indicate that exception fires in worker.
     Desired action in control coroutines: await worker thread future to re-raise exception.
     """
 
 
-class _WaitForStateTimeout(Exception):
+class _WaitForStateTimeoutError(Exception):
     """Indicates that target state was not reached within timeout"""
 
 
-class AWFSGExeption(Exception):
+class AWFSGExeptionError(Exception):
     """Base exception"""
 
 
-class InitializationFailed(AWFSGExeption):
+class InitializationFailedError(AWFSGExeptionError):
     """
     Fires in case of errors during worker initialization phase:
       sync generator creation fails
@@ -59,52 +53,49 @@ class InitializationFailed(AWFSGExeption):
     """
 
 
-class AlreadyStarted(AWFSGExeption):
+class AlreadyStartedError(AWFSGExeptionError):
     pass
 
 
-class WorkerIsClosed(AWFSGExeption):
+class WorkerIsClosedError(AWFSGExeptionError):
     pass
 
 
-class WorkerDoesNotThrowExceptionInErrorState(AWFSGExeption):
+class WorkerDoesNotThrowExceptionInErrorStateError(AWFSGExeptionError):
     pass
 
 
-class EndOfStream(AWFSGExeption):
+class EndOfStreamError(AWFSGExeptionError):
     pass
 
 
-class AWFSGRuntimeError(AWFSGExeption):
+class AWFSGRuntimeError(AWFSGExeptionError):
     """Something strange and totally unexpected happens"""
 
     pass
 
 
-_STATE_ITEM_TV = TypeVar("_STATE_ITEM_TV")
-
-
 class _NoSet:
-    instance: "_NoSet" = None  # type: ignore  # TODO: fix
+    instance: _NoSet = None  # type: ignore  # TODO: fix
 
 
 _NoSet.instance = _NoSet()
 
 
 @attr.s
-class SynchronizedJobState(Generic[_STATE_ITEM_TV]):
+class SynchronizedJobState[STATE_ITEM_TV]:
     _log: logging.LoggerAdapter = attr.ib()
     _monitor: threading.Condition = attr.ib(init=False, factory=threading.Condition)
-    _buffer: Union[_NoSet, _STATE_ITEM_TV] = attr.ib(init=False, default=_NoSet.instance)
+    _buffer: _NoSet | STATE_ITEM_TV = attr.ib(init=False, default=_NoSet.instance)
     _state: JobState = attr.ib(init=False, default=JobState.worker_not_started)
 
     def _ensure_monitor(self):  # type: ignore  # TODO: fix
-        if not self._monitor._is_owned():  # type: ignore  # TODO: fix  # noqa
+        if not self._monitor._is_owned():  # type: ignore  # TODO: fix
             msg = "Attempt to use synchronized method without monitor acquiring"
             self._log.error(msg)
             raise AWFSGRuntimeError(msg)
 
-    def fetch_buffer(self) -> _STATE_ITEM_TV:
+    def fetch_buffer(self) -> STATE_ITEM_TV:
         self._ensure_monitor()
         if self._buffer is _NoSet.instance:
             msg = "Trying to fetch from empty buffer"
@@ -113,7 +104,7 @@ class SynchronizedJobState(Generic[_STATE_ITEM_TV]):
         self._buffer, ret = _NoSet.instance, self._buffer
         return ret  # type: ignore  # TODO: fix
 
-    def set_buffer(self, val: _STATE_ITEM_TV):  # type: ignore  # TODO: fix
+    def set_buffer(self, val: STATE_ITEM_TV):  # type: ignore  # TODO: fix
         self._ensure_monitor()
         if self._buffer is not _NoSet.instance:
             msg = "Trying to reset buffer"
@@ -130,7 +121,7 @@ class SynchronizedJobState(Generic[_STATE_ITEM_TV]):
     def state(self) -> JobState:
         return self._state
 
-    def wait_for_state_change(self, state: Optional[JobState] = None, timeout: Optional[float] = None) -> None:
+    def wait_for_state_change(self, state: JobState | None = None, timeout: float | None = None) -> None:
         self._ensure_monitor()
         target_state = state
         state_before = self._state
@@ -142,30 +133,27 @@ class SynchronizedJobState(Generic[_STATE_ITEM_TV]):
             result = self._monitor.wait_for(lambda: self._state == target_state, timeout=timeout)
             if not result:
                 self._log.debug("Requested state was not achieved within timeout %s", timeout)
-                raise _WaitForStateTimeout()
+                raise _WaitForStateTimeoutError()
         state_after = self._state
         self._log.debug("State monitor event received. Transition: %s -> %s", state_before, state_after)
 
-    def __enter__(self):  # type: ignore  # TODO: fix
+    def __enter__(self) -> bool:
         return self._monitor.__enter__()
 
-    def __exit__(self, *args, **kwargs):  # type: ignore  # TODO: fix
-        return self._monitor.__exit__(*args, **kwargs)
-
-
-_JOB_ITEM_TV = TypeVar("_JOB_ITEM_TV")
+    def __exit__(self, *args: typing.Any, **kwargs: typing.Any) -> None:
+        self._monitor.__exit__(*args, **kwargs)
 
 
 # TODO Switch level to debug
 @attr.s(cmp=False, hash=False)
-class Job(Generic[_JOB_ITEM_TV], metaclass=abc.ABCMeta):
+class Job[JOB_ITEM_TV](metaclass=abc.ABCMeta):
     _service_tpe: ThreadPoolExecutor = attr.ib()
     _workers_tpe: ThreadPoolExecutor = attr.ib()
     _worker_thread_start_timeout: float = attr.ib(default=0.1)
     _worker_thread_start_confirmation_timeout: float = attr.ib(default=0.1)
 
-    _loop: AbstractEventLoop = attr.ib(init=False, factory=asyncio.get_event_loop)
-    _worker_done_fut: Optional[asyncio.Future] = attr.ib(init=False, default=None)
+    _loop: AbstractEventLoop = attr.ib(init=False, factory=asyncio.get_running_loop)
+    _worker_done_fut: asyncio.Future | None = attr.ib(init=False, default=None)
 
     _ss: SynchronizedJobState = attr.ib(init=False, default=None)
     _startup_lock: asyncio.Lock = attr.ib(factory=asyncio.Lock)
@@ -175,9 +163,9 @@ class Job(Generic[_JOB_ITEM_TV], metaclass=abc.ABCMeta):
     def __attrs_post_init__(self) -> None:
         self._log = logging.LoggerAdapter(
             logging.getLogger(__name__),
-            extra=dict(
-                job_sys_id=id(self),
-            ),
+            extra={
+                "job_sys_id": id(self),
+            },
         )
         self._ss = SynchronizedJobState(log=self._log)
 
@@ -186,7 +174,7 @@ class Job(Generic[_JOB_ITEM_TV], metaclass=abc.ABCMeta):
         return self._ss.state
 
     @abc.abstractmethod
-    def make_generator(self) -> Generator[_JOB_ITEM_TV, None, None]:
+    def make_generator(self) -> Generator[JOB_ITEM_TV, None, None]:
         pass
 
     def _worker_do_step(self, generator: Generator) -> bool:
@@ -211,7 +199,7 @@ class Job(Generic[_JOB_ITEM_TV], metaclass=abc.ABCMeta):
             # Notifying generator that we won't receive any more data
             try:
                 generator.close()
-            except Exception:  # noqa
+            except Exception:
                 self._log.exception("Exception during generator closing")
 
             self._ss.set_state(JobState.closed)
@@ -234,7 +222,7 @@ class Job(Generic[_JOB_ITEM_TV], metaclass=abc.ABCMeta):
                 self._ss.wait_for_state_change(
                     state=JobState.worker_startup_confirmed, timeout=self._worker_thread_start_confirmation_timeout
                 )
-            except _WaitForStateTimeout:
+            except _WaitForStateTimeoutError:
                 self._log.error(
                     "Worker thread did not receive start confirmation within timeout %s",
                     self._worker_thread_start_confirmation_timeout,
@@ -260,11 +248,11 @@ class Job(Generic[_JOB_ITEM_TV], metaclass=abc.ABCMeta):
                 while should_continue:
                     should_continue = self._worker_do_step(generator)
             finally:
-                if generator.gi_frame is not None:
+                if generator.gi_frame is not None:  # type: ignore[attr-defined]  # 26.05.2026 mypy bump 1.20.2
                     self._log.error("Worker main cycle exits with running generator")
                     try:
                         generator.close()
-                    except Exception:  # noqa
+                    except Exception:
                         self._log.exception("Exception during generator closing")
 
     # Initialization
@@ -277,7 +265,7 @@ class Job(Generic[_JOB_ITEM_TV], metaclass=abc.ABCMeta):
                 self._ss.set_state(JobState.ready_for_next_chunk)
             elif self.state == JobState.error:
                 self._ss.set_state(JobState.closed)
-                raise _ErrorInWorkerThread
+                raise _ErrorInWorkerThreadError
             else:
                 self._log.error("Unexpected state during startup procedure: %s", self.state)
                 self._ss.set_state(JobState.pending_close)
@@ -301,18 +289,18 @@ class Job(Generic[_JOB_ITEM_TV], metaclass=abc.ABCMeta):
                 #  Worker will wait for 'start_confirmed' state with timeout
                 #  If timeout fires - it will terminate
                 except TimeoutError as err:
-                    raise InitializationFailed(
+                    raise InitializationFailedError(
                         f"Worker thread did not start in {self._worker_thread_start_timeout}"
                     ) from err
                 except Exception as err:
-                    raise InitializationFailed() from err
+                    raise InitializationFailedError() from err
 
                 self._log.debug("Event 'worker_thread_started_event' received")
                 try:
                     await self._loop.run_in_executor(
                         self._service_tpe, self._sync_confirm_worker_start_set_ready_for_data
                     )
-                except _ErrorInWorkerThread:
+                except _ErrorInWorkerThreadError:
                     try:
                         self._log.info("Worker state was switched to error. Awaiting worker thread...")
                         await self._worker_done_fut
@@ -320,54 +308,48 @@ class Job(Generic[_JOB_ITEM_TV], metaclass=abc.ABCMeta):
                         self._log.info("Exception from worker thread was caught", exc_info=True)
                         raise
                     else:
-                        raise WorkerDoesNotThrowExceptionInErrorState()
+                        raise WorkerDoesNotThrowExceptionInErrorStateError()
             else:
                 raise AWFSGRuntimeError("Job already started")
 
     # Fetching
-    def _sync_fetch_chunk_from_buffer_schedule_next(self) -> _JOB_ITEM_TV:
+    def _sync_fetch_chunk_from_buffer_schedule_next(self) -> JOB_ITEM_TV:
         self._log.debug("Waiting for state monitor to proceed chunk fetch")
         with self._ss:
             self._log.debug("State monitor acquired to proceed chunk fetch")
             while True:
                 if self.state == JobState.end_of_stream:
                     self._ss.set_state(JobState.closed)
-                    raise EndOfStream()
+                    raise EndOfStreamError()
 
-                elif self.state == JobState.chunk_in_buffer:
+                if self.state == JobState.chunk_in_buffer:
                     ret = self._ss.fetch_buffer()
                     self._ss.set_state(JobState.ready_for_next_chunk)
                     return ret
 
-                elif self.state == JobState.ready_for_next_chunk:
+                if self.state == JobState.ready_for_next_chunk:
                     # Case: worker thread did not catch monitor after previous fetch procedure launch
                     #  So we should give it another chance to
                     self._ss.wait_for_state_change()
                     continue
 
-                elif self.state == JobState.error:
+                if self.state == JobState.error:
                     self._ss.set_state(JobState.closed)
-                    raise _ErrorInWorkerThread()
+                    raise _ErrorInWorkerThreadError()
 
-                elif self.state in (JobState.closed, JobState.pending_close):
-                    raise WorkerIsClosed()
+                if self.state in (JobState.closed, JobState.pending_close):
+                    raise WorkerIsClosedError()
 
-                else:
-                    self._log.error(
-                        "Unexpected state encountered during fetching next, scheduling close: %s", self.state
-                    )
-                    self._ss.set_state(JobState.pending_close)
-                    raise AWFSGRuntimeError(f"Unexpected state encountered during fetching next: {self.state}")
+                self._log.error("Unexpected state encountered during fetching next, scheduling close: %s", self.state)
+                self._ss.set_state(JobState.pending_close)
+                raise AWFSGRuntimeError(f"Unexpected state encountered during fetching next: {self.state}")
 
     # TODO FIX: Use async lock to prevent concurrent calls
     # TODO FIX: Assert that job is running
-    async def get_next(self) -> _JOB_ITEM_TV:
+    async def get_next(self) -> JOB_ITEM_TV:
         try:
-            next_chunk = await self._loop.run_in_executor(
-                self._service_tpe, self._sync_fetch_chunk_from_buffer_schedule_next
-            )
-            return next_chunk
-        except _ErrorInWorkerThread:
+            return await self._loop.run_in_executor(self._service_tpe, self._sync_fetch_chunk_from_buffer_schedule_next)
+        except _ErrorInWorkerThreadError:
             try:
                 self._log.info("Worker state was switched to error. Awaiting worker thread...")
                 await self._worker_done_fut  # type: ignore  # TODO: fix
@@ -375,7 +357,7 @@ class Job(Generic[_JOB_ITEM_TV], metaclass=abc.ABCMeta):
                 self._log.info("Exception from worker thread was caught", exc_info=True)
                 raise
             else:
-                raise WorkerDoesNotThrowExceptionInErrorState()
+                raise WorkerDoesNotThrowExceptionInErrorStateError()
 
     # Cancellation
     def _sync_close_wait_closed(self) -> None:
@@ -405,7 +387,7 @@ class Job(Generic[_JOB_ITEM_TV], metaclass=abc.ABCMeta):
 
             elif self.state == JobState.error:
                 self._ss.set_state(JobState.closed)
-                raise _ErrorInWorkerThread()
+                raise _ErrorInWorkerThreadError()
 
             elif self.state == JobState.worker_not_started:
                 return
@@ -419,6 +401,6 @@ class Job(Generic[_JOB_ITEM_TV], metaclass=abc.ABCMeta):
         self._log.info("Launching close procedure in service TPE")
         try:
             await self._loop.run_in_executor(self._service_tpe, self._sync_close_wait_closed)
-        except _ErrorInWorkerThread:
+        except _ErrorInWorkerThreadError:
             await self._worker_done_fut  # type: ignore  # TODO: fix
         self._log.info("Generator was successfully cancelled")

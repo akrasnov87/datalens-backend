@@ -4,7 +4,6 @@ import typing
 import attr
 
 from dl_api_commons.base_models import TenantDef
-from dl_api_connector.form_config.models import rows as C
 from dl_api_connector.form_config.models.api_schema import (
     FormActionApiSchema,
     FormApiSchema,
@@ -20,9 +19,16 @@ from dl_api_connector.form_config.models.common import (
     FormFieldName,
     TFieldName,
 )
+from dl_api_connector.form_config.models.rows import (
+    CacheTTLRow,
+    CustomizableRow,
+    LabelRowItem,
+    RadioButtonRowItem,
+    SelectableOption,
+)
 from dl_api_connector.form_config.models.rows.base import FormRow
 from dl_api_connector.form_config.models.shortcuts.rows import RowConstructor
-from dl_constants.enums import RawSQLLevel
+from dl_constants import RawSQLLevel
 from dl_core.connectors.settings.base import ConnectorSettings
 from dl_i18n.localizer_base import Localizer
 
@@ -41,25 +47,25 @@ class PostgreSQLFieldName(FormFieldName):
 class PostgresRowConstructor:
     _localizer: Localizer = attr.ib()
 
-    def enforce_collate_row(self) -> C.CustomizableRow:
-        return C.CustomizableRow(
+    def enforce_collate_row(self) -> CustomizableRow:
+        return CustomizableRow(
             items=[
-                C.LabelRowItem(
+                LabelRowItem(
                     text=self._localizer.translate(Translatable("field_enforce-collate")),
                     display_conditions={CommonFieldName.advanced_settings: "opened"},
                 ),
-                C.RadioButtonRowItem(
+                RadioButtonRowItem(
                     name=PostgreSQLFieldName.enforce_collate,
                     options=[
-                        C.SelectableOption(
+                        SelectableOption(
                             text=self._localizer.translate(Translatable("value_enforce-collate-auto")),
                             value=PGEnforceCollateMode.auto.value,
                         ),
-                        C.SelectableOption(
+                        SelectableOption(
                             text=self._localizer.translate(Translatable("value_enforce-collate-off")),
                             value=PGEnforceCollateMode.off.value,
                         ),
-                        C.SelectableOption(
+                        SelectableOption(
                             text=self._localizer.translate(Translatable("value_enforce-collate-on")),
                             value=PGEnforceCollateMode.on.value,
                         ),
@@ -90,9 +96,13 @@ class PostgreSQLConnectionFormFactory(ConnectionFormFactory):
                     FormFieldApiSchema(name=CommonFieldName.db_name, required=True),
                     FormFieldApiSchema(name=CommonFieldName.password, required=self.mode == ConnectionFormMode.create),
                     FormFieldApiSchema(name=CommonFieldName.cache_ttl_sec, nullable=True),
-                    FormFieldApiSchema(name=CommonFieldName.cache_invalidation_throttling_interval_sec, nullable=True)
-                    if is_invalidation_cache_enabled
-                    else None,
+                    (
+                        FormFieldApiSchema(
+                            name=CommonFieldName.cache_invalidation_throttling_interval_sec, nullable=True
+                        )
+                        if is_invalidation_cache_enabled
+                        else None
+                    ),
                     FormFieldApiSchema(name=CommonFieldName.raw_sql_level),
                     FormFieldApiSchema(name=PostgreSQLFieldName.enforce_collate),
                     FormFieldApiSchema(name=CommonFieldName.ssl_enable),
@@ -169,19 +179,22 @@ class PostgreSQLConnectionFormFactory(ConnectionFormFactory):
         rc: RowConstructor,
         connector_settings: ConnectorSettings | None,
     ) -> typing.Sequence[FormRow]:
-        assert connector_settings is not None and isinstance(connector_settings, PostgreSQLConnectorSettings)
+        assert connector_settings is not None
+        assert isinstance(connector_settings, PostgreSQLConnectorSettings)
         postgres_rc = PostgresRowConstructor(localizer=self._localizer)
 
         raw_sql_levels = [RawSQLLevel.subselect, RawSQLLevel.dashsql]
         if connector_settings.ENABLE_DATASOURCE_TEMPLATE:
             raw_sql_levels.append(RawSQLLevel.template)
+        if connector_settings.ENABLE_DIRECTSQL:
+            raw_sql_levels.append(RawSQLLevel.readwrite)
 
         form_params = self._get_form_params()
         is_invalidation_cache_enabled = form_params.feature_flags.is_invalidation_cache_enabled
 
         return self._filter_nulls(
             [
-                C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec) if not is_invalidation_cache_enabled else None,
+                CacheTTLRow(name=CommonFieldName.cache_ttl_sec) if not is_invalidation_cache_enabled else None,
                 rc.raw_sql_level_row_v2(raw_sql_levels=raw_sql_levels),
                 *(rc.cache_rows() if is_invalidation_cache_enabled else []),
                 rc.collapse_advanced_settings_row(),

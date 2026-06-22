@@ -1,10 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 import logging
-from typing import (
-    TYPE_CHECKING,
-    Collection,
-)
+from typing import TYPE_CHECKING
 
 import attr
 
@@ -17,7 +15,6 @@ from dl_cache_engine.primitives import (
 )
 from dl_core.us_connection_base import ConnectionBase
 from dl_model_tools.serialization import hashable_dumps
-
 
 if TYPE_CHECKING:
     from dl_constants.types import TJSONExt
@@ -101,8 +98,7 @@ class SelectorCacheOptionsBuilder(DatasetOptionsBuilder):
 
     def get_cache_enabled(self, joint_dsrc_info: PreparedFromInfo) -> bool:
         assert joint_dsrc_info.data_source_list is not None
-        cache_enabled = all(dsrc.cache_enabled for dsrc in joint_dsrc_info.data_source_list)
-        return cache_enabled
+        return all(dsrc.cache_enabled for dsrc in joint_dsrc_info.data_source_list)
 
     def get_cache_options(
         self,

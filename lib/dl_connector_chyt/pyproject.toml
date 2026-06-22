@@ -22,10 +22,11 @@ dl-settings = {path = "../dl_settings"}
 dl-sqlalchemy-chyt = {path = "../dl_sqlalchemy_chyt"}
 dl-type-transformer = {path = "../dl_type_transformer"}
 dl-utils = {path = "../dl_utils"}
+frozendict = "*"
 marshmallow = "*"
 pydantic = "*"
 pydantic-settings = "*"
-python = ">=3.10, <3.13"
+python = ">=3.12, <3.13"
 sqlalchemy = "*"
 
 [tool.poetry.plugins]
@@ -73,7 +74,6 @@ dl_connector_chyt = [
 ]
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_connector_chyt_tests/"
 skip_compose = "true"
 target_path = "unit"

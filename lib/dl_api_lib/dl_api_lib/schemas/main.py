@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import datetime
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any
 
 from flask_restx import (
     Namespace,
@@ -18,20 +15,20 @@ from dl_api_lib.schemas.dataset_base import (
     DatasetContentInternalSchema,
     DatasetContentSchema,
 )
-from dl_constants.enums import (
+from dl_constants import (
     DataSourceCreatedVia,
     NotificationLevel,
+    USEntryMode,
 )
-from dl_core.enums import USEntryMode
 from dl_model_tools.schema.base import BaseSchema
 from dl_model_tools.schema.dynamic_enum_field import DynamicEnumField
 
 
 def get_api_model(
-    ma_schema: Optional[Schema],
+    ma_schema: Schema | None,
     ns: Namespace,
-    name: Optional[str] = None,
-    schema_fields: Optional[dict[str, ma_fields.Field]] = None,
+    name: str | None = None,
+    schema_fields: dict[str, ma_fields.Field] | None = None,
 ) -> RawModel:
     """Generate a ``flask_restx`` schema that will be used for generating Swagger documentation."""
 
@@ -60,24 +57,23 @@ def get_api_model(
                 as_list=_field.many,
                 required=_field.required,
             )
-        elif isinstance(_field, ma_fields.Enum):
+        if isinstance(_field, ma_fields.Enum):
             return fields.String(required=_field.required, enum=[x.name for x in list(_field.enum)])
-        elif isinstance(_field, ma_fields.List):
+        if isinstance(_field, ma_fields.List):
             return fields.List(
                 _translate_field(_field.inner),
                 required=_field.required,
             )
-        elif isinstance(_field, ma_fields.DateTime):
+        if isinstance(_field, ma_fields.DateTime):
             return fields.DateTime(
                 example=datetime.datetime(2018, 1, 1).strftime(_field.format or _field.DEFAULT_FORMAT),
             )
-        elif isinstance(_field, ma_fields.Date):
+        if isinstance(_field, ma_fields.Date):
             return fields.Date(
                 example=datetime.date(2018, 1, 1).strftime(_field.format or _field.DEFAULT_FORMAT),
             )
-        else:
-            api_field_type = fields_map.get(type(_field), fields.String)
-            return api_field_type(required=_field.required)
+        api_field_type = fields_map.get(type(_field), fields.String)
+        return api_field_type(required=_field.required)
 
     api_model_dict = {}
     if schema_fields is not None:
@@ -108,12 +104,12 @@ class NormalizedDateTime(ma_fields.DateTime):
     def _serialize(
         self,
         value: str | datetime.datetime,
-        attr: Optional[str],
+        attr: str | None,
         obj: Any,
         **kwargs: Any,
-    ) -> Optional[str | float]:
+    ) -> str | float | None:
         if isinstance(value, str):
-            value = datetime.datetime.strptime(value.split(".")[0], "%Y-%m-%d %H:%M:%S")
+            value = datetime.datetime.fromisoformat(value.split(".")[0])
         return super()._serialize(value, attr, obj, **kwargs)
 
 
@@ -189,6 +185,9 @@ class NotificationContentSchema(BaseSchema):
 
 class DatasetExportResponseSchema(BaseSchema):
     class DatasetContentInternalExportSchema(DatasetContentInternalSchema):
+        class Meta(DatasetContentInternalSchema.Meta):
+            exclude = ("extract",)  # not accepting extract
+
         name = ma_fields.String()
 
     dataset = ma_fields.Nested(DatasetContentInternalExportSchema)
@@ -198,7 +197,7 @@ class DatasetExportResponseSchema(BaseSchema):
 class DatasetContentImportSchema(BaseSchema):
     class DatasetContentInternalImportSchema(DatasetContentInternalSchema):
         class Meta(DatasetContentInternalSchema.Meta):
-            exclude = ("rls",)  # not accepting rls at all, only rls2
+            exclude = ("extract", "rls")  # not accepting rls at all, only rls2
 
         name = ma_fields.String()
 

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Callable,
+    Sequence,
+)
 import os
 from typing import (
     Any,
-    Callable,
     NamedTuple,
-    Optional,
-    Sequence,
 )
 
 import shortuuid
@@ -88,12 +89,12 @@ class YQLEngineWrapper(EngineWrapperBase):
     URL_PREFIX = "yql"
 
     def get_conn_credentials(self, full: bool = False) -> dict:
-        return dict(
-            endpoint=self.engine.url.query["endpoint"],
-            db_name=self.engine.url.query["database"],
-        )
+        return {
+            "endpoint": self.engine.url.query["endpoint"],
+            "db_name": self.engine.url.query["database"],
+        }
 
-    def get_version(self) -> Optional[str]:
+    def get_version(self) -> str | None:
         return None
 
     def _generate_table_description(self, columns: Sequence[sa.Column]) -> ydb.TableDescription:
@@ -118,12 +119,11 @@ class YQLEngineWrapper(EngineWrapperBase):
         self,
         columns: Sequence[sa.Column],
         *,
-        schema: Optional[str] = None,
-        table_name: Optional[str] = None,
+        schema: str | None = None,
+        table_name: str | None = None,
     ) -> sa.Table:
         table_name = table_name or f"test_table_{shortuuid.uuid()[:10]}"
-        table = sa.Table(table_name, sa.MetaData(), *columns, schema=schema)
-        return table
+        return sa.Table(table_name, sa.MetaData(), *columns, schema=schema)
 
     def create_table(self, table: sa.Table) -> None:
         table_description = self._generate_table_description(table.columns)

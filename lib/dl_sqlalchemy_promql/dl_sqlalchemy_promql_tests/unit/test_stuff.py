@@ -52,16 +52,15 @@ class MockupSyncPromQLClient(SyncPromQLClient):
                 ],
             },
         }
-        result = rebuild_prometheus_data(data["data"])
-        return result
+        return rebuild_prometheus_data(data["data"])
 
 
 def test_result(engine_url):
     sa_engine = sa.create_engine(
         engine_url,
-        connect_args=dict(
-            cli_cls=MockupSyncPromQLClient,
-        ),
+        connect_args={
+            "cli_cls": MockupSyncPromQLClient,
+        },
     )
     res = sa_engine.execute(
         "up",

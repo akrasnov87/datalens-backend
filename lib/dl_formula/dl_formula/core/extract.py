@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    Hashable,
-    NamedTuple,
-    Optional,
-)
+from collections.abc import Hashable
+from typing import NamedTuple
 
 
 class NodeExtract(NamedTuple):
@@ -15,8 +12,8 @@ class NodeExtract(NamedTuple):
     """
 
     type_name: str
-    value: Optional[Hashable] = None  # Python primitive for internal non-FormulaItem attributes
-    children: tuple["NodeExtract", ...] = ()
+    value: Hashable | None = None  # Python primitive for internal non-FormulaItem attributes
+    children: tuple[NodeExtract, ...] = ()
     complexity: int = 1  # A simple and fast way to know the complexity of the expression
 
     def __repr__(self) -> str:

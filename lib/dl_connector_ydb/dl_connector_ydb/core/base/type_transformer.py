@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
+from frozendict import frozendict
 import sqlalchemy as sa
 import ydb_sqlalchemy.sqlalchemy as ydb_sa
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 import dl_sqlalchemy_ydb.dialect
 import dl_sqlalchemy_ydb.dialect as ydb_dialect
 from dl_type_transformer.type_transformer import (
@@ -13,90 +15,97 @@ from dl_type_transformer.type_transformer import (
     make_native_type,
 )
 
-
 if TYPE_CHECKING:
     from dl_type_transformer.native_type import SATypeSpec
 
 
 class YQLTypeTransformer(TypeTransformer):
-    _base_type_map: dict[UserDataType, tuple[SATypeSpec, ...]] = {
-        # Note: first SA type is used as the default.
-        UserDataType.integer: (
-            sa.INTEGER,
-            ydb_sa.types.Int8,
-            ydb_sa.types.Int16,
-            ydb_sa.types.Int32,
-            ydb_sa.types.Int64,
-            ydb_sa.types.UInt8,
-            ydb_sa.types.UInt16,
-            ydb_sa.types.UInt32,
-            ydb_sa.types.UInt64,
-            dl_sqlalchemy_ydb.dialect.YqlInterval,
-            dl_sqlalchemy_ydb.dialect.YqlInterval64,
-        ),
-        UserDataType.float: (
-            sa.FLOAT,
-            sa.REAL,
-            sa.NUMERIC,
-            sa.DECIMAL,
-            ydb_dialect.YqlDouble,
-            ydb_dialect.YqlFloat,
-        ),
-        UserDataType.boolean: (sa.BOOLEAN,),
-        UserDataType.string: (
-            sa.TEXT,
-            ydb_dialect.YqlString,
-            ydb_dialect.YqlUtf8,
-            sa.String,
-            sa.CHAR,
-            sa.VARCHAR,
-            sa.BINARY,
-            # TODO: JSON, YSON
-        ),
-        UserDataType.date: (
-            sa.DATE,
-            dl_sqlalchemy_ydb.dialect.YqlDate,
-        ),
-        UserDataType.datetime: (
-            sa.DATETIME,
-            sa.TIMESTAMP,
-            ydb_sa.types.YqlDateTime,
-            ydb_sa.types.YqlDateTime64,
-            ydb_sa.types.YqlTimestamp,
-            ydb_sa.types.YqlTimestamp64,
-            ydb_dialect.YqlDateTime,
-            ydb_dialect.YqlDateTime64,
-            ydb_dialect.YqlTimestamp,
-            ydb_dialect.YqlTimestamp64,
-        ),
-        UserDataType.genericdatetime: (
-            sa.DATETIME,
-            sa.TIMESTAMP,
-            ydb_sa.types.YqlDateTime,
-            ydb_sa.types.YqlDateTime64,
-            ydb_sa.types.YqlTimestamp,
-            ydb_sa.types.YqlTimestamp64,
-            ydb_dialect.YqlDateTime,
-            ydb_dialect.YqlDateTime64,
-            ydb_dialect.YqlTimestamp,
-            ydb_dialect.YqlTimestamp64,
-        ),
-        UserDataType.unsupported: (sa.sql.sqltypes.NullType,),  # Actually the default, so should not matter much.
-        UserDataType.uuid: (ydb_dialect.YqlUuid,),
-    }
-    _extra_type_map: dict[UserDataType, SATypeSpec] = {  # user-to-native only
-        UserDataType.geopoint: sa.TEXT,
-        UserDataType.geopolygon: sa.TEXT,
-        UserDataType.markup: sa.TEXT,
-    }
+    _base_type_map: Mapping[UserDataType, tuple[SATypeSpec, ...]] = frozendict(
+        {
+            # Note: first SA type is used as the default.
+            UserDataType.integer: (
+                sa.INTEGER,
+                ydb_sa.types.Int8,
+                ydb_sa.types.Int16,
+                ydb_sa.types.Int32,
+                ydb_sa.types.Int64,
+                ydb_sa.types.UInt8,
+                ydb_sa.types.UInt16,
+                ydb_sa.types.UInt32,
+                ydb_sa.types.UInt64,
+                dl_sqlalchemy_ydb.dialect.YqlInterval,
+                dl_sqlalchemy_ydb.dialect.YqlInterval64,
+            ),
+            UserDataType.float: (
+                sa.FLOAT,
+                sa.REAL,
+                sa.NUMERIC,
+                sa.DECIMAL,
+                ydb_dialect.YqlDouble,
+                ydb_dialect.YqlFloat,
+            ),
+            UserDataType.boolean: (sa.BOOLEAN,),
+            UserDataType.string: (
+                sa.TEXT,
+                ydb_dialect.YqlString,
+                ydb_dialect.YqlUtf8,
+                sa.String,
+                sa.CHAR,
+                sa.VARCHAR,
+                sa.BINARY,
+                # TODO: JSON, YSON
+            ),
+            UserDataType.date: (
+                sa.DATE,
+                dl_sqlalchemy_ydb.dialect.YqlDate,
+            ),
+            UserDataType.datetime: (
+                sa.DATETIME,
+                sa.TIMESTAMP,
+                ydb_sa.types.YqlDateTime,
+                ydb_sa.types.YqlDateTime64,
+                ydb_sa.types.YqlTimestamp,
+                ydb_sa.types.YqlTimestamp64,
+                ydb_dialect.YqlDateTime,
+                ydb_dialect.YqlDateTime64,
+                ydb_dialect.YqlTimestamp,
+                ydb_dialect.YqlTimestamp64,
+            ),
+            UserDataType.genericdatetime: (
+                sa.DATETIME,
+                sa.TIMESTAMP,
+                ydb_sa.types.YqlDateTime,
+                ydb_sa.types.YqlDateTime64,
+                ydb_sa.types.YqlTimestamp,
+                ydb_sa.types.YqlTimestamp64,
+                ydb_dialect.YqlDateTime,
+                ydb_dialect.YqlDateTime64,
+                ydb_dialect.YqlTimestamp,
+                ydb_dialect.YqlTimestamp64,
+            ),
+            UserDataType.unsupported: (sa.sql.sqltypes.NullType,),  # Actually the default, so should not matter much.
+            UserDataType.uuid: (ydb_dialect.YqlUuid,),
+        }
+    )
+    _extra_type_map: Mapping[UserDataType, SATypeSpec] = frozendict(
+        {  # user-to-native only
+            UserDataType.geopoint: sa.TEXT,
+            UserDataType.geopolygon: sa.TEXT,
+            UserDataType.markup: sa.TEXT,
+        }
+    )
 
-    native_to_user_map = {
-        make_native_type(sa_type): bi_type
-        for bi_type, sa_types in _base_type_map.items()
-        for sa_type in sa_types
-        if bi_type != UserDataType.datetime
-    }
-    user_to_native_map = {
-        **{bi_type: make_native_type(sa_types[0]) for bi_type, sa_types in _base_type_map.items()},
-        **{bi_type: make_native_type(sa_type) for bi_type, sa_type in _extra_type_map.items()},
-    }
+    native_to_user_map = frozendict(
+        {
+            make_native_type(sa_type): bi_type
+            for bi_type, sa_types in _base_type_map.items()
+            for sa_type in sa_types
+            if bi_type != UserDataType.datetime
+        }
+    )
+    user_to_native_map = frozendict(
+        {
+            **{bi_type: make_native_type(sa_types[0]) for bi_type, sa_types in _base_type_map.items()},
+            **{bi_type: make_native_type(sa_type) for bi_type, sa_type in _extra_type_map.items()},
+        }
+    )

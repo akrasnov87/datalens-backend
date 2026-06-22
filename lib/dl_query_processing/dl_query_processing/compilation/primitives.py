@@ -1,20 +1,21 @@
 from __future__ import annotations
 
 import abc
-from typing import (
-    AbstractSet,
-    Any,
-    ClassVar,
+from collections.abc import (
     Generator,
     Iterable,
-    Optional,
     Sequence,
+    Set,
+)
+from typing import (
+    Any,
+    ClassVar,
+    Self,
 )
 
 import attr
-from typing_extensions import Self
 
-from dl_constants.enums import (
+from dl_constants import (
     JoinType,
     OrderDirection,
 )
@@ -39,9 +40,9 @@ class CompiledFormulaInfo:
     )
 
     formula_obj: formula_nodes.Formula = attr.ib()
-    alias: Optional[str] = attr.ib()
+    alias: str | None = attr.ib()
     avatar_ids: set[str] = attr.ib(factory=set)
-    original_field_id: Optional[str] = attr.ib(default=None)
+    original_field_id: str | None = attr.ib(default=None)
 
     @property
     def extract(self) -> QueryElementExtract:
@@ -86,21 +87,20 @@ class CompiledFormulaInfo:
             content_item_strs.append(f"{item_name}={item_str}")
 
         content_str = "".join([f"{item_indent}{item_str},\n" for item_str in content_item_strs])
-        text = "{lead_idt}{cls}(\n{cont}\n{ini_idt})".format(
+        return "{lead_idt}{cls}(\n{cont}\n{ini_idt})".format(
             lead_idt=initial_indent if do_leading_indent else "",
             cls=self.__class__.__name__,
             cont=content_str,
             ini_idt=initial_indent,
         )
-        return text
 
     def clone(self, **updates: Any) -> Self:
         return attr.evolve(self, **updates)
 
 
 @attr.s(slots=True, frozen=True)
-class CompiledOrderByFormulaInfo(CompiledFormulaInfo):  # noqa
-    show_names = CompiledFormulaInfo.show_names + ("direction",)
+class CompiledOrderByFormulaInfo(CompiledFormulaInfo):
+    show_names = (*CompiledFormulaInfo.show_names, "direction")
 
     direction: OrderDirection = attr.ib(kw_only=True)
 
@@ -118,12 +118,8 @@ class CompiledOrderByFormulaInfo(CompiledFormulaInfo):  # noqa
 
 
 @attr.s(slots=True, frozen=True)
-class CompiledJoinOnFormulaInfo(CompiledFormulaInfo):  # noqa
-    show_names = CompiledFormulaInfo.show_names + (
-        "left_id",
-        "right_id",
-        "join_type",
-    )
+class CompiledJoinOnFormulaInfo(CompiledFormulaInfo):
+    show_names = (*CompiledFormulaInfo.show_names, "left_id", "right_id", "join_type")
 
     left_id: str = attr.ib(kw_only=True)  # is root for feature-managed relations
     right_id: str = attr.ib(kw_only=True)
@@ -184,7 +180,7 @@ class FromObject:
 
 @attr.s(frozen=True)
 class JoinedFromObject:
-    root_from_id: Optional[str] = attr.ib(kw_only=True, default=None)
+    root_from_id: str | None = attr.ib(kw_only=True, default=None)
     froms: Sequence[FromObject] = attr.ib(kw_only=True, default=())
 
     @property
@@ -230,8 +226,8 @@ class CompiledQuery:
     order_by: list[CompiledOrderByFormulaInfo] = attr.ib(kw_only=True, factory=list)
     join_on: list[CompiledJoinOnFormulaInfo] = attr.ib(kw_only=True, factory=list)
     joined_from: JoinedFromObject = attr.ib(kw_only=True, factory=JoinedFromObject)
-    limit: Optional[int] = attr.ib(kw_only=True, default=None)
-    offset: Optional[int] = attr.ib(kw_only=True, default=None)
+    limit: int | None = attr.ib(kw_only=True, default=None)
+    offset: int | None = attr.ib(kw_only=True, default=None)
     meta: QueryMetaInfo = attr.ib(kw_only=True, factory=QueryMetaInfo)
 
     @property
@@ -290,13 +286,12 @@ class CompiledQuery:
             content_item_strs.append(f"{item_name}={item_str}")
 
         content_str = "".join([f"{item_indent}{item_str},\n" for item_str in content_item_strs])
-        text = "{lead_idt}{cls}(\n{cont}\n{ini_idt})".format(
+        return "{lead_idt}{cls}(\n{cont}\n{ini_idt})".format(
             lead_idt=initial_indent if do_leading_indent else "",
             cls=self.__class__.__name__,
             cont=content_str,
             ini_idt=initial_indent,
         )
-        return text
 
     @property
     def all_formulas(self) -> Generator[CompiledFormulaInfo, None, None]:
@@ -376,7 +371,7 @@ class CompiledMultiQueryBase(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_base_root_from_ids(self) -> AbstractSet[str]:
+    def get_base_root_from_ids(self) -> Set[str]:
         raise NotImplementedError
 
     def clone(self, **updates: Any) -> Self:
@@ -434,7 +429,7 @@ class CompiledMultiQuery(CompiledMultiQueryBase):
     def is_empty(self) -> bool:
         return not self.queries
 
-    def get_base_root_from_ids(self) -> AbstractSet[str]:
+    def get_base_root_from_ids(self) -> Set[str]:
         result: set[str] = set()
         for query in self.queries:
             root_from_id = query.joined_from.root_from_id

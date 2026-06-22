@@ -1,7 +1,7 @@
+from collections.abc import Mapping
 import logging
 
 import attr
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +32,16 @@ class SecretKeeper:
             self._params[param] = name
         else:
             LOGGER.warning("Param %r is too short (len=%d), skipping", name, len(param))
+
+    def add_secrets(self, secrets: Mapping[str, str | None], prefix: str = "") -> None:
+        """secrets: dict[name: secret_value]. If prefix is set, each name is namespaced as f"{prefix}.{name}"."""
+        for name, secret in secrets.items():
+            self.add_secret(secret, f"{prefix}.{name}" if prefix else name)
+
+    def add_params(self, params: Mapping[str, str | None]) -> None:
+        """params: dict[name: param_value]; None values are skipped (logged at INFO)."""
+        for name, param in params.items():
+            self.add_param(param, name)
 
     @property
     def secrets(self) -> dict[str, str]:

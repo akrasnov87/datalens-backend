@@ -1,10 +1,7 @@
-from typing import (
-    Collection,
-    Optional,
-)
+from collections.abc import Collection
 
 from dl_api_connector.connector import MQMFactoryKey
-from dl_constants.enums import (
+from dl_constants import (
     QueryProcessingMode,
     SourceBackendType,
 )
@@ -20,7 +17,6 @@ from dl_query_processing.multi_query.factory import (
     DefaultMultiQueryMutatorFactory,
     MultiQueryMutatorFactoryBase,
 )
-
 
 _FILTER_FORMULA_COMPILER_BY_BACKEND: dict[SourceBackendType, type[FilterFormulaCompiler]] = {}
 _DEFAULT_FILTER_FORMULA_COMPILER = MainFilterFormulaCompiler
@@ -81,7 +77,7 @@ def get_multi_query_mutator_factory_class(
     )
 
     # Now iterate over all of these combinations IN THAT VERY ORDER(!)
-    factory_cls: Optional[type[MultiQueryMutatorFactoryBase]] = None
+    factory_cls: type[MultiQueryMutatorFactoryBase] | None = None
     for key in prioritized_keys:
         factory_cls = _MQM_FACTORY_REGISTRY.get(key)
         if factory_cls is not None:
@@ -99,7 +95,7 @@ def get_multi_query_mutator_factory_class(
 def register_multi_query_mutator_factory_cls(
     query_proc_mode: QueryProcessingMode,
     backend_type: SourceBackendType,
-    dialects: Collection[Optional[DialectCombo]],
+    dialects: Collection[DialectCombo | None],
     factory_cls: type[MultiQueryMutatorFactoryBase],
 ) -> None:
     for dialect in dialects:

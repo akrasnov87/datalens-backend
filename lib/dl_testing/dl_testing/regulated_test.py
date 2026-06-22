@@ -1,19 +1,19 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Callable,
+    Mapping,
+)
 from functools import wraps
 import inspect
 from typing import (
     Any,
-    Callable,
     ClassVar,
-    Mapping,
-    Optional,
     overload,
 )
 
 import attr
 import pytest
-
 
 _FUNC_META_ATTR = "_regulated_test_function_meta"
 
@@ -30,9 +30,9 @@ class RegulatedTestFunctionMeta:
 
 @attr.s(frozen=True)
 class RegulatedTestParams:
-    mark_tests_skipped: Optional[Mapping[Callable, Optional[str]]] = attr.ib(kw_only=True, default=None)
-    mark_tests_failed: Optional[Mapping[Callable, Optional[str]]] = attr.ib(kw_only=True, default=None)
-    mark_features_skipped: Optional[Mapping[Feature, Optional[str]]] = attr.ib(kw_only=True, default=None)
+    mark_tests_skipped: Mapping[Callable, str | None] | None = attr.ib(kw_only=True, default=None)
+    mark_tests_failed: Mapping[Callable, str | None] | None = attr.ib(kw_only=True, default=None)
+    mark_features_skipped: Mapping[Feature, str | None] | None = attr.ib(kw_only=True, default=None)
 
 
 def _is_test_func(func: Callable) -> bool:
@@ -41,7 +41,7 @@ def _is_test_func(func: Callable) -> bool:
 
 def _is_test_func_for_features_with_reason(
     func: Callable,
-    features: Mapping[Feature, Optional[str]],
+    features: Mapping[Feature, str | None],
 ) -> tuple[bool, str]:
     func_meta = getattr(func, _FUNC_META_ATTR, RegulatedTestFunctionMeta())
     found_features = func_meta.features & frozenset(features)
@@ -57,7 +57,7 @@ def _mark_as_test_func(func: Callable) -> Callable:
     return func
 
 
-def _mark_skipped(func: Callable, reason: Optional[str]) -> Callable:
+def _mark_skipped(func: Callable, reason: str | None) -> Callable:
     assert _is_test_func(func)
 
     @wraps(func)
@@ -68,15 +68,14 @@ def _mark_skipped(func: Callable, reason: Optional[str]) -> Callable:
     return func_replacement
 
 
-def _mark_failed(func: Callable, reason: Optional[str]) -> Callable:
+def _mark_failed(func: Callable, reason: str | None) -> Callable:
     assert _is_test_func(func)
-    func_replacement = pytest.mark.xfail(reason=reason or "", strict=True)(func)
-    return func_replacement
+    return pytest.mark.xfail(reason=reason or "", strict=True)(func)
 
 
 def _mark_functions(
-    funcs: Mapping[Callable, Optional[str]],
-    marker: Callable[[Callable, Optional[str]], Callable],
+    funcs: Mapping[Callable, str | None],
+    marker: Callable[[Callable, str | None], Callable],
 ) -> Mapping[str, Callable]:
     result: dict[str, Callable] = {}
     for func, reason in funcs.items():
@@ -91,7 +90,7 @@ def _resolve_test_funcs(bases: tuple[Any, ...]) -> Mapping[str, Callable]:
 
 def _patch_attrs_for_regulated_test_class(
     bases: tuple[Any, ...],
-    new_attrs: Optional[Mapping],
+    new_attrs: Mapping | None,
     test_params: RegulatedTestParams,
 ) -> dict[str, Any]:
     new_attrs = dict(new_attrs or {})
@@ -103,7 +102,7 @@ def _patch_attrs_for_regulated_test_class(
 
     # Find and decorate test functions for skipped features
     mark_tests_skipped_for_features: dict[Callable, str] = {}
-    for _name, func in test_funcs.items():
+    for func in test_funcs.values():
         tests_feature, reason = _is_test_func_for_features_with_reason(func, test_params.mark_features_skipped or {})
         if tests_feature:
             mark_tests_skipped_for_features[func] = reason
@@ -117,7 +116,7 @@ def _make_regulated_test_class(
     name: str,
     bases: tuple[Any, ...],
     test_params: RegulatedTestParams,
-    attrs: Optional[Mapping] = None,
+    attrs: Mapping | None = None,
 ) -> type:
     # Mark all test functions as such
     attrs = attrs or {}
@@ -129,8 +128,7 @@ def _make_regulated_test_class(
         test_params=test_params,
     )
 
-    new_cls = type.__new__(mcs, name, bases, attrs)  # type: ignore  # 2024-01-30 # TODO: Need type annotation for "new_cls"  [var-annotated]
-    return new_cls
+    return type.__new__(mcs, name, bases, attrs)
 
 
 def _wrap_as_regulated_test_case(test_cls: type, *, test_params: RegulatedTestParams) -> type:
@@ -188,15 +186,13 @@ class RegulatedTestCase:
 
 
 @overload
-def regulated_test_case(test_cls: type, /) -> type:
-    ...
+def regulated_test_case(test_cls: type, /) -> type: ...
 
 
 @overload
 def regulated_test_case(
     *, test_params: RegulatedTestParams = RegulatedTestParams()  # noqa: B008
-) -> Callable[[type], type]:
-    ...
+) -> Callable[[type], type]: ...
 
 
 def regulated_test_case(*args: Any, **kwargs: Any) -> Any:

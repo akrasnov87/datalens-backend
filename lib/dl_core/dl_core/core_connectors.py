@@ -1,7 +1,4 @@
-from typing import (
-    Collection,
-    Optional,
-)
+from collections.abc import Collection
 
 from dl_core.connectors.base.connector import CoreConnector
 from dl_core.connectors.base.registrator import CONN_REG_CORE
@@ -16,6 +13,6 @@ def load_all_connectors() -> None:
     get_all_connectors()
 
 
-def register_all_connectors(connector_ep_names: Optional[Collection[str]] = None) -> None:
+def register_all_connectors(connector_ep_names: Collection[str] | None = None) -> None:
     for _ep_name, connector_cls in sorted(get_all_connectors(connector_ep_names).items()):
         _register_connector(connector_cls)

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import (
     TYPE_CHECKING,
     NamedTuple,
-    Optional,
-    Sequence,
-    Union,
     cast,
 )
 
@@ -23,7 +21,6 @@ from dl_formula_ref.texts import (
     FROM_ARGS,
 )
 
-
 if TYPE_CHECKING:
     from dl_formula_ref.registry.arg_base import FuncArg
     import dl_formula_ref.registry.base as _registry_base
@@ -32,7 +29,7 @@ if TYPE_CHECKING:
 
 class TypeInfo(NamedTuple):
     ret_type_str: ParameterizedText
-    arg_note: Optional[ParameterizedText]
+    arg_note: ParameterizedText | None
 
 
 def type_macro(*types: DataType) -> str:
@@ -49,7 +46,7 @@ class TypeStrategyInspector:
         ct_args = []
         if isinstance(ret_type_strat, FromArgs):
             # in this case the return type is determined from types of arguments
-            use_arg_indices: Sequence[Union[int, slice]]
+            use_arg_indices: Sequence[int | slice]
             if isinstance(ret_type_strat, DynamicIndexStrategy):
                 use_arg_indices = ret_type_strat.get_indices(len(args))
             else:
@@ -67,7 +64,7 @@ class TypeStrategyInspector:
         args: list[FuncArg],
     ) -> str:
         ct_args = cls._extract_common_type_args(ret_type_strat, args)
-        arg_str = ", ".join("`{}`".format(a.name) for a in ct_args)
+        arg_str = ", ".join(f"`{a.name}`" for a in ct_args)
         if inf_args is None:
             arg_str += ", ..."
         return arg_str
@@ -109,10 +106,10 @@ class TypeStrategyInspector:
                 ret_type_str = ParameterizedText.from_str(text=type_macro(ret_type_strat.type.non_const_type))
             elif isinstance(ret_type_strat, FromArgs):
                 common_type_args_str = cls._extract_common_type_args_str(ret_type_strat, inf_args, args)
-                ret_type_str = ParameterizedText.from_str(text=FROM_ARGS, params=dict(args=common_type_args_str))
+                ret_type_str = ParameterizedText.from_str(text=FROM_ARGS, params={"args": common_type_args_str})
                 if "," in common_type_args_str:  # FromArgs strategy is used for more than 1 argument
                     # a note about args that they must have the same type
-                    note = ParameterizedText.from_str(text=COMMON_TYPE_NOTE, params=dict(args=common_type_args_str))
+                    note = ParameterizedText.from_str(text=COMMON_TYPE_NOTE, params={"args": common_type_args_str})
 
         else:
             resolved_ret_type = False

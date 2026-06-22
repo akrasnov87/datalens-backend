@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    Callable,
-    ClassVar,
-    Optional,
-)
+from collections.abc import Callable
+from typing import ClassVar
 
 import attr
 
@@ -27,9 +24,9 @@ from dl_connector_bitrix_gds.core.dto import BitrixGDSConnDTO
 
 @attr.s(frozen=True, hash=True)
 class BitrixGDSConnectOptions(ConnectOptions):
-    max_execution_time: Optional[int] = attr.ib(default=None)
-    connect_timeout: Optional[int] = attr.ib(default=None)
-    total_timeout: Optional[int] = attr.ib(default=None)
+    max_execution_time: int | None = attr.ib(default=None)
+    connect_timeout: int | None = attr.ib(default=None)
+    total_timeout: int | None = attr.ib(default=None)
 
 
 class BitrixGDSConnection(ConnectionBase):
@@ -49,7 +46,7 @@ class BitrixGDSConnection(ConnectionBase):
             }
 
     @property
-    def cache_ttl_sec_override(self) -> Optional[int]:
+    def cache_ttl_sec_override(self) -> int | None:
         return self.data.cache_ttl_sec
 
     def get_conn_options(self) -> BitrixGDSConnectOptions:
@@ -71,7 +68,7 @@ class BitrixGDSConnection(ConnectionBase):
         db_name: str | None = None,
     ) -> list[dict]:
         return [
-            dict(db_name=DEFAULT_DB, table_name=item.table_name)
+            {"db_name": DEFAULT_DB, "table_name": item.table_name}
             for item in self.get_tables(
                 conn_executor_factory=conn_executor_factory,
                 db_name=DEFAULT_DB,

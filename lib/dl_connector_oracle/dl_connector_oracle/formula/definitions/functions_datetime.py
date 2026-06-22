@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from frozendict import frozendict
 import sqlalchemy as sa
 
 from dl_formula.core.datatype import DataType
@@ -21,7 +22,6 @@ from dl_formula.definitions.literals import (
 
 from dl_connector_oracle.formula.constants import OracleDialect as D
 
-
 if TYPE_CHECKING:
     from sqlalchemy.sql.elements import ColumnElement
 
@@ -37,25 +37,27 @@ def _oracle_dateadd_impl(date_expr: ColumnElement, unit: str, num: int) -> Colum
     unit_lower = unit.lower()
     if unit_lower == "month":
         return sa.cast(sa.func.ADD_MONTHS(date_expr, num), sa.Date)
-    elif unit_lower == "quarter":
+    if unit_lower == "quarter":
         return sa.cast(sa.func.ADD_MONTHS(date_expr, 3 * num), sa.Date)
-    elif unit_lower == "year":
+    if unit_lower == "year":
         return sa.cast(sa.func.ADD_MONTHS(date_expr, 12 * num), sa.Date)
     return sa.cast(date_expr + datetime_interval(unit, num, literal_mult=True), sa.Date)
 
 
 class FuncDatetrunc2Oracle(base.FuncDatetrunc2):
-    _oracle_fmt_map = {
-        "minute": "MI",
-        "hour": "HH",
-        "day": "DDD",
-        "week": "IW",
-        "month": "MM",
-        "quarter": "Q",
-        "year": "YYYY",
-    }
+    _oracle_fmt_map = frozendict(
+        {
+            "minute": "MI",
+            "hour": "HH",
+            "day": "DDD",
+            "week": "IW",
+            "month": "MM",
+            "quarter": "Q",
+            "year": "YYYY",
+        }
+    )
 
-    variants = [
+    variants = (
         V(
             D.ORACLE,
             lambda date, unit: (
@@ -66,15 +68,15 @@ class FuncDatetrunc2Oracle(base.FuncDatetrunc2):
                 else date
             ),
         ),
-    ]
-    argument_types = [
+    )
+    argument_types = (
         ArgTypeSequence(
             [
                 {DataType.DATE, DataType.DATETIME, DataType.GENERICDATETIME},  # TODO: DataType.DATETIMETZ
                 DataType.CONST_STRING,
             ]
         ),
-    ]
+    )
 
 
 DEFINITIONS_DATETIME = [

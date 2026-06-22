@@ -1,123 +1,18 @@
 name: "🔄 Main"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.sha }}
   cancel-in-progress: true
 
 on:
-  # Subject to change back to pull_request when we have a better solution for the CI with forked PRs
-  pull_request_target: # zizmor: ignore[dangerous-triggers]
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - labeled
-      - unlabeled
+  push:
+    branches:
+      - main
   workflow_dispatch:
-    inputs:
-      run_for_all_packages:
-        type: boolean
-        default: false
-        description: "Run for all packages"
-      skip_tests:
-        type: boolean
-        default: false
-        description: "Skip tests"
 
 jobs:
-  drop-ci-approved-label:
-    name: Drop CI Allowed label if PR branch changed
-    runs-on: ubuntu-22.04
-
-    permissions:
-      contents: read
-      pull-requests: write
-
-    steps:
-      - name: Drop label
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY_FULL_NAME: ${{ github.event.repository.full_name }}
-          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_ACTION: ${{ github.event.action }}
-        run: |
-          [[ $EVENT_NAME != "pull_request_target" ]] && exit 0
-
-          action=$EVENT_ACTION
-          [[ $action == "labeled" || $action == "unlabeled" || $action == "opened" ]] && exit 0
-
-          gh pr edit \
-            --repo $REPOSITORY_FULL_NAME \
-            --remove-label "ci-approved" \
-            $PULL_REQUEST_NUMBER
-
-
-  check-ci-allowed:
-    name: Check if CI allowed for PR
-    runs-on: ubuntu-22.04
-
-    needs: [ drop-ci-approved-label ]
-
-    permissions:
-      contents: read
-      pull-requests: read
-
-    env:
-      GH_TOKEN: ${{ github.token }}
-      OWNER: ${{ github.repository_owner }}
-      REPO: ${{ github.event.repository.name }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Check user permissions
-        id: check_user_permissions
-        working-directory: .github/.scripts
-        env:
-          USER: ${{ github.actor }}
-          PERMISSION: "write"
-        run: echo "result=$(./gh_user_check_permission.sh)" >> $GITHUB_OUTPUT
-
-      - name: Check PR permissions
-        id: check_pr_permissions
-        working-directory: .github/.scripts
-        env:
-          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
-          LABEL: "ci-approved"
-        run: echo "result=$(./gh_pull_request_check_label.sh)" >> $GITHUB_OUTPUT
-
-      - name: Combine permissions
-        run: |
-          user_allowed=${{ steps.check_user_permissions.outputs.result }}
-          pr_allowed=${{ steps.check_pr_permissions.outputs.result }}
-
-          [[ $user_allowed == "true" || $pr_allowed == "true" ]] && exit 0
-
-          echo "ERROR: User have no permissions to run CI and PR is not approved"
-          exit 1
-
-      - name: Checkout branch code
-        uses: actions/checkout@v4
-        if: ${{ github.event_name != 'workflow_dispatch' && github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name }}
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          path: branch_code
-          fetch-depth: 0
-
-      - name: Check fork PR branch contains latest base sha
-        if: ${{ github.event_name != 'workflow_dispatch' && github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name }}
-        working-directory: branch_code
-        run: git branch --contains $PULL_REQUEST_BASE_SHA
-        env:
-          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-
   gh_build_image:
-    runs-on: [ self-hosted, linux, k8s-runner-build ]
-
-    needs: [ check-ci-allowed ]
+    runs-on: ubuntu-22.04
 
     permissions:
       packages: write
@@ -135,19 +30,16 @@ jobs:
 
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: "ghcr.io"
           username: ${{ github.actor }}
           password: ${{ secrets.ROBOT_GITHUB_PACKAGES_WRITE_TOKEN }}
 
-      - uses: datalens-tech/cleanup-folder-action@v1
+      - uses: datalens-tech/cleanup-folder-action@2320ecc9839e80e006f214a31eeba3bca55aed0c
       - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-      - uses: datalens-tech/fix-dubious-ownership-action@v1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: datalens-tech/fix-dubious-ownership-action@472fb7b325799350f1b5327b90ade3e5cd15bd67
 
       - id: build_image
         run: |
@@ -160,161 +52,58 @@ jobs:
         env:
           REPO_OWNER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
-          # if pull_request_target use head sha, otherwise use github.sha
-          GIT_SHA: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
+          GIT_SHA: ${{ github.sha }}
 
   router:
-    runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
-    needs: gh_build_image
-    container:
-      image: ${{ needs.gh_build_image.outputs.IMAGE }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    outputs:
-      changed-packages: ${{ steps.changed-packages.outputs.changed-packages }}
-    env:
-      PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-    steps:
-    - uses: datalens-tech/cleanup-folder-action@v1
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        ref: ${{ github.event.pull_request.head.sha }}
-        repository: ${{ github.event.pull_request.head.repo.full_name }}
-        fetch-depth: 0
-    - uses: datalens-tech/fix-dubious-ownership-action@v1
-    - run: git fetch origin main
-    - name: Extract base commit
-      run: |
-        result="$PULL_REQUEST_BASE_SHA"
-        if [ -z "$result" ]; then
-            result=$(git rev-parse origin/main)
-        fi
-        echo "result=$result" >> $GITHUB_OUTPUT
-      id: extract_base_commit
-    - name: Extract head commit
-      run: |
-        result="$PULL_REQUEST_HEAD_SHA"
-        if [ -z "$result" ]; then
-            result=$(git rev-parse HEAD)
-        fi
-        echo "result=$result" >> $GITHUB_OUTPUT
-      id: extract_head_commit
-
-    - uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62
-      id: changed-files-base
-      if: ${{ steps.extract_base_commit.outputs.result != steps.extract_head_commit.outputs.result }}
-      with:
-        base_sha: ${{ steps.extract_base_commit.outputs.result }}
-        sha: ${{ steps.extract_head_commit.outputs.result }}
-        write_output_files: true
-        separator: "\n"
-    # if base and head commit are the same tj-actions/changed-files action raises an error, so we need to handle it
-    # https://github.com/tj-actions/changed-files/issues/2708
-    - name: Get changed files
-      id: changed-files
-      run: |
-        if [ "$base_sha" != "$sha" ]; then
-          {
-            echo "all_changed_files<<EOF"
-            echo "${changed_files_base}"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-        fi
-      env:
-        sha: ${{ steps.extract_head_commit.outputs.result }}
-        base_sha: ${{ steps.extract_base_commit.outputs.result }}
-        changed_files_base: ${{ steps.changed-files-base.outputs.all_changed_files }}
-    - name: Get changed packages
-      uses: ovsds/get-changed-packages-action@v1
-      id: changed-packages
-      with:
-        changed-files: ${{ steps.changed-files.outputs.all_changed_files }}
-        all-packages: |
-          ./lib/*
-          ./app/*
-        package-dependencies-resolution-method: >-
-          ${{
-            (
-              github.event.inputs.run_for_all_packages == 'true'
-              || contains(github.event.pull_request.labels.*.name, 'run-ci-for-all-packages')
-            ) && 'poetry-all' || 'poetry-path'
-          }}
-        poetry-path-dependencies-groups: |
-          tool.poetry.dependencies
-          tool.poetry.group.tests.dependencies
-        changed-packages-format: json
-        changed-packages-relative-path: true
-
-  check-skip-tests-label:
-    name: Check PR skip tests label
     runs-on: ubuntu-22.04
-
-    needs: [ check-ci-allowed ]
-
-    permissions:
-      contents: read
-      pull-requests: read
-
     outputs:
-      result: ${{ steps.check_skip_label.outputs.result }}
-
+      changed-packages: ${{ steps.list-packages.outputs.packages }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Check PR skip label
-        id: check_skip_label
-        working-directory: .github/.scripts
-        env:
-          GH_TOKEN: ${{ github.token }}
-          OWNER: ${{ github.repository_owner }}
-          REPO: ${{ github.event.repository.name }}
-          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
-          LABEL: "tests-force-skipped"
-        run: echo "result=$(./gh_pull_request_check_label.sh)" >> $GITHUB_OUTPUT
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+      - name: List all packages
+        id: list-packages
+        run: |
+          packages=$(find lib app -mindepth 2 -maxdepth 2 -name pyproject.toml -printf '%h\n' | sort | jq -R . | jq -sc .)
+          echo "packages=$packages"
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
 
   pytest_split:
     name: Split pytest into jobs for each test type
-    runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
+    runs-on: ubuntu-22.04
 
     needs:
       - router
-      - check-skip-tests-label
       - gh_build_image
-    if: ${{ needs.check-skip-tests-label.outputs.result != 'true' && github.event.inputs.skip_tests != 'true' }}
     container:
       image: ${{ needs.gh_build_image.outputs.IMAGE }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     outputs:
-      split_base: ${{ steps.get_split.outputs.split_base }}
+      split_default: ${{ steps.get_split.outputs.split_default }}
       split_fat: ${{ steps.get_split.outputs.split_fat }}
       split_ext_public: ${{ steps.get_split.outputs.split_ext_public }}
-      split_no_compose: ${{ steps.get_split.outputs.split_no_compose }}
     steps:
-      - uses: datalens-tech/cleanup-folder-action@v1
+      - uses: datalens-tech/cleanup-folder-action@2320ecc9839e80e006f214a31eeba3bca55aed0c
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 1
-      - uses: datalens-tech/fix-dubious-ownership-action@v1
+      - uses: datalens-tech/fix-dubious-ownership-action@472fb7b325799350f1b5327b90ade3e5cd15bd67
       - name: Run python script to split job for general and fat runners
         id: get_split
         run: |
           . /venv/bin/activate && echo "$CHANGED_PACKAGES" >> /tmp/dl_test_targets.json
-          split-pytest-tasks base,fat,ext_public,no_compose /src /tmp/dl_test_targets.json true true >> "$GITHUB_OUTPUT"
+          split-pytest-tasks default,fat,ext_public /src /tmp/dl_test_targets.json true true >> "$GITHUB_OUTPUT"
         env:
           CHANGED_PACKAGES: ${{ needs.router.outputs.changed-packages }}
 
-  run_tests_base:
+  run_tests_default:
     name: "🐍[pytest]${{ matrix.value }}"
-    runs-on: [ self-hosted, linux, k8s-runner-light ]
+    runs-on: ubuntu-22.04
     permissions:
       packages: write
       contents: read
@@ -322,7 +111,7 @@ jobs:
     needs:
       - pytest_split
       - gh_build_image
-    if: ${{ needs.pytest_split.outputs.split_base != '[]' }}
+    if: ${{ needs.pytest_split.outputs.split_default != '[]' }}
 
     container:
       image: ${{ needs.gh_build_image.outputs.IMAGE }}
@@ -337,7 +126,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        value: ${{fromJson(needs.pytest_split.outputs.split_base)}}
+        value: ${{fromJson(needs.pytest_split.outputs.split_default)}}
 
     env:
       TEST_NAME: ${{ matrix.value }}
@@ -345,65 +134,7 @@ jobs:
     steps:
       - run: echo "Running py tests for $TEST_NAME"
       - name: Log in to the Container registry
-        uses: docker/login-action@v2
-        with:
-          registry: "ghcr.io"
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - id: get_compose_prj
-        run: |
-          compose_path="/src/$(echo $TEST_NAME | cut -d ":" -f1)/"
-          cd "$compose_path" && echo result="$(basename "$PWD")_$(shuf -i 1000000-1000000000 -n 1)" >> "$GITHUB_OUTPUT"
-      # We need to set custom compose project name to ensure "unique" container names in the host docker env
-      - name: run bash script with all logic for starting compose and running tests
-        run: |
-          bash /src/ci/execute_test_with_docker_compose.sh "$TEST_NAME" "$CONTAINER_NETWORK" "$COMPOSE_PROJECT" \
-            WE_ARE_IN_CI=1
-        env:
-          CONTAINER_NETWORK: "${{ job.container.network }}"
-          COMPOSE_PROJECT: "${{ steps.get_compose_prj.outputs.result }}"
-      - name: Stop compose if provided
-        # We could not put this into bash script, since job could be cancelled by user request
-        if: always()  # yes! always
-        run: bash /src/ci/stop_compose.sh "$TEST_NAME" "$CONTAINER_NETWORK" "$COMPOSE_PROJECT"
-        env:
-          CONTAINER_NETWORK: "${{ job.container.network }}"
-          COMPOSE_PROJECT: "${{ steps.get_compose_prj.outputs.result }}"
-
-  run_tests_no_compose:
-    name: "🐍[pytest][no_compose]${{ matrix.value }}"
-    runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
-    permissions:
-      packages: write
-      contents: read
-
-    needs:
-      - pytest_split
-      - gh_build_image
-    if: ${{ needs.pytest_split.outputs.split_no_compose != '[]' }}
-
-    container:
-      image: ${{ needs.gh_build_image.outputs.IMAGE }}
-      options: -v /var/run/docker.sock:/var/run/docker.sock
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-      volumes:
-        - /var/run/docker.sock:/var/run/docker.sock
-
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        value: ${{fromJson(needs.pytest_split.outputs.split_no_compose)}}
-
-    env:
-      TEST_NAME: ${{ matrix.value }}
-
-    steps:
-      - run: echo "Running py tests for $TEST_NAME"
-      - name: Log in to the Container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: "ghcr.io"
           username: ${{ github.actor }}
@@ -430,7 +161,7 @@ jobs:
 
   run_tests_fat:
     name: "🐍[pytest][fat]${{ matrix.value }}"
-    runs-on: [ self-hosted, linux, k8s-runner-fat ]
+    runs-on: ubuntu-22.04
     permissions:
       packages: write
       contents: read
@@ -461,7 +192,7 @@ jobs:
     steps:
       - run: echo "Running py tests for $TEST_NAME"
       - name: Log in to the Container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: "ghcr.io"
           username: ${{ github.actor }}
@@ -489,7 +220,7 @@ jobs:
   run_tests_ext_public:
     name: "🐍[pytest][ext_public]${{ matrix.value }}"
     # using light runners for now, TBD: change when we have ext_public
-    runs-on: [ self-hosted, linux, k8s-runner-ext-public ]
+    runs-on: ubuntu-22.04
     permissions:
       packages: read
       contents: read
@@ -520,7 +251,7 @@ jobs:
     steps:
       - run: echo "Running py tests for $TEST_NAME"
       - name: Log in to the Container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: "ghcr.io"
           username: ${{ github.actor }}
@@ -557,7 +288,7 @@ jobs:
     steps:
       - name: Split packages into groups
         id: split
-        uses: ovsds/split-matrix-action@v0
+        uses: ovsds/split-matrix-action@d35accdcb2ee806e4c8e09b15ac42476244aa95d
         with:
           matrix: ${{ needs.router.outputs.changed-packages }}
           target-group-size: 10
@@ -565,7 +296,7 @@ jobs:
 
   mypy:
     name: "🐲 mypy (group ${{ strategy.job-index }})"
-    runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
+    runs-on: ubuntu-22.04
     needs: [ mypy_split, gh_build_image ]
     if: ${{ needs.mypy_split.outputs.matrix != '[]' }}
     container:
@@ -580,14 +311,12 @@ jobs:
     env:
       VENV_PATH: /venv
     steps:
-      - uses: datalens-tech/cleanup-folder-action@v1
+      - uses: datalens-tech/cleanup-folder-action@2320ecc9839e80e006f214a31eeba3bca55aed0c
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 1
-      - uses: datalens-tech/fix-dubious-ownership-action@v1
+      - uses: datalens-tech/fix-dubious-ownership-action@472fb7b325799350f1b5327b90ade3e5cd15bd67
       - name: run mypy
         run: task --silent dev:mypy FAIL_FAST=false
         env:
@@ -600,7 +329,7 @@ jobs:
     if: always() && !cancelled()
     steps:
       - name: Collect Result
-        uses: ovsds/collect-needs-result-action@v1
+        uses: ovsds/collect-needs-result-action@12190e2a1bfe85d9c024f190a3833973e97998f8
         with:
           needs_json: ${{ toJson(needs) }}
 
@@ -609,23 +338,21 @@ jobs:
     runs-on: ubuntu-22.04
 
     needs:
-      - check-skip-tests-label
       - pytest_split
-      - run_tests_base
+      - run_tests_default
       - run_tests_fat
-      - run_tests_no_compose
       - run_tests_ext_public
 
     if: always() && !cancelled()
 
     steps:
       - name: Collect Result
-        uses: ovsds/collect-needs-result-action@v1
+        uses: ovsds/collect-needs-result-action@12190e2a1bfe85d9c024f190a3833973e97998f8
         with:
           needs_json: ${{ toJson(needs) }}
 
   codestyle_all:
-    runs-on: [ self-hosted, linux, k8s-runner-no-compose ]
+    runs-on: ubuntu-22.04
     needs: gh_build_image
     container:
       image: ${{ needs.gh_build_image.outputs.IMAGE }}
@@ -635,17 +362,14 @@ jobs:
     env:
       VENV_PATH: /venv
     steps:
-      - uses: datalens-tech/cleanup-folder-action@v1
+      - uses: datalens-tech/cleanup-folder-action@2320ecc9839e80e006f214a31eeba3bca55aed0c
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 1
-      - uses: datalens-tech/fix-dubious-ownership-action@v1
+      - uses: datalens-tech/fix-dubious-ownership-action@472fb7b325799350f1b5327b90ade3e5cd15bd67
       - run: task --silent dev:black
       - run: task --silent dev:isort
       - run: task --silent dev:ruff
-      - run: task --silent dev:sort-all
       - run: task --silent dev:toml-sort
       - run: task --silent dev:deptry FAIL_FAST=false

@@ -1,25 +1,27 @@
 import asyncio
+from collections.abc import (
+    AsyncGenerator,
+    Generator,
+)
 import contextlib
 import enum
 import logging
 import os
 import subprocess
+import sys
 import tempfile
 from typing import (
-    AsyncGenerator,
     ClassVar,
-    Generator,
     Protocol,
+    override,
 )
 
 import aiohttp
 import attr
 import pytest
-from typing_extensions import override
 
 import dl_app_api_base
 import dl_app_base
-
 
 DIR_PATH = os.path.dirname(__file__)
 LOGGER = logging.getLogger(__name__)
@@ -43,7 +45,7 @@ class CallbackCounter:
         if not os.path.exists(self.path):
             return 0
 
-        with open(self.path, "r") as f:
+        with open(self.path) as f:
             return int(f.read())
 
     def set(self, value: int) -> None:
@@ -93,8 +95,9 @@ class Callback:
 
         if self.side_effect == CallbackSideEffect.RAISE_EXCEPTION:
             raise RuntimeError("Test callback failure")
-        elif self.side_effect == CallbackSideEffect.INFINITE_LOOP:
-            while True:
+        if self.side_effect == CallbackSideEffect.INFINITE_LOOP:
+            # intentional busy-wait: test fixture simulating a hung callback
+            while True:  # noqa: ASYNC110
                 await asyncio.sleep(1)
         elif self.side_effect == CallbackSideEffect.NO_SIDE_EFFECT:
             pass
@@ -107,8 +110,7 @@ class AppSettings(dl_app_api_base.HttpServerAppSettingsMixin):
     SHUTDOWN_CALLBACK_SIDE_EFFECT: CallbackSideEffect = CallbackSideEffect.NO_SIDE_EFFECT
 
 
-class App(dl_app_api_base.HttpServerAppMixin):
-    ...
+class App(dl_app_api_base.HttpServerAppMixin): ...
 
 
 class AppFactory(dl_app_api_base.HttpServerAppFactoryMixin):
@@ -175,8 +177,7 @@ async def get_app() -> App:
 
 
 @pytest.fixture(name="app")
-def fixture_app() -> None:
-    ...
+def fixture_app() -> None: ...
 
 
 class AppContextProtocol(Protocol):
@@ -185,8 +186,7 @@ class AppContextProtocol(Protocol):
         startup_callback_side_effect: CallbackSideEffect = CallbackSideEffect.NO_SIDE_EFFECT,
         main_callback_side_effect: CallbackSideEffect = CallbackSideEffect.INFINITE_LOOP,
         shutdown_callback_side_effect: CallbackSideEffect = CallbackSideEffect.NO_SIDE_EFFECT,
-    ) -> contextlib.AbstractAsyncContextManager[None]:
-        ...
+    ) -> contextlib.AbstractAsyncContextManager[None]: ...
 
 
 @pytest.fixture(name="app_context")
@@ -209,8 +209,11 @@ def fixture_app_context(
         monkeypatch.setenv("MAIN_CALLBACK_SIDE_EFFECT", main_callback_side_effect.value)
         monkeypatch.setenv("SHUTDOWN_CALLBACK_SIDE_EFFECT", shutdown_callback_side_effect.value)
 
-        gunicorn_process = subprocess.Popen(
+        # real subprocess: the test spawns an actual gunicorn process to exercise worker lifecycle
+        gunicorn_process = subprocess.Popen(  # noqa: ASYNC220, S603
             [
+                sys.executable,
+                "-m",
                 "gunicorn",
                 "test_worker:get_app",
                 "--bind",

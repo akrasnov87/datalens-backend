@@ -1,14 +1,14 @@
 import warnings
 
 import attr
+from frozendict import frozendict
 import pytest
 
 import dl_settings
 
 
 def test_no_fallback_raises() -> None:
-    class Settings(dl_settings.BaseRootSettings):
-        ...
+    class Settings(dl_settings.BaseRootSettings): ...
 
     settings = Settings()
 
@@ -26,8 +26,7 @@ def test_default() -> None:
 
 
 def test_no_fallback_map() -> None:
-    class Settings(dl_settings.WithFallbackGetAttr, dl_settings.BaseRootSettings):
-        ...
+    class Settings(dl_settings.WithFallbackGetAttr, dl_settings.BaseRootSettings): ...
 
     settings = Settings()
 
@@ -36,8 +35,7 @@ def test_no_fallback_map() -> None:
 
 
 def test_fallback_getattr() -> None:
-    class Settings(dl_settings.WithFallbackGetAttr, dl_settings.BaseRootSettings):
-        ...
+    class Settings(dl_settings.WithFallbackGetAttr, dl_settings.BaseRootSettings): ...
 
     @attr.s(auto_attribs=True)
     class Fallback:
@@ -50,8 +48,7 @@ def test_fallback_getattr() -> None:
 
 
 def test_fallback_getattr_upper() -> None:
-    class Settings(dl_settings.WithFallbackGetAttr, dl_settings.BaseRootSettings):
-        ...
+    class Settings(dl_settings.WithFallbackGetAttr, dl_settings.BaseRootSettings): ...
 
     @attr.s(auto_attribs=True)
     class Fallback:
@@ -64,8 +61,7 @@ def test_fallback_getattr_upper() -> None:
 
 
 def test_fallback_getattr_lower() -> None:
-    class Settings(dl_settings.WithFallbackGetAttr, dl_settings.BaseRootSettings):
-        ...
+    class Settings(dl_settings.WithFallbackGetAttr, dl_settings.BaseRootSettings): ...
 
     @attr.s(auto_attribs=True)
     class Fallback:
@@ -83,9 +79,11 @@ def test_fallback_env_source(
     class Settings(dl_settings.WithFallbackEnvSource, dl_settings.BaseRootSettings):
         TEST_KEY: str = NotImplemented
 
-        fallback_env_keys = {
-            "TEST_KEY": "ANOTHER_KEY",
-        }
+        fallback_env_keys = frozendict(
+            {
+                "TEST_KEY": "ANOTHER_KEY",
+            }
+        )
 
     monkeypatch.setenv("ANOTHER_KEY", "value")
 
@@ -107,9 +105,11 @@ def test_fallback_env_source_nested(
     class Settings(dl_settings.WithFallbackEnvSource, dl_settings.BaseRootSettings):
         NESTED: Nested = NotImplemented
 
-        fallback_env_keys = {
-            "NESTED__TEST": "NESTED_TEST",
-        }
+        fallback_env_keys = frozendict(
+            {
+                "NESTED__TEST": "NESTED_TEST",
+            }
+        )
 
     monkeypatch.setenv("NESTED_TEST", "value")
 
@@ -144,9 +144,11 @@ def test_fallback_extra_env_source_merged_with_class(
         TEST_KEY: str = NotImplemented
         ANOTHER_KEY: str = NotImplemented
 
-        fallback_env_keys = {
-            "TEST_KEY": "OLD_TEST_KEY",
-        }
+        fallback_env_keys = frozendict(
+            {
+                "TEST_KEY": "OLD_TEST_KEY",
+            }
+        )
 
     extra_fallback_env_keys = {"ANOTHER_KEY": "OLD_ANOTHER_KEY"}
     monkeypatch.setenv("OLD_TEST_KEY", "value1")

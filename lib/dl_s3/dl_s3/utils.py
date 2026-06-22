@@ -5,7 +5,6 @@ import typing
 import aiohttp
 import botocore.exceptions
 
-
 if typing.TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client as SyncS3Client
     from types_aiobotocore_s3 import S3Client as AsyncS3Client
@@ -48,15 +47,15 @@ class S3Object(typing.NamedTuple):
     key: str
 
 
-class S3Exception(Exception):
+class S3Error(Exception):
     pass
 
 
-class S3NoSuchKey(S3Exception):
+class S3NoSuchKeyError(S3Error):
     pass
 
 
-class S3AccessDenied(S3Exception):
+class S3AccessDeniedError(S3Error):
     pass
 
 
@@ -73,8 +72,8 @@ def write_json_to_s3(
         )
     except s3_sync_cli.exceptions.ClientError as e:
         if e.response["Error"]["Code"] == "AccessDenied":
-            raise S3AccessDenied() from e
-        raise S3Exception() from e
+            raise S3AccessDeniedError() from e
+        raise S3Error() from e
 
 
 def read_json_from_s3(
@@ -87,11 +86,11 @@ def read_json_from_s3(
             Key=file.key,
         )
     except s3_sync_cli.exceptions.NoSuchKey as e:
-        raise S3NoSuchKey() from e
+        raise S3NoSuchKeyError() from e
     except s3_sync_cli.exceptions.ClientError as e:
         if e.response["Error"]["Code"] == "AccessDenied":
-            raise S3AccessDenied() from e
-        raise S3Exception() from e
+            raise S3AccessDeniedError() from e
+        raise S3Error() from e
 
     return object["Body"].read().decode("utf-8")
 
@@ -106,11 +105,11 @@ def delete_json_from_s3(
             Key=file.key,
         )
     except s3_sync_cli.exceptions.NoSuchKey as e:
-        raise S3NoSuchKey() from e
+        raise S3NoSuchKeyError() from e
     except s3_sync_cli.exceptions.ClientError as e:
         if e.response["Error"]["Code"] == "AccessDenied":
-            raise S3AccessDenied() from e
-        raise S3Exception() from e
+            raise S3AccessDeniedError() from e
+        raise S3Error() from e
 
 
 def read_one_of_objects(
@@ -128,3 +127,4 @@ def read_one_of_objects(
         except s3_sync_cli.exceptions.NoSuchKey:
             if idx == len(files) - 1:
                 raise
+    return None

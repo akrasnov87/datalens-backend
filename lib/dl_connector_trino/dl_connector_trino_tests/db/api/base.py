@@ -4,7 +4,7 @@ from dl_api_lib_testing.configuration import ApiTestEnvironmentConfiguration
 from dl_api_lib_testing.connection_base import ConnectionTestBase
 from dl_api_lib_testing.data_api_base import StandardizedDataApiTestBase
 from dl_api_lib_testing.dataset_base import DatasetTestBase
-from dl_constants.enums import RawSQLLevel
+from dl_constants import RawSQLLevel
 from dl_core_testing.database import DbTable
 
 from dl_connector_trino.core.constants import (
@@ -34,7 +34,7 @@ class TrinoConnectionTestBase(BaseTrinoTestClass, ConnectionTestBase):
             username=CoreConnectionSettings.USERNAME,
             auth_type=CoreConnectionSettings.AUTH_TYPE.name,
             listing_sources=CoreConnectionSettings.LISTING_SOURCES.name,
-            **(dict(raw_sql_level=self.raw_sql_level.value) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level.value} if self.raw_sql_level is not None else {}),
         )
 
 
@@ -45,14 +45,14 @@ class TrinoDashSQLConnectionTest(TrinoConnectionTestBase):
 class TrinoDatasetTestBase(TrinoConnectionTestBase, DatasetTestBase):
     @pytest.fixture(scope="class")
     def dataset_params(self, sample_table: DbTable) -> dict:
-        return dict(
-            source_type=SOURCE_TYPE_TRINO_TABLE.name,
-            parameters=dict(
-                db_name=sample_table.db.name,
-                schema_name=sample_table.schema,
-                table_name=sample_table.name,
-            ),
-        )
+        return {
+            "source_type": SOURCE_TYPE_TRINO_TABLE.name,
+            "parameters": {
+                "db_name": sample_table.db.name,
+                "schema_name": sample_table.schema,
+                "table_name": sample_table.name,
+            },
+        }
 
 
 class TrinoDataApiTestBase(TrinoDatasetTestBase, StandardizedDataApiTestBase):

@@ -16,13 +16,13 @@ def dt_avg(values: typing.Iterable[datetime.datetime]) -> datetime.datetime:
     tses = [utc_ts(dt) for dt in values]
     ts = sum(tses) / len(tses)
     # Note: remove microseconds as currently not implemented
-    return datetime.datetime.utcfromtimestamp(ts).replace(microsecond=0)
+    return datetime.datetime.fromtimestamp(ts, tz=datetime.UTC).replace(tzinfo=None, microsecond=0)
 
 
 def dt_max(values: typing.Iterable[datetime.datetime]) -> datetime.datetime:
     tses = [utc_ts(dt) for dt in values]
     ts = max(tses)
-    return datetime.datetime.utcfromtimestamp(ts)
+    return datetime.datetime.fromtimestamp(ts, tz=datetime.UTC).replace(tzinfo=None)
 
 
 class TestDateTimeFunctionYQL(YQLTestBase, DefaultDateTimeFunctionFormulaConnectorTestSuite):
@@ -60,7 +60,7 @@ class TestDateTimeFunctionYQL(YQLTestBase, DefaultDateTimeFunctionFormulaConnect
             from_=ydb_data_table,
             field_types=ydb_data_table_field_types,
         ) == int(
-            dt_max(ydb_data_table.datetime_values).replace(tzinfo=datetime.timezone.utc).timestamp(),
+            dt_max(ydb_data_table.datetime_values).replace(tzinfo=datetime.UTC).timestamp(),
         )
         assert dbe.eval(
             "MAX(FLOAT([datetime_value]))",
@@ -68,7 +68,7 @@ class TestDateTimeFunctionYQL(YQLTestBase, DefaultDateTimeFunctionFormulaConnect
             field_types=ydb_data_table_field_types,
         ) == float(
             int(
-                dt_max(ydb_data_table.datetime_values).replace(tzinfo=datetime.timezone.utc).timestamp(),
+                dt_max(ydb_data_table.datetime_values).replace(tzinfo=datetime.UTC).timestamp(),
             )
         )
 
@@ -102,12 +102,12 @@ class TestDateTimeFunctionYQL(YQLTestBase, DefaultDateTimeFunctionFormulaConnect
             from_=ydb_data_table,
             field_types=ydb_data_table_field_types,
         ) == int(
-            dt_max(ydb_data_table.timestamp_values).replace(tzinfo=datetime.timezone.utc).timestamp(),
+            dt_max(ydb_data_table.timestamp_values).replace(tzinfo=datetime.UTC).timestamp(),
         )
         assert dbe.eval(
             "MAX(FLOAT([timestamp_value]))",
             from_=ydb_data_table,
             field_types=ydb_data_table_field_types,
         ) == float(
-            int(dt_max(ydb_data_table.timestamp_values).replace(tzinfo=datetime.timezone.utc).timestamp()),
+            int(dt_max(ydb_data_table.timestamp_values).replace(tzinfo=datetime.UTC).timestamp()),
         )

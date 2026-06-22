@@ -1,19 +1,15 @@
-# coding: utf-8
 """
 Modifications of `ylog`.
 """
 
 from collections import OrderedDict
+from collections.abc import Callable
 import datetime
 import json
 import logging
 import logging.handlers
 import traceback
-from typing import (
-    Any,
-    Callable,
-)
-
+from typing import Any
 
 # Minor note:
 # `context` in the formatter is a wrong approach.
@@ -88,7 +84,7 @@ def format_frame_locals(frame, max_length=512, infix="...", prefix_tpl="      %s
             suffix = suffix_tpl % (len(result),)
             length = 80 - len(prefix) - len(infix) - len(suffix)
             result = result[: (length + 1) // 2] + infix + result[-(length // 2) :] + suffix
-        ret.append("%s%s\n" % (prefix, result))
+        ret.append(f"{prefix}{result}\n")
     return ret
 
 
@@ -112,8 +108,7 @@ def format_exception_with_locals(exc_type, exc_value, tb):
         formatted.extend(exception)
         return formatted
     except Exception:
-        formatted = ["Couldn't print detailed traceback.\n"] + traceback.format_exception(exc_type, exc_value, tb)
-        return formatted
+        return ["Couldn't print detailed traceback.\n", *traceback.format_exception(exc_type, exc_value, tb)]
 
 
 def get_record_exc_repr(record, fmt=FILE_FORMAT, datefmt=DT_FORMAT, full=False, show_locals=False):
@@ -136,16 +131,17 @@ def get_record_exc_repr(record, fmt=FILE_FORMAT, datefmt=DT_FORMAT, full=False, 
     # construct required fields in record.__dict__
     record.message = record.getMessage()
     if fmt.find("%(asctime)") >= 0:
-        record.asctime = datetime.datetime.fromtimestamp(record.created).strftime(datefmt)
+        dt = datetime.datetime.fromtimestamp(record.created, tz=datetime.UTC)
+        record.asctime = dt.strftime(datefmt)
 
     lines = [fmt % record.__dict__]
 
     if full:
         req = getattr(record, "request", None)
         if req is not None:
-            lines.append("Path: %s" % req.path)
-            lines.append("GET: %s" % req.GET)
-            lines.append("POST: %s" % format_post(req))
+            lines.append(f"Path: {req.path}")
+            lines.append(f"GET: {req.GET}")
+            lines.append(f"POST: {format_post(req)}")
         exc_info = record.exc_info
         if exc_info is not None:
             if show_locals:
@@ -167,7 +163,7 @@ def get_record_exc_repr(record, fmt=FILE_FORMAT, datefmt=DT_FORMAT, full=False, 
         f_globals = inner.tb_frame.f_globals
         module_name = f_globals.get("__name__", "<unknown>")
 
-        record.message = "%-20s %s:%s %s" % (exception.__name__, module_name, lineno, exception_str(value))
+        record.message = f"{exception.__name__:<20} {module_name}:{lineno} {exception_str(value)}"
         lines[0] = fmt % record.__dict__
 
     return "\n".join([smart_str(line) for line in lines])
@@ -198,6 +194,7 @@ class RecordDataFormatterMixin:
         "threadName",  # 'MainThread',
         "processName",  # 'MainProcess',
         "process",  # 409783}
+        "taskName",  # Python 3.12+ built-in: asyncio.current_task name (or None)
         # func-based:
         # 'timestamp',
         # 'timestampns',
@@ -224,30 +221,30 @@ class RecordDataFormatterMixin:
     )
 
     @staticmethod
-    def get_record_timestamp(record):
+    def get_record_timestamp(record) -> float:
         return record.created
 
     @staticmethod
-    def get_record_timestampns(record, ns=int(1e9)):  # noqa: B008
+    def get_record_timestampns(record, ns: int = 1_000_000_000) -> int:
         return int(record.created * ns)
 
     @staticmethod
-    def get_record_isotimestamp(record, fmt=DT_FORMAT):
-        dt = datetime.datetime.fromtimestamp(record.created)
+    def get_record_isotimestamp(record, fmt=DT_FORMAT) -> str:
+        dt = datetime.datetime.fromtimestamp(record.created, tz=datetime.UTC)
         return dt.strftime(fmt)
 
     # Maybe: get_record_tzaware_isotiemstamp
 
     @staticmethod
-    def get_record_message(record):
+    def get_record_message(record) -> str:
         return record.getMessage()
 
     @staticmethod
-    def get_record_pid(record):
+    def get_record_pid(record) -> int | None:
         return record.process
 
     @staticmethod
-    def get_record_exc_type(record):
+    def get_record_exc_type(record) -> str | None:
         if not record.exc_info:
             return None
         if not isinstance(record.exc_info, tuple):
@@ -255,7 +252,7 @@ class RecordDataFormatterMixin:
         return record.exc_info[0].__name__
 
     @staticmethod
-    def get_record_exc_info(record):
+    def get_record_exc_info(record) -> str | None:
         exc_info = record.exc_info
         if exc_info is None:
             return None
@@ -268,9 +265,9 @@ class RecordDataFormatterMixin:
         exc_info_formatted = "".join(smart_str(val) for val in traceback.format_exception(*exc_info))
 
         # str(exc) at the beginning for some readability.
-        return "{}\n{}".format(robust_smart_str(exc), exc_info_formatted)
+        return f"{robust_smart_str(exc)}\n{exc_info_formatted}"
 
-    def __init__(self, skipped_record_attrs=unspecified):
+    def __init__(self, skipped_record_attrs=unspecified) -> None:
         if skipped_record_attrs is self.unspecified:
             skipped_record_attrs = self.default_skipped_record_attrs
         self.skipped_record_attrs = frozenset(skipped_record_attrs)
@@ -285,7 +282,7 @@ class RecordDataFormatterMixin:
         # Dubious: Prioritize the func-based over the base.
         for name in self.func_based_record_attrs:
             if name not in skiplist:
-                func = getattr(self, "get_record_{}".format(name))
+                func = getattr(self, f"get_record_{name}")
                 result[name] = func(record)
 
         return result
@@ -297,7 +294,7 @@ class JsonExtFormatter(RecordDataFormatterMixin, logging.Formatter):
         return self.dumps(log_data)
 
     @staticmethod
-    def dumps(data):
+    def dumps(data) -> str:
         return json.dumps(data, default=robust_smart_str)
 
 
@@ -326,12 +323,12 @@ class TaggedSysLogHandlerBase(logging.handlers.SysLogHandler):
     similar to FileHandler's `filename` parameter.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.syslog_tag = kwargs.pop("syslog_tag")
-        super(TaggedSysLogHandlerBase, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
-    def format(self, *args, **kwargs):  # pylint: disable=arguments-differ
-        res = super(TaggedSysLogHandlerBase, self).format(*args, **kwargs)
+    def format(self, *args: Any, **kwargs: Any):
+        res = super().format(*args, **kwargs)
         return self.syslog_tag + " " + res
 
 
@@ -340,9 +337,9 @@ class TaggedSysLogHandler(TaggedSysLogHandlerBase):
 
     _sndbuf_size = 5 * 2**20
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._sbdbuf_size = kwargs.pop("sbdbuf_size", self._sndbuf_size)
-        super(TaggedSysLogHandler, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.configure_socket(self.socket)
 
     def configure_socket(self, sock):
@@ -358,7 +355,7 @@ class LogRecordCaptureHandler(logging.Handler):
     without formatting them.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.records = []
 
@@ -378,7 +375,7 @@ class RecordMutators:
     For performance, the log record mutation is used, instead of log record mappers.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.mutators = OrderedDict()
         self.old_factory = None
 
@@ -406,8 +403,8 @@ class RecordMutators:
                 raise ValueError("Attempting to replace an existing mutator", name, current, mutator)
         self.mutators[name] = mutator
 
-    def __call__(self, *args, **kwargs):
-        """Log record factrory entry point"""
+    def __call__(self, *args: Any, **kwargs: Any) -> logging.LogRecord:
+        """Log record factory entry point"""
         if self.old_factory is None:
             raise Exception("This mutators-wrapper was not `apply`ed yet.")
         record = self.old_factory(*args, **kwargs)
@@ -422,9 +419,8 @@ def make_attr_setter(key: str, value: Any, validate=False):
     """
 
     def attr_setter(record):
-        if validate:
-            if hasattr(record, key):
-                raise Exception("Record already has the attribute", key)
+        if validate and hasattr(record, key):
+            raise Exception("Record already has the attribute", key)
         setattr(record, key, value)
 
     return attr_setter

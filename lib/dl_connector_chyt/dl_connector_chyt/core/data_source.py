@@ -1,14 +1,14 @@
 import abc
 import collections
+from collections.abc import Callable
 import logging
-from typing import Callable
 import urllib.parse
 
 import attr
 import sqlalchemy as sa
 from sqlalchemy.sql.elements import TextClause
 
-from dl_constants.enums import (
+from dl_constants import (
     DataSourceType,
     UserDataType,
 )
@@ -52,7 +52,6 @@ from dl_connector_clickhouse.core.clickhouse_base.data_source import (
     ClickHouseBaseMixin,
     CommonClickHouseSubselectDataSource,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -133,20 +132,18 @@ class BaseCHYTTableFuncDataSource(BaseCHYTSpecialDataSource, abc.ABC):
         assert self.conn_type is not None
         schema_info = super().get_schema_info(conn_executor_factory=conn_executor_factory)
         return schema_info.clone(
-            schema=tuple(
-                [
-                    *schema_info.schema,
-                    *[
-                        SchemaColumn(
-                            name=key,
-                            title=key,
-                            user_type=UserDataType.string,
-                            native_type=ClickHouseNativeType.normalize_name_and_create(name="string"),
-                            nullable=False,
-                        )
-                        for key in ("$table_path", "$table_name", "$table_index")
-                    ],
-                ]
+            schema=(
+                *schema_info.schema,
+                *[
+                    SchemaColumn(
+                        name=key,
+                        title=key,
+                        user_type=UserDataType.string,
+                        native_type=ClickHouseNativeType.normalize_name_and_create(name="string"),
+                        nullable=False,
+                    )
+                    for key in ("$table_path", "$table_name", "$table_index")
+                ],
             )
         )
 
@@ -183,7 +180,7 @@ class BaseCHYTTableListDataSource(BaseCHYTTableFuncDataSource, abc.ABC):
         if not self.spec.table_names:
             raise exc.TableNameNotConfiguredError
 
-        raw_table_names = self._render_dataset_parameter_values(self.spec.table_names)
+        raw_table_names = self.render_dataset_parameter_values(self.spec.table_names)
         table_names = self.normalize_tables_paths(raw_table_names)
         return CHYTTablesConcat(*table_names, alias=alias)
 
@@ -237,16 +234,16 @@ class BaseCHYTTableRangeDataSource(BaseCHYTTableFuncDataSource, abc.ABC):
         if not self.directory_path:
             raise exc.TableNameNotConfiguredError
         directory = self.directory_path
-        directory = self._render_dataset_parameter_values(self.directory_path)
+        directory = self.render_dataset_parameter_values(self.directory_path)
         directory = self.normalize_path(directory)
 
         start = self.range_from
         if start is not None:
-            start = self._render_dataset_parameter_values(start)
+            start = self.render_dataset_parameter_values(start)
 
         end = self.range_to
         if end is not None:
-            end = self._render_dataset_parameter_values(end)
+            end = self.render_dataset_parameter_values(end)
 
         return CHYTTablesRange(
             directory=directory,
@@ -278,13 +275,13 @@ class BaseCHYTTableSubselectDataSource(BaseCHYTSpecialDataSource, CommonClickHou
 
     def get_sql_source(self, alias: str | None = None) -> TextClause:
         if not self.connection.is_subselect_allowed:
-            raise exc.SubselectNotAllowed()
+            raise exc.SubselectNotAllowedError()
 
         subsql = self.subsql
         if not subsql:
             raise exc.TableNameNotConfiguredError
 
-        subsql = self._render_dataset_parameter_values(subsql)
+        subsql = self.render_dataset_parameter_values(subsql)
         return CHYTTableSubselect(subsql, alias=alias)
 
     @property

@@ -11,7 +11,7 @@ from dl_api_lib.query.formalization.raw_pivot_specs import (
     RawPivotRoleSpec,
     RawPivotSpec,
 )
-from dl_constants.enums import (
+from dl_constants import (
     FieldRole,
     FieldType,
     PivotItemType,
@@ -36,7 +36,6 @@ from dl_query_processing.legend.field_legend import (
     LegendItem,
     MeasureNameObjSpec,
 )
-
 
 DIMENSION_ROLES = {PivotRole.pivot_row, PivotRole.pivot_column}
 MEASURE_ROLES = {PivotRole.pivot_measure}
@@ -129,22 +128,22 @@ class PivotFormalizerBase:
 
         if mname_cnt == 0 and measure_cnt > 1:
             # Measure names are not used and there are more than 1 dimensions
-            raise dl_query_processing.exc.PivotMeasureNameRequired()
+            raise dl_query_processing.exc.PivotMeasureNameRequiredError()
         if mname_cnt > 0 and measure_cnt == 0:
             # Measure names are used, but there are no dimensions
-            raise dl_query_processing.exc.PivotMeasureNameForbidden()
+            raise dl_query_processing.exc.PivotMeasureNameForbiddenError()
         if mname_cnt > 1 and measure_cnt > 1:
             # Measure names are more than once, but there are multiple dimensions
-            raise dl_query_processing.exc.PivotMeasureNameDuplicate()
+            raise dl_query_processing.exc.PivotMeasureNameDuplicateError()
         if measure_sorts_by_column > 1 or measure_sorts_by_row > 1:
             # Multiple sort along the same axis
-            raise dl_query_processing.exc.PivotSortingMultipleColumnsOrRows()
+            raise dl_query_processing.exc.PivotSortingMultipleColumnsOrRowsError()
         if measure_cnt > 1 and (
             (mname_role == PivotRole.pivot_row and measure_sorts_by_column > 0)
             or (mname_role == PivotRole.pivot_column and measure_sorts_by_row > 0)
         ):
             # Multiple measures, but some sorts are directed across them, which makes no sense
-            raise dl_query_processing.exc.PivotSortingAgainstMultipleMeasures()
+            raise dl_query_processing.exc.PivotSortingAgainstMultipleMeasuresError()
 
 
 @attr.s
@@ -238,14 +237,13 @@ class PivotFormalizer(PivotFormalizerBase):
         else:
             title = self.make_item_title(target_legend_items, role=raw_pivot_item.role_spec.role)
 
-        item = PivotLegendItem(
+        return PivotLegendItem(
             pivot_item_id=id_gen.generate_id(),
             legend_item_ids=raw_pivot_item.legend_item_ids,
             role_spec=role_spec,
             item_type=item_type,
             title=title,
         )
-        return item
 
     def make_pivot_legend(self, raw_pivot_spec: RawPivotSpec) -> PivotLegend:
         id_gen = IdGenerator()

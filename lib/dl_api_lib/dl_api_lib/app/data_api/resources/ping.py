@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import (
-    ClassVar,
-    Optional,
-)
+from typing import ClassVar
 
 import aiohttp
 from aiohttp import (
@@ -30,7 +27,6 @@ from .base import (
     BaseView,
     requires,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -69,7 +65,7 @@ class PingReadyView(BaseView):
 
         return True
 
-    async def is_rqe_ready(self, base_url: RQEBaseURL) -> Optional[int]:
+    async def is_rqe_ready(self, base_url: RQEBaseURL) -> int | None:
         session = aiohttp.ClientSession(
             connector=TCPConnector(force_close=True),
             timeout=ClientTimeout(
@@ -80,12 +76,14 @@ class PingReadyView(BaseView):
             ),
         )
 
+        request_id = self.dl_request.rci.request_id
+        assert request_id is not None
         async with session as rqe_session:
             try:
                 resp = await rqe_session.get(
                     url=f"{base_url}/ping",
                     headers={
-                        HEADER_REQUEST_ID: self.dl_request.rci.request_id,
+                        HEADER_REQUEST_ID: request_id,
                     },
                 )
             except Exception as e:
@@ -95,7 +93,7 @@ class PingReadyView(BaseView):
         return resp.status
 
     async def get(self) -> web.Response:
-        response_details: dict[str, Optional[int]] = dict()
+        response_details: dict[str, int | None] = {}
         required_services = self.dl_request.services_registry.get_required_services()
 
         if RequiredService.POSTGRES in required_services:
@@ -116,7 +114,7 @@ class PingReadyView(BaseView):
 
             for rqe_service in required_rqe_services:
                 rqe_base_url = rqe_base_url_map[rqe_service]
-                LOGGER.info(f"Going to check RQE readiness ({rqe_service.name} at {rqe_base_url})")
+                LOGGER.info("Going to check RQE readiness (%s at %s)", rqe_service.name, rqe_base_url)
                 response_details[rqe_service.name] = await self.is_rqe_ready(rqe_base_url)
 
         status = (

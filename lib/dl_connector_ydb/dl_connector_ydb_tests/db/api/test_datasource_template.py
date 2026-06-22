@@ -25,11 +25,11 @@ class BaseTableTestSourceTemplate(BaseTestSourceTemplate, dl_api_lib_testing.Bas
 
     @pytest.fixture(name="datasource")
     def fixture_datasource(self, saved_connection_id: str) -> DataSource:
-        parameters = dict(
-            table_name="{{table_name}}",
-            db_name=None,
-            db_version=None,
-        )
+        parameters = {
+            "table_name": "{{table_name}}",
+            "db_name": None,
+            "db_version": None,
+        }
 
         return DataSource(
             connection_id=saved_connection_id,
@@ -39,11 +39,11 @@ class BaseTableTestSourceTemplate(BaseTestSourceTemplate, dl_api_lib_testing.Bas
 
     @pytest.fixture(name="invalid_datasource")
     def fixture_invalid_datasource(self, saved_connection_id: str) -> DataSource:
-        parameters = dict(
-            table_name="{{invalid_parameter_name}}",
-            db_name=None,
-            db_version=None,
-        )
+        parameters = {
+            "table_name": "{{invalid_parameter_name}}",
+            "db_name": None,
+            "db_version": None,
+        }
 
         return DataSource(
             connection_id=saved_connection_id,
@@ -56,24 +56,21 @@ class TestTableControlApiSourceTemplate(
     BaseTableTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplate,
     YDBDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestTableControlApiSourceTemplateSettingsDisabled(
     BaseTableTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplateSettingsDisabled,
     YDBDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestTableControlApiSourceTemplateConnectionDisabled(
     BaseTableTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplateConnectionDisabled,
     YDBDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestTableDataApiSourceTemplate(
@@ -81,7 +78,7 @@ class TestTableDataApiSourceTemplate(
     dl_api_lib_testing.BaseTestDataApiSourceTemplate,
     YDBDataApiTestBase,
 ):
-    field_names = ["id"]
+    field_names = ("id",)
 
 
 class BaseSubselectTestSourceTemplate(
@@ -95,24 +92,21 @@ class TestSubselectControlApiSourceTemplate(
     BaseSubselectTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplate,
     YDBDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestSubselectControlApiSourceTemplateSettingsDisabled(
     BaseSubselectTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplateSettingsDisabled,
     YDBDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestSubselectControlApiSourceTemplateConnectionDisabled(
     BaseSubselectTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplateConnectionDisabled,
     YDBDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestSubselectDataApiSourceTemplate(
@@ -120,4 +114,4 @@ class TestSubselectDataApiSourceTemplate(
     dl_api_lib_testing.BaseTestDataApiSourceTemplate,
     YDBDataApiTestBase,
 ):
-    field_names = ["id"]
+    field_names = ("id",)

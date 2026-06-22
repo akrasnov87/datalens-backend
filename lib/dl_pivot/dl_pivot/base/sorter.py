@@ -15,7 +15,6 @@ from dl_pivot.sort_strategy import (
 )
 import dl_query_processing.exc as exc
 
-
 if TYPE_CHECKING:
     from dl_pivot.base.data_frame import PivotDataFrame
     from dl_pivot.pivot_legend import PivotLegend
@@ -47,7 +46,7 @@ class PivotSorter(abc.ABC):
         headers = self._pivot_dframe.iter_axis_headers(axis)
         total_count = sum(header.info.role_spec.role == PivotHeaderRole.total for header in headers)
         if total_count > 1:
-            raise exc.PivotSortingWithSubtotalsIsNotAllowed()
+            raise exc.PivotSortingWithSubtotalsIsNotAllowedError()
         return bool(total_count)
 
     @abc.abstractmethod

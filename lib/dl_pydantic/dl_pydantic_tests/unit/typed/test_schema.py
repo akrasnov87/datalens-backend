@@ -7,8 +7,7 @@ import dl_pydantic
 
 
 def test_default() -> None:
-    class Base(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base(dl_pydantic.TypedBaseSchema): ...
 
     class Child1(Base):
         value1: str
@@ -33,8 +32,7 @@ def test_type_field_name_alias() -> None:
     class Base(dl_pydantic.TypedBaseSchema):
         type: str = pydantic.Field(alias="test_type_field_name")
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
     Base.register("child", Child)
 
@@ -42,11 +40,9 @@ def test_type_field_name_alias() -> None:
 
 
 def test_already_deserialized() -> None:
-    class Base(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base(dl_pydantic.TypedBaseSchema): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
     Base.register("child", Child)
     child = Child.model_validate({"type": "child"})
@@ -55,72 +51,59 @@ def test_already_deserialized() -> None:
 
 
 def test_not_a_dict_data() -> None:
-    class Base(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base(dl_pydantic.TypedBaseSchema): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
     Base.register("child", Child)
 
     class Root(dl_pydantic.BaseSchema):
         child: Child
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Input should be a valid dictionary"):
         Root.model_validate({"child": ""})
 
 
 def test_already_registered() -> None:
-    class Base(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base(dl_pydantic.TypedBaseSchema): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
-    class AnotherChild(Base):
-        ...
+    class AnotherChild(Base): ...
 
     Base.register("child", Child)
     Base.register("child", Child)  # it's ok, just warning
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"already registered"):
         Base.register("child", AnotherChild)
 
 
 def test_not_subclass() -> None:
-    class Base(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base(dl_pydantic.TypedBaseSchema): ...
 
-    class Base2(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base2(dl_pydantic.TypedBaseSchema): ...
 
-    class Child(Base2):
-        ...
+    class Child(Base2): ...
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"must be subclass of"):
         Base.register("child", Child)
 
 
 def test_unknown_type() -> None:
-    class Base(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base(dl_pydantic.TypedBaseSchema): ...
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Unknown type:"):
         Base.factory({"type": "child"})
 
 
 def test_multiple_bases() -> None:
-    class Base(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base(dl_pydantic.TypedBaseSchema): ...
 
-    class Base2(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base2(dl_pydantic.TypedBaseSchema): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
-    class Child2(Base2):
-        ...
+    class Child2(Base2): ...
 
     Base.register("child", Child)
     Base2.register("child", Child2)
@@ -130,11 +113,9 @@ def test_multiple_bases() -> None:
 
 
 def test_list_factory_default() -> None:
-    class Base(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base(dl_pydantic.TypedBaseSchema): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
     Base.register("child", Child)
 
@@ -144,24 +125,20 @@ def test_list_factory_default() -> None:
 
 
 def test_list_factory_not_sequence() -> None:
-    class Base(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base(dl_pydantic.TypedBaseSchema): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
     Base.register("child", Child)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Data must be sequence for list factory"):
         Base.list_factory(typing.cast(list, "test"))
 
 
 def test_dict_factory_default() -> None:
-    class Base(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base(dl_pydantic.TypedBaseSchema): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
     Base.register("child", Child)
 
@@ -171,21 +148,18 @@ def test_dict_factory_default() -> None:
 
 
 def test_dict_factory_not_dict() -> None:
-    class Base(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base(dl_pydantic.TypedBaseSchema): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
     Base.register("child", Child)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Data must be mapping for dict factory"):
         Base.dict_factory(typing.cast(dict, "test"))
 
 
 def test_annotation() -> None:
-    class Base(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base(dl_pydantic.TypedBaseSchema): ...
 
     class Child(Base):
         value: str
@@ -203,8 +177,7 @@ def test_annotation() -> None:
 
 
 def test_optional_annotation() -> None:
-    class Base(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base(dl_pydantic.TypedBaseSchema): ...
 
     class Child(Base):
         value: str
@@ -212,7 +185,7 @@ def test_optional_annotation() -> None:
     Base.register("child", Child)
 
     class Root(dl_pydantic.BaseSchema):
-        child: typing.Optional[dl_pydantic.TypedSchemaAnnotation[Base]] = None
+        child: dl_pydantic.TypedSchemaAnnotation[Base] | None = None
 
     root = Root.model_validate({"child": {"type": "child", "value": "test"}})
     assert isinstance(root.child, Child)
@@ -228,8 +201,7 @@ def test_optional_annotation() -> None:
 
 
 def test_list_annotation() -> None:
-    class Base(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base(dl_pydantic.TypedBaseSchema): ...
 
     class Child(Base):
         value: str
@@ -247,8 +219,7 @@ def test_list_annotation() -> None:
 
 
 def test_dict_annotation() -> None:
-    class Base(dl_pydantic.TypedBaseSchema):
-        ...
+    class Base(dl_pydantic.TypedBaseSchema): ...
 
     class Child(Base):
         value: str
@@ -263,3 +234,24 @@ def test_dict_annotation() -> None:
     assert isinstance(root.children["child"], Child)
 
     assert root.model_dump() == {"children": {"child": {"type": "child", "value": "test"}}}
+
+
+def test_register_unset() -> None:
+    class Base(dl_pydantic.TypedBaseSchema): ...
+
+    class Child(Base):
+        value: str
+
+    class DefaultChild(Base):
+        type: str = "default"
+        marker: str = "default_marker"
+
+    Base.register("child", Child)
+    Base.register_unset(DefaultChild)
+
+    child = Base.factory({"type": "child", "value": "test"})
+    default = Base.factory({})
+
+    assert isinstance(child, Child)
+    assert isinstance(default, DefaultChild)
+    assert default.model_dump() == {"type": "default", "marker": "default_marker"}

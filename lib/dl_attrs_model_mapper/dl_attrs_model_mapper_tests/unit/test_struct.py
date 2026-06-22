@@ -1,7 +1,7 @@
 from dl_attrs_model_mapper.structs.mappings import FrozenMappingStrToStrOrStrSeq
 
 
-def test_FrozenMappingStrToStrOrStrSeq():
+def test_frozen_mapping_str_to_str_or_str_seq():
     mapping_data = {
         "de_havilland": (
             "comet",
@@ -20,9 +20,9 @@ def test_FrozenMappingStrToStrOrStrSeq():
     # Items
     assert container.items() == mapping_data.items()
     # []
-    assert {k: container[k] for k in mapping_data.keys()} == mapping_data
+    assert {k: container[k] for k in mapping_data} == mapping_data
     # Get
-    assert {k: container.get(k) for k in mapping_data.keys()} == mapping_data
+    assert {k: container.get(k) for k in mapping_data} == mapping_data
 
     # Len
     assert len(container) == len(mapping_data)

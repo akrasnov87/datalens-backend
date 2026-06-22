@@ -18,10 +18,10 @@ class TestBigQueryDataset(BaseBigQueryTestClass, DefaultDatasetTestSuite[Connect
         },
     )
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def dsrc_params(self, dataset_table: DbTable) -> dict:
-        return dict(
-            project_id=dataset_table.db.name,
-            dataset_name=dataset_table.schema,
-            table_name=dataset_table.name,
-        )
+        return {
+            "project_id": dataset_table.db.name,
+            "dataset_name": dataset_table.schema,
+            "table_name": dataset_table.name,
+        }

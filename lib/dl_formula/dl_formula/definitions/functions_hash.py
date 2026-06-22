@@ -9,7 +9,6 @@ from dl_formula.definitions.base import (
 )
 from dl_formula.definitions.type_strategy import Fixed
 
-
 V = TranslationVariant.make
 
 
@@ -19,100 +18,72 @@ class HashFunction(Function):
 
 class MD5(HashFunction):
     name = "md5"
-    arg_names = ["value"]
+    arg_names = ("value",)
     arg_cnt = 1
     return_type = Fixed(DataType.STRING)
-    argument_types = [
-        ArgTypeSequence([DataType.STRING]),
-    ]
-    variants = [
-        V(D.DUMMY, lambda value: sa.func.hex(sa.func.MD5(value))),
-    ]
+    argument_types = (ArgTypeSequence([DataType.STRING]),)
+    variants = (V(D.DUMMY, lambda value: sa.func.hex(sa.func.MD5(value))),)
 
 
 class SHA1(HashFunction):
     name = "sha1"
-    arg_names = ["value"]
+    arg_names = ("value",)
     arg_cnt = 1
     return_type = Fixed(DataType.STRING)
-    argument_types = [
-        ArgTypeSequence([DataType.STRING]),
-    ]
-    variants = [
-        V(D.DUMMY, lambda value: sa.func.hex(sa.func.SHA1(value))),
-    ]
+    argument_types = (ArgTypeSequence([DataType.STRING]),)
+    variants = (V(D.DUMMY, lambda value: sa.func.hex(sa.func.SHA1(value))),)
 
 
 class SHA256(HashFunction):
     name = "sha256"
-    arg_names = ["value"]
+    arg_names = ("value",)
     arg_cnt = 1
     return_type = Fixed(DataType.STRING)
-    argument_types = [
-        ArgTypeSequence([DataType.STRING]),
-    ]
-    variants = [
-        V(D.DUMMY, lambda value: sa.func.hex(sa.func.SHA256(value))),
-    ]
+    argument_types = (ArgTypeSequence([DataType.STRING]),)
+    variants = (V(D.DUMMY, lambda value: sa.func.hex(sa.func.SHA256(value))),)
 
 
-class MurmurHash2_64(HashFunction):
+class MurmurHash2x64(HashFunction):
     name = "murmurhash2_64"
-    arg_names = ["value"]
+    arg_names = ("value",)
     arg_cnt = 1
     return_type = Fixed(DataType.INTEGER)
-    argument_types = [
-        ArgTypeSequence([DataType.STRING]),
-    ]
-    variants = [
-        V(D.DUMMY, sa.func.murmurHash2_64),
-    ]
+    argument_types = (ArgTypeSequence([DataType.STRING]),)
+    variants = (V(D.DUMMY, sa.func.murmurHash2_64),)
 
 
 class SipHash64(HashFunction):
     name = "siphash64"
-    arg_names = ["value"]
+    arg_names = ("value",)
     arg_cnt = 1
     return_type = Fixed(DataType.INTEGER)
-    argument_types = [
-        ArgTypeSequence([DataType.STRING]),
-    ]
-    variants = [
-        V(D.DUMMY, sa.func.sipHash64),
-    ]
+    argument_types = (ArgTypeSequence([DataType.STRING]),)
+    variants = (V(D.DUMMY, sa.func.sipHash64),)
 
 
 class IntHash64(HashFunction):
     name = "inthash64"
-    arg_names = ["value"]
+    arg_names = ("value",)
     arg_cnt = 1
     return_type = Fixed(DataType.INTEGER)
-    argument_types = [
-        ArgTypeSequence([DataType.INTEGER]),
-    ]
-    variants = [
-        V(D.DUMMY, sa.func.intHash64),
-    ]
+    argument_types = (ArgTypeSequence([DataType.INTEGER]),)
+    variants = (V(D.DUMMY, sa.func.intHash64),)
 
 
 class CityHash64(HashFunction):
     name = "cityhash64"
-    arg_names = ["value"]
+    arg_names = ("value",)
     arg_cnt = 1
     return_type = Fixed(DataType.INTEGER)
-    argument_types = [
-        ArgTypeSequence([DataType.STRING]),
-    ]
-    variants = [
-        V(D.DUMMY, sa.func.cityHash64),
-    ]
+    argument_types = (ArgTypeSequence([DataType.STRING]),)
+    variants = (V(D.DUMMY, sa.func.cityHash64),)
 
 
 DEFINITIONS_HASH = [
     MD5,
     SHA1,
     SHA256,
-    MurmurHash2_64,
+    MurmurHash2x64,
     SipHash64,
     IntHash64,
     CityHash64,

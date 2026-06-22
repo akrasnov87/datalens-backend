@@ -1,10 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import (
     TYPE_CHECKING,
-    Callable,
     ClassVar,
-    Optional,
 )
 
 import attr
@@ -31,7 +30,6 @@ from dl_connector_ydb.core.ydb.constants import (
 from dl_connector_ydb.core.ydb.dto import YDBConnDTO
 from dl_connector_ydb.core.ydb.settings import YDBConnectorSettings
 
-
 if TYPE_CHECKING:
     from dl_core.connection_models.common_models import TableIdent
 
@@ -49,13 +47,13 @@ class YDBConnection(
 
     @attr.s(kw_only=True)
     class DataModel(ClassicConnectionSQL.DataModel):
-        auth_type: Optional[YDBAuthTypeMode] = attr.ib(default=YDBAuthTypeMode.oauth)
-        username: Optional[str] = attr.ib(default="")
+        auth_type: YDBAuthTypeMode | None = attr.ib(default=YDBAuthTypeMode.oauth)
+        username: str | None = attr.ib(default="")
 
-        token: Optional[str] = attr.ib(default=None, repr=secrepr)
+        token: str | None = attr.ib(default=None, repr=secrepr)
 
         ssl_enable: bool = attr.ib(kw_only=True, default=False)
-        ssl_ca: Optional[str] = attr.ib(kw_only=True, default=None)
+        ssl_ca: str | None = attr.ib(kw_only=True, default=None)
 
         @classmethod
         def get_secret_keys(cls) -> set[DataKey]:
@@ -85,6 +83,7 @@ class YDBConnection(
                 connection_id=self.uuid,  # type: ignore
                 source_type=SOURCE_TYPE_YDB_TABLE,
                 localizer=localizer,
+                disabled_text=self.subselect_disabled_text,
                 title="YDB table",
                 template_enabled=self.is_datasource_template_allowed,
                 table_form_title=localizer.translate(Translatable("source_templates-label-ydb_table")),
@@ -95,6 +94,7 @@ class YDBConnection(
                 source_type=SOURCE_TYPE_YDB_SUBSELECT,
                 localizer=localizer,
                 disabled=not self.is_subselect_allowed,
+                disabled_text=self.subselect_disabled_text,
                 title="Subselect over YDB",
                 template_enabled=self.is_datasource_template_allowed,
             ),
@@ -103,8 +103,8 @@ class YDBConnection(
     def get_tables(
         self,
         conn_executor_factory: Callable[[ConnectionBase], SyncConnExecutorBase],
-        db_name: Optional[str] = None,
-        schema_name: Optional[str] = None,
+        db_name: str | None = None,
+        schema_name: str | None = None,
         search_text: str | None = None,
         limit: int | None = None,
         offset: int | None = None,

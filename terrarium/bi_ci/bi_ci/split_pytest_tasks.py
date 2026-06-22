@@ -10,7 +10,6 @@ import clize
 import tomlkit
 import typing_extensions
 
-
 """
 example test spec:
 
@@ -24,7 +23,7 @@ target_path = "aio caches capabilities common"
 labels = ["fat"]
 """
 
-DEFAULT_MODE = "base"
+DEFAULT_MODE = "default"
 DEFAULT_LABELS = frozenset([DEFAULT_MODE])
 DEFAULT_TARGET_NAME = "__default__"
 DEFAULT_TARGET_PATHS = frozenset(["."])
@@ -97,7 +96,7 @@ def print_output(requested_modes: set[str], test_targets: typing.Iterable[TestTa
 def read_package_paths(
     targets_path: pathlib.Path,
 ) -> typing.Generator[str, None, None]:
-    with open(targets_path, "r") as file:
+    with open(targets_path) as file:
         data = file.read()
         data = data.strip()
         data = data.replace("'", '"')
@@ -115,7 +114,7 @@ def read_pytest_targets(absolute_path: pathlib.Path, relative_path: str) -> list
         print_stderr(error_message, PrintLevel.ERROR)
         raise FileNotFoundError(error_message)
 
-    with open(pyproject_path, "r") as file:
+    with open(pyproject_path) as file:
         toml_data = tomlkit.parse(file.read())
 
     if toml_data.get("datalens_ci", {}).get("skip_test", False):

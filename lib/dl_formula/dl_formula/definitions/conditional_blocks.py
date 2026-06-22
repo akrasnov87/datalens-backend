@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from frozendict import frozendict
 import sqlalchemy as sa
-from sqlalchemy.sql.elements import Null
+from sqlalchemy.sql.elements import (
+    ClauseElement,
+    Null,
+)
 
 from dl_formula.core.datatype import DataType
 from dl_formula.core.dialect import StandardDialect as D
@@ -21,10 +25,15 @@ from dl_formula.definitions.type_strategy import (
     FromArgs,
     IfTypeStrategy,
 )
-
+from dl_formula.translation.context import TranslationCtx
 
 V = TranslationVariant.make
 VW = TranslationVariantWrapped.make
+
+
+def _data_type(ctx: TranslationCtx) -> DataType:
+    assert ctx.data_type is not None
+    return ctx.data_type
 
 
 class CondBlock(MultiVariantTranslation):
@@ -34,16 +43,18 @@ class CondBlock(MultiVariantTranslation):
 
 class CaseBlock(CondBlock):
     name = "_case_block_"
-    arg_names = ["expression", "value_1", "result_1", "value_2", "result_2", "default_result"]
+    arg_names = ("expression", "value_1", "result_1", "value_2", "result_2", "default_result")
 
-    _null_replace_map = {
-        DataType.INTEGER: sa.literal(0),
-        DataType.FLOAT: sa.literal(0.0),
-        DataType.BOOLEAN: sa.literal(0),
-        DataType.STRING: sa.literal(""),
-        DataType.MARKUP: sa.literal(""),
-        # Note that datetime types are not supported in this case
-    }
+    _null_replace_map = frozendict(
+        {
+            DataType.INTEGER: sa.literal(0),
+            DataType.FLOAT: sa.literal(0.0),
+            DataType.BOOLEAN: sa.literal(0),
+            DataType.STRING: sa.literal(""),
+            DataType.MARKUP: sa.literal(""),
+            # Note that datetime types are not supported in this case
+        }
+    )
 
     @staticmethod
     def _ifnull(value, data_type: DataType) -> bool:  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
@@ -53,19 +64,23 @@ class CaseBlock(CondBlock):
         return value
 
     @classmethod
-    def translation(cls, *args, as_multiif: bool = False):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def translation(cls, *args: TranslationCtx, as_multiif: bool = False) -> ClauseElement:
         value_arg, args = args[0], args[1:]
-        else_expr, else_type = None, DataType.NULL
+        else_expr: ClauseElement | None = None
+        else_type: DataType = DataType.NULL
         if len(args) % 2 == 1:
             # block has an ELSE
-            else_expr, else_type = args[-1].expression, args[-1].data_type
+            else_arg = args[-1]
+            assert else_arg.data_type is not None
+            else_expr, else_type = else_arg.expression, else_arg.data_type
             args = args[:-1]
         when_args = [(args[ind], args[ind + 1]) for ind in range(0, len(args), 2)]
         # validate value types (must all be castable to same type)
         # all 'WHEN' values must be the same type as 'CASE' value
-        DataType.get_common_cast_type(value_arg.data_type, *[when_value.data_type for when_value, _ in when_args])
+        assert value_arg.data_type is not None
+        DataType.get_common_cast_type(value_arg.data_type, *[_data_type(when_value) for when_value, _ in when_args])
 
-        return_type = DataType.get_common_cast_type(else_type, *[then_expr.data_type for _, then_expr in when_args])
+        return_type = DataType.get_common_cast_type(else_type, *[_data_type(then_expr) for _, then_expr in when_args])
 
         if as_multiif and not return_type.is_const:
             # ClickHouse does not support non-constant THENs
@@ -90,36 +105,32 @@ class CaseBlock(CondBlock):
         )
 
     arg_cnt = None
-    variants = [
-        VW(D.DUMMY, lambda *args: CaseBlock.translation(*args)),
-    ]
+    variants = (VW(D.DUMMY, lambda *args: CaseBlock.translation(*args)),)
     return_type = CaseTypeStrategy()
 
 
 class IfBlock(CondBlock):
     name = "_if_block_"
-    arg_names = ["condition_1", "result_1", "condition_2", "result_2", "default_result"]
+    arg_names = ("condition_1", "result_1", "condition_2", "result_2", "default_result")
 
 
 class IfBlock3(IfBlock):
     arg_cnt = 3
-    variants = [
-        V(D.DUMMY, lambda cond, expr, else_expr: sa.case(whens=[(cond, expr)], else_=else_expr)),
-    ]
+    variants = (V(D.DUMMY, lambda cond, expr, else_expr: sa.case(whens=[(cond, expr)], else_=else_expr)),)
     argument_flags = ArgFlagSequence([ContextFlag.REQ_CONDITION, None, None])
     return_type = FromArgs(1, 2)
 
 
 class IfBlockMulti(IfBlock):
     arg_cnt = None
-    variants = [
+    variants = (
         V(
             D.DUMMY | D.SQLITE,
             lambda *args: sa.case(
                 whens=[(args[ind], args[ind + 1]) for ind in range(0, len(args) - 1, 2)], else_=args[-1]
             ),
-        )
-    ]
+        ),
+    )
     argument_flags = IfFlagDispenser()
     return_type = IfTypeStrategy()
 

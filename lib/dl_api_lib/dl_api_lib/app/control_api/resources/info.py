@@ -11,22 +11,22 @@ from dl_api_lib.api_decorators import schematic_request
 from dl_api_lib.app.control_api.resources import API
 from dl_api_lib.app.control_api.resources.base import BIResource
 from dl_api_lib.connection_forms.registry import (
-    NoForm,
+    NoFormError,
     get_connection_form_factory_cls,
 )
 from dl_api_lib.enums import BI_TYPE_AGGREGATIONS
 from dl_api_lib.exc import (
-    BadConnectionType,
-    UnsupportedForEntityType,
+    BadConnectionTypeError,
+    UnsupportedForEntityTypeError,
 )
 from dl_api_lib.public.entity_usage_checker import PublicEnvEntityUsageChecker
 from dl_api_lib.schemas.connection import ConnectionFormQuerySchema
 from dl_api_lib.schemas.main import BadRequestResponseSchema
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     UserDataType,
 )
-from dl_core.exc import EntityUsageNotAllowed
+from dl_core.exc import EntityUsageNotAllowedError
 from dl_core.us_connection_base import ConnectionBase
 from dl_core.us_dataset import Dataset
 
@@ -107,7 +107,10 @@ class DatasetsPublicityChecker(BIResource):
 
         for ds in us_manager.get_collection(Dataset, raise_on_broken_entry=True, include_data=True, ids=ds_ids):
             try:
-                us_manager.load_dependencies(ds)
+                us_manager.load_dataset_dependencies(
+                    ds,
+                    respect_sources=True,
+                )
                 localizer = self.get_service_registry().get_localizer()
                 public_usage_checker.ensure_dataset_can_be_used(
                     rci=self.get_current_rci(),
@@ -115,7 +118,7 @@ class DatasetsPublicityChecker(BIResource):
                     us_manager=us_manager,
                     localizer=localizer,
                 )
-            except EntityUsageNotAllowed as exc:
+            except EntityUsageNotAllowedError as exc:
                 allowed = False
                 reason = exc.message
             else:
@@ -154,7 +157,7 @@ class ConnectionsPublicityChecker(BIResource):
                     rci=self.get_current_rci(),
                     conn=conn,
                 )
-            except EntityUsageNotAllowed as exc:
+            except EntityUsageNotAllowedError as exc:
                 allowed = False
                 reason = exc.message
             else:
@@ -190,22 +193,22 @@ class ConnectorForm(BIResource):
     )
     def get(self, conn_type: str, form_mode: str, query: dict) -> dict:
         if not conn_type or conn_type not in ConnectionType:
-            raise BadConnectionType(f"Not a valid connection type for this environment: {conn_type}")
+            raise BadConnectionTypeError(f"Not a valid connection type for this environment: {conn_type}")
         ct = ConnectionType(conn_type)
 
         try:
             mode = ConnectionFormMode(form_mode)
         except ValueError:
-            raise UnsupportedForEntityType(f"Unknown form mode: {form_mode}") from None
+            raise UnsupportedForEntityTypeError(f"Unknown form mode: {form_mode}") from None
 
         try:
             form_factory_cls = get_connection_form_factory_cls(ct)
-        except NoForm:
+        except NoFormError:
             return {"form": None}
 
         localizer = self.get_service_registry().get_localizer()
 
-        conn_id = query.get("conn_id", None)
+        conn_id = query.get("conn_id")
         exports_history_url_path = self.get_service_registry().get_exports_history_url_path()
         user_id = self.get_current_rci().user_id
         feature_flags = self.get_service_registry().get_feature_flags()
@@ -237,37 +240,37 @@ class WorkbookInfo(BIResource):
         usm = self.get_regular_us_manager()
         all_entries = usm.load_get_entries_at_path(us_path)
 
-        return dict(
-            connections={
-                conn_dict["key"].split("/")[-1]: dict(
-                    id=conn_dict["entryId"],
-                    type=conn_dict["type"],
-                )
+        return {
+            "connections": {
+                conn_dict["key"].split("/")[-1]: {
+                    "id": conn_dict["entryId"],
+                    "type": conn_dict["type"],
+                }
                 for conn_dict in all_entries
                 if conn_dict["scope"] == "connection"
             },
-            datasets={
-                ds_dict["key"].split("/")[-1]: dict(
-                    id=ds_dict["entryId"],
-                )
+            "datasets": {
+                ds_dict["key"].split("/")[-1]: {
+                    "id": ds_dict["entryId"],
+                }
                 for ds_dict in all_entries
                 if ds_dict["scope"] == "dataset"
             },
-            charts={
-                chart_dict["key"].split("/")[-1]: dict(
-                    id=chart_dict["entryId"],
-                )
+            "charts": {
+                chart_dict["key"].split("/")[-1]: {
+                    "id": chart_dict["entryId"],
+                }
                 for chart_dict in all_entries
                 if chart_dict["scope"] == "widget"
             },
-            dashboards={
-                dash["key"].split("/")[-1]: dict(
-                    id=dash["entryId"],
-                )
+            "dashboards": {
+                dash["key"].split("/")[-1]: {
+                    "id": dash["entryId"],
+                }
                 for dash in all_entries
                 if dash["scope"] == "dash"
             },
-        )
+        }
 
 
 @ns.route("/connectors/icons")
@@ -275,7 +278,7 @@ class ConnectorIconsList(BIResource):
     @schematic_request(ns=ns)
     def get(self) -> dict:
         conn_availability = self.get_service_registry().get_connector_availability()
-        return dict(icons=conn_availability.list_icons())
+        return {"icons": conn_availability.list_icons()}
 
 
 @ns.route("/connectors/icons/<string:conn_type>")
@@ -283,4 +286,4 @@ class ConnectorIcon(BIResource):
     @schematic_request(ns=ns)
     def get(self, conn_type: str) -> dict:
         conn_availability = self.get_service_registry().get_connector_availability()
-        return dict(icon=conn_availability.get_icon(conn_type=conn_type))
+        return {"icon": conn_availability.get_icon(conn_type=conn_type)}

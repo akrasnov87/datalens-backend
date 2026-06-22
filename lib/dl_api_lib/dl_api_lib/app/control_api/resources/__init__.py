@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import flask
 from flask import request
@@ -13,8 +12,7 @@ from werkzeug.exceptions import (
 
 from dl_api_commons.access_control_common import AuthFailureError
 from dl_api_commons.flask.middlewares.commit_rci_middleware import ReqCtxInfoMiddleware
-from dl_core.exc import USReqException
-
+from dl_core.exc import USReqError
 
 API = Api(prefix="/api/v1")
 
@@ -30,7 +28,7 @@ def init_apis(app: flask.Flask) -> None:
     API.init_app(app)
 
 
-@API.errorhandler(USReqException)
+@API.errorhandler(USReqError)
 def handle_us_error(error):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
     resp = error.orig_exc.response
     try:
@@ -54,7 +52,7 @@ def handle_us_read_only_mode_error(error):  # type: ignore  # 2024-01-30 # TODO:
 @API.errorhandler(BadRequest)
 def handle_bad_request(error):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
     rci = ReqCtxInfoMiddleware.get_last_resort_rci()
-    req_id: Optional[str] = rci.request_id if rci is not None else None
+    req_id: str | None = rci.request_id if rci is not None else None
 
     LOGGER.warning(
         "Bad request on %s: %s, req_id: %s",
@@ -69,7 +67,7 @@ def handle_bad_request(error):  # type: ignore  # 2024-01-30 # TODO: Function is
 def handle_auth_error(error):  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation  [no-untyped-def]
     if error.response_code in (401, 403):
         if error.user_message is None:
-            LOGGER.warning("No user message for AuthFailureError with defined response code", exc_info=True)
+            LOGGER.warning("No user message for AuthFailureError with defined response code", exc_info=error)
             user_message = "Auth failure"
         else:
             user_message = error.user_message

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from enum import unique
-from typing import Optional
 
 from dl_api_commons.base_models import TenantDef
 from dl_api_connector.form_config.models.api_schema import (
@@ -18,9 +17,15 @@ from dl_api_connector.form_config.models.common import (
     CommonFieldName,
     FormFieldName,
 )
-import dl_api_connector.form_config.models.rows as C
+from dl_api_connector.form_config.models.rows import (
+    CacheTTLRow,
+    CheckboxRowItem,
+    CustomizableRow,
+    InputRowItem,
+    LabelRowItem,
+)
 from dl_api_connector.form_config.models.shortcuts.rows import RowConstructor
-from dl_constants.enums import RawSQLLevel
+from dl_constants import RawSQLLevel
 from dl_core.connectors.settings.base import ConnectorSettings
 
 from dl_connector_chyt.api.connection_info import CHYTConnectionInfoProvider
@@ -36,36 +41,37 @@ class CHYTFieldName(FormFieldName):
 class CHYTConnectionFormFactory(ConnectionFormFactory):
     def get_form_config(
         self,
-        connector_settings: Optional[ConnectorSettings],
-        tenant: Optional[TenantDef],
+        connector_settings: ConnectorSettings | None,
+        tenant: TenantDef | None,
     ) -> ConnectionForm:
-        assert connector_settings is not None and isinstance(connector_settings, CHYTConnectorSettings)
+        assert connector_settings is not None
+        assert isinstance(connector_settings, CHYTConnectorSettings)
 
         rc = RowConstructor(localizer=self._localizer)
 
-        clique_alias_row = C.CustomizableRow(
+        clique_alias_row = CustomizableRow(
             items=[
-                C.LabelRowItem(text=self._localizer.translate(Translatable("field_clique-alias"))),
-                C.InputRowItem(name=CHYTFieldName.alias, width="l", default_value=connector_settings.DEFAULT_CLIQUE),
+                LabelRowItem(text=self._localizer.translate(Translatable("field_clique-alias"))),
+                InputRowItem(name=CHYTFieldName.alias, width="l", default_value=connector_settings.DEFAULT_CLIQUE),
             ]
         )
 
-        token_row = C.CustomizableRow(
+        token_row = CustomizableRow(
             items=[
-                C.LabelRowItem(text=self._localizer.translate(Translatable("field_chyt-token"))),
-                C.InputRowItem(
+                LabelRowItem(text=self._localizer.translate(Translatable("field_chyt-token"))),
+                InputRowItem(
                     name=CommonFieldName.token,
                     width="m",
                     default_value="" if self.mode == ConnectionFormMode.create else None,
                     fake_value="******" if self.mode == ConnectionFormMode.edit else None,
-                    control_props=C.InputRowItem.Props(type="password"),
+                    control_props=InputRowItem.Props(type="password"),
                 ),
             ]
         )
 
-        secure_row = C.CustomizableRow(
+        secure_row = CustomizableRow(
             items=[
-                C.CheckboxRowItem(name=CommonFieldName.secure, text="HTTPS", default_value=False),
+                CheckboxRowItem(name=CommonFieldName.secure, text="HTTPS", default_value=False),
             ]
         )
 
@@ -86,9 +92,13 @@ class CHYTConnectionFormFactory(ConnectionFormFactory):
                 [
                     *common_api_schema_items,
                     FormFieldApiSchema(name=CommonFieldName.cache_ttl_sec, nullable=True),
-                    FormFieldApiSchema(name=CommonFieldName.cache_invalidation_throttling_interval_sec, nullable=True)
-                    if is_invalidation_cache_enabled
-                    else None,
+                    (
+                        FormFieldApiSchema(
+                            name=CommonFieldName.cache_invalidation_throttling_interval_sec, nullable=True
+                        )
+                        if is_invalidation_cache_enabled
+                        else None
+                    ),
                     FormFieldApiSchema(name=CommonFieldName.raw_sql_level),
                 ]
             )
@@ -120,7 +130,7 @@ class CHYTConnectionFormFactory(ConnectionFormFactory):
                     rc.port_row(),
                     clique_alias_row,
                     token_row,
-                    C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec) if not is_invalidation_cache_enabled else None,
+                    CacheTTLRow(name=CommonFieldName.cache_ttl_sec) if not is_invalidation_cache_enabled else None,
                     rc.raw_sql_level_row_v2(raw_sql_levels=raw_sql_levels),
                     secure_row,
                     *(rc.cache_rows() if is_invalidation_cache_enabled else []),

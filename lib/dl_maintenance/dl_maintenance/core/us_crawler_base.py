@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterable,
+    Sequence,
+)
 import contextlib
 import copy
 import enum
@@ -7,11 +12,7 @@ import logging
 import time
 from typing import (
     Any,
-    AsyncGenerator,
-    AsyncIterable,
     ClassVar,
-    Optional,
-    Sequence,
 )
 
 import attr
@@ -36,7 +37,6 @@ from dl_utils.task_runner import (
     TaskRunner,
 )
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -60,8 +60,8 @@ class USEntryCrawler:
     ENTRY_TYPE: ClassVar[type[USEntry]] = None  # type: ignore  # TODO: fix  # Must be set in subclass
 
     _dry_run: bool = attr.ib()  # should always be specified explicitly.
-    _usm: Optional[AsyncUSManager] = attr.ib(default=None)
-    _target_tenant: Optional[TenantDef] = attr.ib(default=None)
+    _usm: AsyncUSManager | None = attr.ib(default=None)
+    _target_tenant: TenantDef | None = attr.ib(default=None)
     _concurrency_limit: int = attr.ib(default=10)
     # internals
     _run_fired: bool = attr.ib(init=False, default=False)
@@ -112,7 +112,7 @@ class USEntryCrawler:
         raise NotImplementedError()
 
     async def process_entry_get_save_flag(
-        self, entry: USEntry, logging_extra: dict[str, Any], usm: Optional[AsyncUSManager] = None
+        self, entry: USEntry, logging_extra: dict[str, Any], usm: AsyncUSManager | None = None
     ) -> tuple[bool, str]:
         raise NotImplementedError()
 
@@ -122,8 +122,8 @@ class USEntryCrawler:
         entry_id: str,
         logging_extra: dict[str, Any],
         usm: AsyncUSManager,
-        context_name: Optional[str] = None,
-    ) -> AsyncGenerator[Optional[USEntry], None]:
+        context_name: str | None = None,
+    ) -> AsyncGenerator[USEntry | None, None]:
         if self._dry_run:
             try:
                 entry = await usm.get_by_id(
@@ -161,22 +161,21 @@ class USEntryCrawler:
     ) -> None:
         if self._dry_run:
             return
-        else:
-            await usm.update(
-                entry=entry,
-                original_entry=original_entry,
-            )
+        await usm.update(
+            entry=entry,
+            original_entry=original_entry,
+        )
 
     async def run(self) -> None:
         if self._run_fired:
             raise ValueError("Attempt to consequent call of USEntryCrawler.run()")
         self._run_fired = True
 
-        crawler_run_extra: dict[str, Any] = dict(
-            us_entry_crawler_name=self.type_name,
-            us_entry_crawler_dry_run=self._dry_run,
-            us_entry_crawler_run_id=self._run_id,
-        )
+        crawler_run_extra: dict[str, Any] = {
+            "us_entry_crawler_name": self.type_name,
+            "us_entry_crawler_dry_run": self._dry_run,
+            "us_entry_crawler_run_id": self._run_id,
+        }
         LOGGER.info(
             "Starting US entry crawler run: %s",
             format_dict(
@@ -192,7 +191,7 @@ class USEntryCrawler:
 
         try:
             map_handling_status_entry_id = await self._run(crawler_run_extra)
-        except Exception:  # noqa
+        except Exception:
             crawler_run_extra.update(us_entry_crawler_run_success=False)
             LOGGER.exception(
                 "Crawler run failure: %s %s",
@@ -201,7 +200,7 @@ class USEntryCrawler:
                 extra=extra_with_evt_code(EVT_CODE_RUN_END, crawler_run_extra),
             )
         else:
-            time_elapsed = int(round(time.monotonic() - started_ts))
+            time_elapsed = round(time.monotonic() - started_ts)
             # TODO FIX: Add availability to define post-run hook in subclass
             counters = {key: len(val) for key, val in map_handling_status_entry_id.items()}
 
@@ -263,7 +262,7 @@ class USEntryCrawler:
             crawler_run_extra,
             us_entry_id=entry_id,
             us_entry_key=raw_entry["key"],
-            us_entry_tenant_id=raw_entry.get("tenantId", None),
+            us_entry_tenant_id=raw_entry.get("tenantId"),
             us_entry_type=raw_entry["type"],
             us_entry_scope=raw_entry["scope"],
             us_entry_crawler_idx=entry_idx,
@@ -279,7 +278,7 @@ class USEntryCrawler:
                 entry_handling_extra=entry_handling_extra,
             )
             entry_handling_extra.update(entry_handling_status=result.name)
-        except Exception:  # noqa
+        except Exception:
             result = EntryHandlingResult.FAILED
             entry_handling_extra.update(entry_handling_status=result.name)
             LOGGER.exception(
@@ -359,21 +358,20 @@ class USEntryCrawler:
                         usm=usm,
                     )
                     return EntryHandlingResult.SUCCESS
-                else:
-                    return EntryHandlingResult.SKIPPED
+                return EntryHandlingResult.SKIPPED
 
             except Exception:
                 entry_handling_extra.update(us_entry_crawler_exc_stage="entry_save")
                 raise
 
     @staticmethod
-    def _calculate_diff_str(target_entry: USEntry, entry_handling_extra: dict[str, Any]) -> Optional[str]:
+    def _calculate_diff_str(target_entry: USEntry, entry_handling_extra: dict[str, Any]) -> str | None:
         try:
             if isinstance(target_entry, USMigrationEntry):
                 entry_diff = get_pre_save_top_level_dict(target_entry)
             else:
                 return "N/A"
-        except Exception:  # noqa
+        except Exception:
             LOGGER.warning(
                 "Exception during diff calculation",
                 extra=extra_with_evt_code(EVT_CODE_DIFF_CALC_EXC, entry_handling_extra),
@@ -382,7 +380,7 @@ class USEntryCrawler:
 
         try:
             return entry_diff.short_str()
-        except Exception:  # noqa
+        except Exception:
             LOGGER.warning(
                 "Can not pretty stringify diff for entry: %s",
                 target_entry.uuid,

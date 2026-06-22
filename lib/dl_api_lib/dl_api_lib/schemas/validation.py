@@ -7,9 +7,13 @@ from dl_api_lib.schemas.dataset_base import (
     DatasetContentInternalSchema,
     OptionsMixin,
 )
-from dl_constants.enums import ComponentErrorLevel
+from dl_constants import ComponentErrorLevel
 from dl_core.marshmallow import ErrorCodeField
 from dl_model_tools.schema.base import BaseSchema
+
+
+class DatasetValidationQuerySchema(BaseSchema):
+    rev_id = ma_fields.String()
 
 
 class DatasetValidationSchema(BaseSchema):
@@ -41,6 +45,9 @@ class DatasetValidationResponseSchema(OptionsMixin):
     message = ma_fields.String()
     code = ma_fields.String()
     dataset_errors = ma_fields.List(ma_fields.String())  # TODO: Remove
+    rev_id = ma_fields.String(data_key="revId", allow_none=True, dump_default=None, load_default=None)
+    saved_id = ma_fields.String(data_key="savedId", allow_none=True, dump_default=None, load_default=None)
+    published_id = ma_fields.String(data_key="publishedId", allow_none=True, dump_default=None, load_default=None)
 
 
 class FieldValidationSchema(BaseSchema):

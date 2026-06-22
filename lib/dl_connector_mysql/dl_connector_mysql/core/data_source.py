@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import ClassVar
 
-from dl_constants.enums import (
+from dl_constants import (
     DataSourceType,
     JoinType,
 )
@@ -18,7 +18,6 @@ from dl_connector_mysql.core.constants import (
     SOURCE_TYPE_MYSQL_SUBSELECT,
     SOURCE_TYPE_MYSQL_TABLE,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 

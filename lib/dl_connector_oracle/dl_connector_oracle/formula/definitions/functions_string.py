@@ -6,7 +6,6 @@ import dl_formula.definitions.functions_string as base
 
 from dl_connector_oracle.formula.constants import OracleDialect as D
 
-
 V = TranslationVariant.make
 
 
@@ -20,7 +19,7 @@ DEFINITIONS_STRING = [
         ]
     ),
     # concat
-    base.Concat1.for_dialect((D.ORACLE)),
+    base.Concat1.for_dialect(D.ORACLE),
     base.ConcatMultiStrConst.for_dialect(D.ORACLE),
     base.ConcatMultiStr(
         variants=[

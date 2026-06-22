@@ -14,7 +14,6 @@ from dl_i18n.localizer_base import (
     Translatable,
 )
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -41,9 +40,8 @@ class ConnectionInfoProvider:
         if not filepath:
             return None
         try:
-            with as_file(filepath) as file:
-                with open(file, "rb") as icon_file:
-                    return (base64.b64encode(icon_file.read())).decode("ascii")
+            with as_file(filepath) as file, open(file, "rb") as icon_file:
+                return (base64.b64encode(icon_file.read())).decode("ascii")
         except Exception:
-            LOGGER.info(f"Connector icon reading by path {str(filepath)} failed")
+            LOGGER.info("Connector icon reading by path %s failed", filepath)
             return None

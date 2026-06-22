@@ -13,7 +13,7 @@ from trino.auth import (
     BasicAuthentication,
     JWTAuthentication,
 )
-from trino.sqlalchemy import URL as trino_url
+from trino.sqlalchemy import URL
 from trino.sqlalchemy.compiler import TrinoSQLCompiler
 from trino.sqlalchemy.datatype import parse_sqltype
 from trino.sqlalchemy.dialect import TrinoDialect
@@ -42,7 +42,6 @@ from dl_connector_trino.core.error_transformer import (
     trino_error_transformer,
 )
 from dl_connector_trino.core.target_dto import TrinoConnTargetDTO
-
 
 TRINO_SYSTEM_SCHEMAS = ("information_schema",)
 
@@ -116,7 +115,7 @@ class CustomTrinoCompiler(TrinoSQLCompiler):
 
             if value.tzinfo is None:
                 return f"TIMESTAMP '{datetime_repr}'"
-            elif value.tzinfo == datetime.timezone.utc:
+            if value.tzinfo == datetime.UTC:
                 timezone_repr = "UTC"
             elif hasattr(value.tzinfo, "zone"):
                 # This is a pytz timezone object
@@ -147,7 +146,7 @@ class TrinoDefaultAdapter(BaseClassicAdapter[TrinoConnTargetDTO]):
 
     def get_conn_line(self, db_name: str | None = None, params: dict[str, Any] | None = None) -> str:
         params = params or {}
-        return trino_url(
+        return URL(
             host=self._target_dto.host,
             port=self._target_dto.port,
             user=self._target_dto.username,
@@ -168,15 +167,15 @@ class TrinoDefaultAdapter(BaseClassicAdapter[TrinoConnTargetDTO]):
             self._target_dto.connect_timeout,
             None,  # read timeout is handled by trino with query_max_run_time
         )
-        args: dict[str, Any] = super().get_connect_args() | dict(
-            http_scheme="https" if self._target_dto.ssl_enable else "http",
-            http_session=self._get_http_session(),
-            session_properties=dict(
-                query_max_run_time=f"{self._target_dto.total_timeout}s",
-            ),
-            legacy_primitive_types=True,
-            request_timeout=timeout,
-        )
+        args: dict[str, Any] = super().get_connect_args() | {
+            "http_scheme": "https" if self._target_dto.ssl_enable else "http",
+            "http_session": self._get_http_session(),
+            "session_properties": {
+                "query_max_run_time": f"{self._target_dto.total_timeout}s",
+            },
+            "legacy_primitive_types": True,
+            "request_timeout": timeout,
+        }
         if self._target_dto.auth_type is TrinoAuthType.none:
             pass
         elif self._target_dto.auth_type is TrinoAuthType.password:

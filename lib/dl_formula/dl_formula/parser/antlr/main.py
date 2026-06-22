@@ -17,7 +17,6 @@ from dl_formula.parser.base import (
 )
 from dl_formula.utils.caching import multi_cached_with_errors
 
-
 try:
     from dl_formula.parser.antlr.gen.DataLensLexer import DataLensLexer
     from dl_formula.parser.antlr.gen.DataLensParser import DataLensParser
@@ -50,15 +49,13 @@ def parse(formula: str) -> nodes.Formula:
                 "Failed to parse: unexpected end of formula",
                 position=pos_conv.idx_to_position(idx=raw_token.start),
             ) from err
-        else:
-            raise exc.ParseUnexpectedTokenError(
-                "Failed to parse formula: unexpected token",
-                position=pos_conv.idx_to_position(idx=raw_token.start),
-                token=raw_token.text,
-            ) from err
+        raise exc.ParseUnexpectedTokenError(
+            "Failed to parse formula: unexpected token",
+            position=pos_conv.idx_to_position(idx=raw_token.start),
+            token=raw_token.text,
+        ) from err
 
-    formula_obj = CustomDataLensVisitor(text=formula).visitParse(tree)
-    return formula_obj
+    return CustomDataLensVisitor(text=formula).visitParse(tree)
 
 
 class AntlrPyFormulaParser(FormulaParser):

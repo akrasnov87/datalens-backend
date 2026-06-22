@@ -1,11 +1,10 @@
-from typing import Collection
+from collections.abc import Collection
 
 from dl_formula.core.datatype import DataType
 from dl_formula_ref.texts import (
     ANY_TYPE,
     HUMAN_DATA_TYPES,
 )
-
 
 HIDDEN_TYPES = {
     DataType.DATETIME,
@@ -18,7 +17,7 @@ HIDDEN_TYPES = {
 
 
 def get_human_data_type_list(types: Collection[DataType]) -> list[str]:
-    types_set: set[DataType] = set(t.non_const_type for t in types)
+    types_set: set[DataType] = {t.non_const_type for t in types}
     result_types = set()
     # try to find known type combinations within the given list of types
     type_combos = [type_combo for type_combo in HUMAN_DATA_TYPES if isinstance(type_combo, tuple)]
@@ -33,8 +32,7 @@ def get_human_data_type_list(types: Collection[DataType]) -> list[str]:
 
     # for the rest use basic types
     result_types.update({HUMAN_DATA_TYPES[t] for t in types_set})
-    result = sorted(result_types) if result_types else [ANY_TYPE]
-    return result
+    return sorted(result_types) if result_types else [ANY_TYPE]
 
 
 def escape_cell(s: str) -> str:
@@ -75,5 +73,4 @@ def escape_cell(s: str) -> str:
 
         i = next_bt_ind + 1
 
-    escaped_s = escaped_s.replace("|", "&#124;")
-    return escaped_s
+    return escaped_s.replace("|", "&#124;")

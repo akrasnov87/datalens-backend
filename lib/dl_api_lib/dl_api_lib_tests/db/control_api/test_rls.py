@@ -10,7 +10,7 @@ from dl_api_lib.query.formalization.raw_specs import (
     RawSelectFieldSpec,
 )
 from dl_api_lib_tests.db.base import DefaultApiTestBase
-from dl_constants.enums import RLSSubjectType
+from dl_constants import RLSSubjectType
 from dl_rls.testing.testing_data import (
     RLS_CONFIG_CASES,
     config_to_comparable,
@@ -20,7 +20,7 @@ from dl_rls.testing.testing_data import (
 
 class TestRLS(DefaultApiTestBase):
     @staticmethod
-    def add_rls_to_dataset(control_api, dataset, rls_config, rls2_config=None):
+    def add_rls_to_dataset(control_api, dataset, rls_config, rls2_config=None) -> tuple:
         field_guid = dataset.result_schema[0].id
         # only one nonempty rls can be passed
         if rls2_config:
@@ -79,6 +79,7 @@ class TestRLS(DefaultApiTestBase):
         for item1, item2 in zip(
             sorted(ds.rls2[field_guid], key=lambda x: (x.allowed_value, x.subject.subject_id)),
             sorted(config_v2, key=lambda x: (x.allowed_value, x.subject.subject_id)),
+            strict=True,
         ):
             assert item1.subject == item2.subject
             assert item1.pattern_type == item2.pattern_type
@@ -128,7 +129,10 @@ class TestRLS(DefaultApiTestBase):
         control_api.save_dataset(saved_dataset, fail_ok=False)
 
         ds = sync_us_manager.get_by_id(saved_dataset.id)
-        sync_us_manager.load_dependencies(ds)
+        sync_us_manager.load_dataset_dependencies(
+            ds,
+            respect_sources=True,
+        )
 
         rci = RequestContextInfo(user_id="user1")
         raw_query_spec_union = RawQuerySpecUnion(

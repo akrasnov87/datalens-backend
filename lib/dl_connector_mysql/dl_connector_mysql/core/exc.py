@@ -4,7 +4,7 @@ from typing import Any
 from dl_core import exc as exc
 
 
-class MysqlSourceDoesNotExistError(exc.SourceDoesNotExist):
+class MysqlSourceDoesNotExistError(exc.SourceDoesNotExistError):
     ERR_RE = re.compile(r".*Table\s'(?P<table>.*)'\sdoesn't exist.*")
 
     def __init__(
@@ -17,8 +17,8 @@ class MysqlSourceDoesNotExistError(exc.SourceDoesNotExist):
         orig: Exception | None = None,
         debug_info: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
-    ):
-        super(MysqlSourceDoesNotExistError, self).__init__(
+    ) -> None:
+        super().__init__(
             db_message=db_message,
             query=query,
             inspector_query=inspector_query,
@@ -31,6 +31,5 @@ class MysqlSourceDoesNotExistError(exc.SourceDoesNotExist):
 
         if self.orig and self.orig.args and len(self.orig.args) >= 2:
             message = self.orig.args[1]
-            if message and (match := self.ERR_RE.match(message)):
-                if table := match.group("table"):
-                    self.params["table_definition"] = table
+            if message and (match := self.ERR_RE.match(message)) and (table := match.group("table")):
+                self.params["table_definition"] = table

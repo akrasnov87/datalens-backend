@@ -1,10 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import (
     TYPE_CHECKING,
-    Iterable,
     NamedTuple,
-    Optional,
 )
 
 import attr
@@ -13,7 +12,6 @@ from dl_formula_ref.primitives import (
     NoteLevel,
     NoteType,
 )
-
 
 if TYPE_CHECKING:
     from dl_formula.core.dialect import DialectCombo
@@ -62,7 +60,7 @@ class RenderedFunc(NamedTuple):
     examples: list[str]
     signature_coll: FunctionSignatureCollection
     locale: str
-    crosslink_note: Optional[RenderedNote]
+    crosslink_note: RenderedNote | None
 
     @property
     def const_args(self) -> list[LocalizedFuncArg]:

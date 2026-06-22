@@ -4,7 +4,6 @@ import itertools
 from typing import (
     TYPE_CHECKING,
     ClassVar,
-    Optional,
 )
 
 import attr
@@ -29,12 +28,11 @@ from dl_api_lib.request_model.normalization.drm_normalizer_base import (
     RequestModelNormalizerBase,
     RequestPartSpecNormalizerBase,
 )
-from dl_constants.enums import (
+from dl_constants import (
     FieldRole,
     PivotRole,
 )
 import dl_query_processing.exc
-
 
 if TYPE_CHECKING:
     from dl_api_lib.query.formalization.raw_pivot_specs import RawPivotLegendItem
@@ -66,7 +64,7 @@ class PivotTotalsNormalizerHelper:
             return RawRoleSpec(role=FieldRole.total)
         return RawRowRoleSpec(role=FieldRole.row)
 
-    def resolve_main_legend_item(self, pivot_item: RawPivotLegendItem) -> Optional[RawSelectFieldSpec]:
+    def resolve_main_legend_item(self, pivot_item: RawPivotLegendItem) -> RawSelectFieldSpec | None:
         # TODO: Some validation would be nice here
         for legend_item_id in pivot_item.legend_item_ids:
             item = self._get_legend_item_by_id(legend_item_id=legend_item_id)
@@ -80,7 +78,7 @@ class PivotTotalsNormalizerHelper:
         item_type: int,
         orig_pivot_item: RawPivotLegendItem,
         block_id: int,
-    ) -> tuple[Optional[RawSelectFieldSpec], RawPivotLegendItem]:
+    ) -> tuple[RawSelectFieldSpec | None, RawPivotLegendItem]:
         """
         Generate raw legend item and an updated version of the given pivot item.
         """
@@ -98,17 +96,22 @@ class PivotTotalsNormalizerHelper:
             legend_item_id=legend_item_id,
             block_id=block_id,
         )
-        updated_pivot_item = orig_pivot_item.clone(legend_item_ids=orig_pivot_item.legend_item_ids + [legend_item_id])
+        updated_pivot_item = orig_pivot_item.clone(legend_item_ids=[*orig_pivot_item.legend_item_ids, legend_item_id])
         return new_item, updated_pivot_item
 
     def gen_single_dir_totals(
         self,
-        this_level: Optional[int],
-        other_level: Optional[int],
+        this_level: int | None,
+        other_level: int | None,
         this_dir_dimensions: list[RawPivotLegendItem],
         other_dir_dimensions: list[RawPivotLegendItem],
         measures: list[RawPivotLegendItem],
-    ) -> tuple[list[RawSelectFieldSpec], list[RawPivotLegendItem], list[RawPivotLegendItem], list[RawPivotLegendItem],]:
+    ) -> tuple[
+        list[RawSelectFieldSpec],
+        list[RawPivotLegendItem],
+        list[RawPivotLegendItem],
+        list[RawPivotLegendItem],
+    ]:
         """
         Generate new items for the legend (raw_query_spec_union)
         and pivot spec.
@@ -171,7 +174,7 @@ class PivotSpecNormalizer(RequestPartSpecNormalizerBase[RawPivotSpec]):
 
     def _normalize_simple_totals_from_flag(self, pivot_spec: RawPivotSpec) -> RawPivotSpec:
         if pivot_spec.with_totals:
-            pivot_totals: Optional[RawPivotTotalsSpec]
+            pivot_totals: RawPivotTotalsSpec | None
             if pivot_spec.totals is None:
                 pivot_totals = RawPivotTotalsSpec(
                     rows=[RawPivotTotalsItemSpec(level=0)],

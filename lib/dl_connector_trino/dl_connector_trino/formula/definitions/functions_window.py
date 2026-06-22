@@ -5,12 +5,11 @@ import dl_formula.definitions.functions_window as base
 
 from dl_connector_trino.formula.constants import TrinoDialect as D
 
-
 V = TranslationVariant.make
 
 
 class WinLagTrinoBase(base.WinLagBase):
-    variants = [
+    variants = (
         V(
             D.TRINO,
             translation=lambda x, offset=None, default=None, *_: base.lag_implementation(
@@ -20,7 +19,7 @@ class WinLagTrinoBase(base.WinLagBase):
             ),
             as_winfunc=True,
         ),
-    ]
+    )
 
 
 class WinLag1Trino(WinLagTrinoBase):

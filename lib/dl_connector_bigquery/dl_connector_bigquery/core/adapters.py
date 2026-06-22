@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Optional
 
+from frozendict import frozendict
 from google.api_core.exceptions import GoogleAPIError
 from google.auth.credentials import Credentials as BQCredentials
 from google.cloud.bigquery import Client as BQClient
@@ -34,8 +34,8 @@ class BigQueryConnLineConstructor(BaseConnLineConstructor[BigQueryConnTargetDTO]
     def _get_dsn_params(
         self,
         safe_db_symbols: tuple[str, ...] = (),
-        db_name: Optional[str] = None,
-        standard_auth: Optional[bool] = True,
+        db_name: str | None = None,
+        standard_auth: bool | None = True,
     ) -> dict:
         return {
             "dialect": self._dialect_name,
@@ -51,22 +51,24 @@ class BigQueryDefaultAdapter(BaseClassicAdapter[BigQueryConnTargetDTO]):
     conn_line_constructor_type = BigQueryConnLineConstructor
     _error_transformer = big_query_db_error_transformer
 
-    _type_code_to_sa = {
-        "STRING": bq_types.STRING,
-        "DATE": bq_types.DATE,
-        "DATETIME": bq_types.DATETIME,
-        "BOOL": bq_types.BOOL,
-        "BOOLEAN": bq_types.BOOLEAN,
-        "INTEGER": bq_types.INTEGER,
-        "INT64": bq_types.INT64,
-        "FLOAT": bq_types.FLOAT,
-        "FLOAT64": bq_types.FLOAT64,
-        "NUMERIC": bq_types.NUMERIC,
-        "BIGNUMERIC": bq_types.BIGNUMERIC,
-        # TODO: ARRAY
-    }
+    _type_code_to_sa = frozendict(
+        {
+            "STRING": bq_types.STRING,
+            "DATE": bq_types.DATE,
+            "DATETIME": bq_types.DATETIME,
+            "BOOL": bq_types.BOOL,
+            "BOOLEAN": bq_types.BOOLEAN,
+            "INTEGER": bq_types.INTEGER,
+            "INT64": bq_types.INT64,
+            "FLOAT": bq_types.FLOAT,
+            "FLOAT64": bq_types.FLOAT64,
+            "NUMERIC": bq_types.NUMERIC,
+            "BIGNUMERIC": bq_types.BIGNUMERIC,
+            # TODO: ARRAY
+        }
+    )
 
-    def get_default_db_name(self) -> Optional[str]:
+    def get_default_db_name(self) -> str | None:
         return self._target_dto.project_id
 
     def get_engine_kwargs(self) -> dict:
@@ -80,12 +82,10 @@ class BigQueryDefaultAdapter(BaseClassicAdapter[BigQueryConnTargetDTO]):
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             LOGGER.info("Got malformed bigquery credentials", exc_info=True)
             raise exc.MalformedCredentialsError() from e
-        credentials = g_service_account.Credentials.from_service_account_info(credentials_info)
-        return credentials
+        return g_service_account.Credentials.from_service_account_info(credentials_info)
 
     def get_bq_client(self) -> BQClient:
-        client = BQClient(credentials=self._get_bq_credentials())
-        return client
+        return BQClient(credentials=self._get_bq_credentials())
 
     def _get_tables(self, schema_ident: SchemaIdent, page_ident: PageIdent | None = None) -> list[TableIdent]:
         client = self.get_bq_client()
@@ -101,15 +101,7 @@ class BigQueryDefaultAdapter(BaseClassicAdapter[BigQueryConnTargetDTO]):
                     sa.literal_column("dataset_id"),
                     sa.literal_column("table_id"),
                 ]
-            ).select_from(
-                sa.text(
-                    quoter(
-                        "{project_id}.{dataset_id}.__TABLES__".format(
-                            project_id=project_id, dataset_id=dataset_info.dataset_id
-                        )
-                    )
-                )
-            )
+            ).select_from(sa.text(quoter(f"{project_id}.{dataset_info.dataset_id}.__TABLES__")))
             for dataset_info in bq_datasets
         ]
         query = DBAdapterQuery(query=sa.union_all(*subqueries))
@@ -123,5 +115,5 @@ class BigQueryDefaultAdapter(BaseClassicAdapter[BigQueryConnTargetDTO]):
             for _project_id, dataset_id, table_name in result.get_all()
         ]
 
-    def _get_db_version(self, db_ident: DBIdent) -> Optional[str]:
+    def _get_db_version(self, db_ident: DBIdent) -> str | None:
         return None

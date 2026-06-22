@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 import contextlib
 from functools import partial
 import logging
 from typing import (
     Any,
-    AsyncIterator,
-    Optional,
     TypeVar,
 )
 
@@ -59,7 +58,6 @@ from dl_connector_mysql.core.error_transformer import async_mysql_db_error_trans
 from dl_connector_mysql.core.target_dto import MySQLConnTargetDTO
 from dl_connector_mysql.core.utils import compile_mysql_query
 
-
 LOGGER = logging.getLogger(__name__)
 
 _DBA_ASYNC_MYSQL_TV = TypeVar("_DBA_ASYNC_MYSQL_TV", bound="AsyncMySQLAdapter")
@@ -93,10 +91,9 @@ class AsyncMySQLAdapter(
     @property
     def _dialect(self) -> sa.engine.default.DefaultDialect:
         enforce_collate = self._get_enforce_collate(self._target_dto)
-        dialect = DLMYSQLDialect(paramstyle="pyformat", enforce_collate=enforce_collate)
-        return dialect
+        return DLMYSQLDialect(paramstyle="pyformat", enforce_collate=enforce_collate)
 
-    def _cursor_column_to_nullable(self, cursor_col: tuple[Any, ...]) -> Optional[bool]:
+    def _cursor_column_to_nullable(self, cursor_col: tuple[Any, ...]) -> bool | None:
         # See https://aiomysql.readthedocs.io/en/latest/cursors.html#Cursor.description
         # Although there are no known `nullable=False` cases for subselects in MySQL,
         # let's use here `null_ok` field from cursor rather than hardcoded value
@@ -111,10 +108,10 @@ class AsyncMySQLAdapter(
     ) -> _DBA_ASYNC_MYSQL_TV:
         return cls(target_dto=target_dto, req_ctx_info=req_ctx_info, default_chunk_size=default_chunk_size)
 
-    def get_default_db_name(self) -> Optional[str]:
+    def get_default_db_name(self) -> str | None:
         return self._target_dto.db_name
 
-    def get_target_host(self) -> Optional[str]:
+    def get_target_host(self) -> str | None:
         return self._target_dto.host
 
     async def _create_engine(
@@ -143,11 +140,10 @@ class AsyncMySQLAdapter(
                 LOGGER.info("Using SSL for async MySQL connection")
                 create_engine_using_ssl = partial(self._create_engine, force_ssl=True)
                 return await self._engines.get(db_name, generator=create_engine_using_ssl)
-            else:
-                raise
+            raise
 
     @contextlib.asynccontextmanager
-    async def _get_connection(self, db_name_from_query: Optional[str]) -> AsyncIterator[aiomysql.sa.SAConnection]:
+    async def _get_connection(self, db_name_from_query: str | None) -> AsyncIterator[aiomysql.sa.SAConnection]:
         db_name = self.get_db_name_for_query(db_name_from_query)
         engine = await self._get_engine(db_name)
 
@@ -177,6 +173,18 @@ class AsyncMySQLAdapter(
         with self.handle_execution_error(debug_query=debug_query, inspector_query=inspector_query):
             async with self._get_connection(db_adapter_query.db_name) as conn:
                 result = await conn.execute(compiled_query, compiled_query_parameters)
+
+                # Modifying / no-result-set statements (INSERT/UPDATE/DELETE/DDL/SET) make aiomysql
+                # auto-close the ResultProxy and drop its cursor (`result.cursor` becomes None).
+                if result.cursor is None:
+                    if db_adapter_query.allow_write:
+                        # aiomysql runs with autocommit disabled, so an explicit COMMIT is required for
+                        # the write to persist; otherwise it is rolled back when the connection is
+                        # released back to the pool.
+                        await conn.execute("COMMIT")
+                    yield ExecutionStepCursorInfo(cursor_info=self._make_empty_cursor_info(), raw_cursor_description=[])
+                    return
+
                 cursor_info = ExecutionStepCursorInfo(
                     cursor_info=self._make_cursor_info(result.cursor),
                     raw_cursor_description=list(result.cursor.description),

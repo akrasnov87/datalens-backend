@@ -4,7 +4,6 @@ from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
     Any,
-    Optional,
 )
 
 import sqlalchemy as sa
@@ -20,7 +19,6 @@ from dl_formula.connectors.base.literal import (
 from dl_formula.core.dialect import DialectCombo
 from dl_formula.core.nodes import BaseLiteral
 from dl_formula.utils.datetime import make_datetime_value
-
 
 if TYPE_CHECKING:
     from dl_formula.translation.context import TranslationCtx
@@ -48,7 +46,7 @@ def register_literalizer(dialect: DialectCombo, literalizer_cls: type[Literalize
     _LITERALIZER_REGISTRY[dialect] = literalizer_cls()
 
 
-def literal(value: Any, type_: Optional[TypeEngine] = None, d: Optional[DialectCombo] = None) -> Literal:
+def literal(value: Any, type_: TypeEngine | None = None, d: DialectCombo | None = None) -> Literal:
     """A fine-tuned version of ``sqlalchemy.literal``"""
     dialect = d
     if type_ is None and dialect is not None:
@@ -58,7 +56,7 @@ def literal(value: Any, type_: Optional[TypeEngine] = None, d: Optional[DialectC
     return sa.literal(value, type_)
 
 
-def un_literal(sa_obj: Optional[Literal], value_ctx: Optional[TranslationCtx] = None):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+def un_literal(sa_obj: Literal | None, value_ctx: TranslationCtx | None = None):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
     """Given an SA object produced by `literal` (or compatible), return the original value"""
 
     assert sa_obj is not None
@@ -82,11 +80,10 @@ def un_literal(sa_obj: Optional[Literal], value_ctx: Optional[TranslationCtx] = 
     if isinstance(sa_obj, sa.sql.functions.Function):
         clauses = sa_obj.clauses.clauses
         if all(isinstance(clause, (sa.sql.elements.BindParameter, Null)) for clause in clauses):
-            if sa_obj.name == "toDateTime":
-                # CH datetime un-wrap
-                if len(clauses) == 2:
-                    dt_str = un_literal(clauses[0])
-                    return make_datetime_value(dt_str)
+            # CH datetime un-wrap
+            if sa_obj.name == "toDateTime" and len(clauses) == 2:
+                dt_str = un_literal(clauses[0])
+                return make_datetime_value(dt_str)
             if sa_obj.name == "array":
                 return [un_literal(clause) for clause in clauses]
 

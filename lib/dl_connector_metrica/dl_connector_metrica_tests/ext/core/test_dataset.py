@@ -1,12 +1,9 @@
-from typing import (
-    AbstractSet,
-    Optional,
-)
+from collections.abc import Set
 
 import pytest
 import sqlalchemy as sa
 
-from dl_constants.enums import (
+from dl_constants import (
     DataSourceRole,
     DataSourceType,
     JoinType,
@@ -58,11 +55,28 @@ class TestMetricaDataset(BaseMetricaTestClass, DefaultDatasetTestSuite[MetrikaAp
         },
     )
 
-    @pytest.fixture(scope="function")
-    def dsrc_params(self) -> dict:
-        return dict(
-            db_name=MetrikaApiCounterSource.hits.name,
+    @pytest.mark.xfail(reason="BI-7353", strict=False)
+    def test_simple_select(
+        self,
+        dataset_wrapper: DatasetTestWrapper,
+        saved_dataset: Dataset,
+        conn_async_service_registry: ServicesRegistry,
+        sync_us_manager: SyncUSManager,
+    ) -> None:
+        self._check_simple_select(
+            dataset_wrapper=dataset_wrapper,
+            saved_dataset=saved_dataset,
+            async_service_registry=conn_async_service_registry,
+            sync_us_manager=sync_us_manager,
+            limit=5,
+            result_cnt=5,
         )
+
+    @pytest.fixture
+    def dsrc_params(self) -> dict:
+        return {
+            "db_name": MetrikaApiCounterSource.hits.name,
+        }
 
     def _check_simple_select(
         self,
@@ -71,9 +85,9 @@ class TestMetricaDataset(BaseMetricaTestClass, DefaultDatasetTestSuite[MetrikaAp
         async_service_registry: ServicesRegistry,
         sync_us_manager: SyncUSManager,
         result_cnt: int,
-        limit: Optional[int] = None,
+        limit: int | None = None,
         from_subquery: bool = False,
-        subquery_limit: Optional[int] = None,
+        subquery_limit: int | None = None,
     ) -> None:
         assert limit is not None or (from_subquery and subquery_limit is not None)
         avatar_id = dataset_wrapper.get_root_avatar_strict().id
@@ -237,10 +251,10 @@ class TestMetricaDataset(BaseMetricaTestClass, DefaultDatasetTestSuite[MetrikaAp
         finally:
             sync_us_manager.delete(testing_conn)
 
-    def _check_supported_join_types(self, supp_join_types: AbstractSet[JoinType]) -> None:
+    def _check_supported_join_types(self, supp_join_types: Set[JoinType]) -> None:
         assert not supp_join_types
 
-    def _check_compatible_source_types(self, compat_source_types: AbstractSet[DataSourceType]) -> None:
+    def _check_compatible_source_types(self, compat_source_types: Set[DataSourceType]) -> None:
         assert not compat_source_types
 
     def _allow_adding_sources(self, dataset: Dataset) -> bool:
@@ -259,20 +273,20 @@ class TestAppMetricaDataset(BaseAppMetricaTestClass, DefaultDatasetTestSuite[App
         },
     )
 
-    def _check_supported_join_types(self, supp_join_types: AbstractSet[JoinType]) -> None:
+    def _check_supported_join_types(self, supp_join_types: Set[JoinType]) -> None:
         assert not supp_join_types
 
-    def _check_compatible_source_types(self, compat_source_types: AbstractSet[DataSourceType]) -> None:
+    def _check_compatible_source_types(self, compat_source_types: Set[DataSourceType]) -> None:
         assert not compat_source_types
 
     def _allow_adding_sources(self, dataset: Dataset) -> bool:
         return False
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def dsrc_params(self) -> dict:
-        return dict(
-            db_name=AppMetricaFieldsNamespaces.installs.name,
-        )
+        return {
+            "db_name": AppMetricaFieldsNamespaces.installs.name,
+        }
 
     def _check_simple_select(
         self,
@@ -281,9 +295,9 @@ class TestAppMetricaDataset(BaseAppMetricaTestClass, DefaultDatasetTestSuite[App
         async_service_registry: ServicesRegistry,
         sync_us_manager: SyncUSManager,
         result_cnt: int,
-        limit: Optional[int] = None,
+        limit: int | None = None,
         from_subquery: bool = False,
-        subquery_limit: Optional[int] = None,
+        subquery_limit: int | None = None,
     ) -> None:
         assert limit is not None or (from_subquery and subquery_limit is not None)
         avatar_id = dataset_wrapper.get_root_avatar_strict().id

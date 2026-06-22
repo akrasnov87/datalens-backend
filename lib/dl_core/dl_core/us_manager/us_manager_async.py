@@ -1,16 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterable,
+    Iterable,
+)
 from contextlib import asynccontextmanager
 import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncGenerator,
-    AsyncIterable,
-    Iterable,
-    Optional,
     TypeVar,
-    Union,
     overload,
 )
 
@@ -19,17 +19,22 @@ import typing_extensions
 from dl_api_commons.base_models import RequestContextInfo
 from dl_app_tools.profiling_base import generic_profiler_async
 from dl_configs.crypto_keys import CryptoKeysConfig
+from dl_constants import (
+    ConnectionType,
+    DataSourceType,
+    USEntryBranch,
+    USEntryMode,
+)
 from dl_core import exc
 from dl_core.base_models import (
     ConnectionRef,
     DefaultConnectionRef,
 )
-from dl_core.enums import (
-    USEntryBranch,
-    USEntryMode,
-)
+from dl_core.components.accessor import DatasetComponentAccessor
+from dl_core.data_source.type_mapping import get_connection_type_for_source_type
 from dl_core.united_storage_client import USAuthContextBase
 from dl_core.united_storage_client_aio import UStorageClientAIO
+from dl_core.us_connection import get_connection_class
 from dl_core.us_connection_base import ConnectionBase
 from dl_core.us_dataset import Dataset
 from dl_core.us_entry import USEntry
@@ -41,7 +46,6 @@ from dl_core.us_manager.schema_migration.factory_base import EntrySchemaMigratio
 from dl_core.us_manager.us_manager import USManagerBase
 import dl_retrier
 from dl_utils.aio import shield_wait_for_complete
-
 
 if TYPE_CHECKING:
     from dl_core.lifecycle.factory_base import EntryLifecycleManagerFactoryBase
@@ -65,11 +69,11 @@ class AsyncUSManager(USManagerBase):
         bi_context: RequestContextInfo,
         services_registry: ServicesRegistry,
         retry_policy_factory: dl_retrier.BaseRetryPolicyFactory,
-        crypto_keys_config: Optional[CryptoKeysConfig] = None,
-        us_api_prefix: Optional[str] = None,
-        lifecycle_manager_factory: Optional[EntryLifecycleManagerFactoryBase] = None,
-        schema_migration_factory: Optional[EntrySchemaMigrationFactoryBase] = None,
-    ):
+        crypto_keys_config: CryptoKeysConfig | None = None,
+        us_api_prefix: str | None = None,
+        lifecycle_manager_factory: EntryLifecycleManagerFactoryBase | None = None,
+        schema_migration_factory: EntrySchemaMigrationFactoryBase | None = None,
+    ) -> None:
         self._us_client = UStorageClientAIO(
             host=us_base_url,
             prefix=us_api_prefix,
@@ -123,7 +127,7 @@ class AsyncUSManager(USManagerBase):
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         try:
             await self.close()
-        except Exception:  # noqa
+        except Exception:
             LOGGER.warning("Error during closing AsyncUSManager", exc_info=True)
 
     @overload
@@ -131,8 +135,8 @@ class AsyncUSManager(USManagerBase):
         self,
         entry_id: str,
         expected_type: None = None,
-        params: Optional[dict[str, str]] = None,
-        context_name: Optional[str] = None,
+        params: dict[str, str] | None = None,
+        context_name: str | None = None,
         branch: USEntryBranch = USEntryBranch.published,
     ) -> USEntry:
         pass
@@ -141,9 +145,9 @@ class AsyncUSManager(USManagerBase):
     async def get_by_id(
         self,
         entry_id: str,
-        expected_type: Optional[type[_ENTRY_TV]] = None,
-        params: Optional[dict[str, str]] = None,
-        context_name: Optional[str] = None,
+        expected_type: type[_ENTRY_TV] | None = None,
+        params: dict[str, str] | None = None,
+        context_name: str | None = None,
         branch: USEntryBranch = USEntryBranch.published,
     ) -> _ENTRY_TV:
         pass
@@ -152,9 +156,9 @@ class AsyncUSManager(USManagerBase):
     async def get_by_id(
         self,
         entry_id: str,
-        expected_type: Optional[type[USEntry]] = None,
-        params: Optional[dict[str, str]] = None,
-        context_name: Optional[str] = None,
+        expected_type: type[USEntry] | None = None,
+        params: dict[str, str] | None = None,
+        context_name: str | None = None,
         branch: USEntryBranch = USEntryBranch.published,
     ) -> USEntry:
         with self._enrich_us_exception(
@@ -177,8 +181,8 @@ class AsyncUSManager(USManagerBase):
     async def get_by_id_raw(
         self,
         entry_id: str,
-        expected_type: Optional[type[USEntry]] = None,
-        params: Optional[dict[str, str]] = None,
+        expected_type: type[USEntry] | None = None,
+        params: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Get raw `us_resp` from response without deserialization"""
 
@@ -186,15 +190,13 @@ class AsyncUSManager(USManagerBase):
             entry_id=entry_id,
             entry_scope=expected_type.scope if expected_type is not None else None,
         ):
-            us_resp = await self.get_migrated_entry(entry_id, params=params)
-
-        return us_resp
+            return await self.get_migrated_entry(entry_id, params=params)
 
     @generic_profiler_async("us-deserialize-entity-raw")  # type: ignore  # TODO: fix
     async def deserialize_us_resp(
         self,
         us_resp: dict[str, Any],
-        expected_type: Optional[type[USEntry]] = None,
+        expected_type: type[USEntry] | None = None,
     ) -> USEntry:
         """Used on result of `get_by_id_raw()` call for proper deserialization flow"""
 
@@ -207,8 +209,8 @@ class AsyncUSManager(USManagerBase):
     async def get_migrated_entry(
         self,
         entry_id: str,
-        params: Optional[dict[str, str]] = None,
-        context_name: Optional[str] = None,
+        params: dict[str, str] | None = None,
+        context_name: str | None = None,
         branch: USEntryBranch = USEntryBranch.published,
     ) -> dict[str, Any]:
         us_resp = await self._us_client.get_entry(
@@ -270,7 +272,8 @@ class AsyncUSManager(USManagerBase):
         save_params = self._get_entry_save_params(entry)
         us_scope = save_params.pop("scope")
         us_type = save_params.pop("type")
-        assert "data" in save_params and "unversioned_data" in save_params
+        assert "data" in save_params
+        assert "unversioned_data" in save_params
 
         if not entry.stored_in_db:
             entry_loc = entry.entry_key
@@ -358,9 +361,9 @@ class AsyncUSManager(USManagerBase):
         wait_timeout_sec: int = 30,
         duration_sec: int = 300,
         force: bool = False,
-        context_name: Optional[str] = None,
+        context_name: str | None = None,
     ) -> AsyncGenerator[_ENTRY_TV, None]:
-        entry: Optional[_ENTRY_TV] = None
+        entry: _ENTRY_TV | None = None
         lock_token = await self._us_client.acquire_lock(
             entry_id,
             wait_timeout=wait_timeout_sec,
@@ -383,24 +386,74 @@ class AsyncUSManager(USManagerBase):
             if entry is not None and hasattr(entry, "_lock"):
                 entry._lock = None
 
-    async def ensure_entry_preloaded(self, conn_ref: ConnectionRef) -> None:
-        await self._ensure_conn_in_cache(None, conn_ref)
+    async def ensure_source_preloaded(
+        self,
+        conn_ref: ConnectionRef,
+        referrer: USEntry | None,
+        source_type: DataSourceType | str | None = None,
+    ) -> ConnectionBase | None:
+        if isinstance(source_type, str):
+            if not DataSourceType.is_declared(source_type):
+                LOGGER.warning("Source type %s is not defined", source_type)
+                source_type = None
+            else:
+                source_type = DataSourceType(source_type)
+
+        connection_type = get_connection_type_for_source_type(source_type)
+
+        if source_type is not None and connection_type is None:
+            LOGGER.warning("Failed get connection_type for source_type %s", source_type)
+
+        return await self.ensure_connection_preloaded(
+            conn_ref=conn_ref,
+            referrer=referrer,
+            connection_type=connection_type,
+        )
+
+    async def ensure_connection_preloaded(
+        self,
+        conn_ref: ConnectionRef,
+        referrer: USEntry | None,
+        connection_type: ConnectionType | None = None,
+    ) -> ConnectionBase | None:
+        return await self._ensure_conn_in_cache(
+            referrer=referrer,
+            conn_ref=conn_ref,
+            connection_type=connection_type,
+        )
 
     async def _ensure_conn_in_cache(
-        self, referrer: Optional[USEntry], conn_ref: ConnectionRef
-    ) -> Optional[ConnectionBase]:
-        conn: Union[USEntry, BrokenUSLink]
+        self,
+        conn_ref: ConnectionRef,
+        referrer: USEntry | None,
+        connection_type: ConnectionType | None = None,
+    ) -> ConnectionBase | None:
+        conn: USEntry | BrokenUSLink
         if conn_ref in self._loaded_entries:
             conn = self._loaded_entries[conn_ref]
         else:
+            assert isinstance(conn_ref, DefaultConnectionRef)
+
+            # Try to construct a virtual connection without going to US
+            if connection_type is not None:
+                connection_cls = get_connection_class(connection_type)
+
+                if connection_cls.is_virtual:
+                    conn = await connection_cls.async_create_virtual(
+                        connection_id=conn_ref.conn_id,
+                        us_manager=self,
+                    )
+
+                    self._loaded_entries[conn_ref] = conn
+                    return conn
+
             try:
-                assert isinstance(conn_ref, DefaultConnectionRef)
                 conn = await self.get_by_id(
                     conn_ref.conn_id,
                     ConnectionBase,
                     context_name="connection",
                 )
-            except (exc.USObjectNotFoundException, exc.USAccessDeniedException) as err:
+            except (exc.USObjectNotFoundError, exc.USAccessDeniedError) as err:
                 r_scope = referrer.scope if referrer is not None else "unk"
                 r_uuid = referrer.uuid if referrer is not None else "unk"
                 LOGGER.info(
@@ -411,8 +464,8 @@ class AsyncUSManager(USManagerBase):
                     err.message,
                 )
                 err_kind = {
-                    exc.USObjectNotFoundException: BrokenUSLinkErrorKind.NOT_FOUND,
-                    exc.USAccessDeniedException: BrokenUSLinkErrorKind.ACCESS_DENIED,
+                    exc.USObjectNotFoundError: BrokenUSLinkErrorKind.NOT_FOUND,
+                    exc.USAccessDeniedError: BrokenUSLinkErrorKind.ACCESS_DENIED,
                 }.get(type(err), BrokenUSLinkErrorKind.OTHER)
                 conn = BrokenUSLink(reference=conn_ref, error_kind=err_kind)
             self._loaded_entries[conn_ref] = conn
@@ -422,45 +475,74 @@ class AsyncUSManager(USManagerBase):
                 assert referrer.uuid is not None
                 conn.add_referrer_id(referrer.uuid)
             return None
-        elif isinstance(conn, ConnectionBase):
+        if isinstance(conn, ConnectionBase):
             return conn
-        else:
-            raise ValueError("Entry was in cache but it is not a connection: %s", type(conn))
+        raise ValueError("Entry was in cache but it is not a connection: %s", type(conn))
 
     # TODO FIX: Think about cache control
     @generic_profiler_async("us-load-dependencies")  # type: ignore  # TODO: fix
-    async def load_dependencies(self, entry: USEntry) -> None:
-        if not isinstance(entry, Dataset):
-            raise NotImplementedError("Links loading is supported only for dataset")
+    async def load_dataset_dependencies(
+        self,
+        dataset: Dataset,
+        respect_sources: bool = False,
+    ) -> None:
+        """
+        Load Dataset dependencies from US.
 
-        processed_refs: set[ConnectionRef] = set()
+        When ``respect_sources`` is ``False``, this method loads dependencies using ``USEntry.links`` dict of ``key-id``
+        pairs without guessing types.
+
+        When ``respect_sources`` is ``True``, this method collects ids and types from dataset sources and then adds the
+        rest from ``USEntry.links`` without types. This allows loading connections with type enforcing from sources.
+        """
+
+        # Collect refs from dataset sources
+        if respect_sources:
+            ds_accessor = DatasetComponentAccessor(dataset=dataset)
+            sources_to_load = ds_accessor.collect_data_source_types()
+        else:
+            sources_to_load = {}
+
         # TODO FIX: Find a way to track direct source of link
-        refs_to_load_queue = self._get_entry_links(
-            entry,
-        )
+        # Collect refs from USEntry links
+        for entry_ref in self._get_entry_links(dataset):
 
-        while refs_to_load_queue:
-            ref = refs_to_load_queue.pop()
-            processed_refs.add(ref)
+            # Dataset's sources have priority over USEntry links
+            if entry_ref not in sources_to_load:
+                sources_to_load[entry_ref] = None
+
+        processed_sources: dict[ConnectionRef, DataSourceType | None] = {}
+
+        while sources_to_load:
+            ref, source_type = sources_to_load.popitem()
+            processed_sources[ref] = source_type
+
             try:
-                resolved_ref = await self._ensure_conn_in_cache(referrer=entry, conn_ref=ref)
+                resolved_ref = await self.ensure_source_preloaded(
+                    conn_ref=ref,
+                    referrer=dataset,
+                    source_type=source_type,
+                )
             except Exception:
-                LOGGER.exception("Can not load linked US entry %s for entry %s", ref, entry.uuid)
+                LOGGER.exception("Can not load linked US entry %s for entry %s", ref, dataset.uuid)
                 raise
 
-            refs_to_load_queue.update(
-                self._get_entry_links(
-                    resolved_ref,
-                )
-                - processed_refs
-            )
+            # Preload entries for loaded entry
+            new_links = self._get_entry_links(resolved_ref)
+
+            # Add new entries to queue
+            for connection_ref in new_links:
+
+                # Ignore already processed and already queued
+                if (connection_ref not in processed_sources) and (connection_ref not in sources_to_load):
+                    sources_to_load[connection_ref] = None
 
     def get_raw_collection(
         self,
         entry_scope: str,
-        entry_type: Optional[str] = None,
+        entry_type: str | None = None,
         all_tenants: bool = False,
-        creation_time: Optional[dict[str, Union[str, int, None]]] = None,
+        creation_time: dict[str, str | int | None] | None = None,
     ) -> AsyncIterable[dict]:
         return self._us_client.entries_iterator(
             scope=entry_scope,
@@ -473,14 +555,14 @@ class AsyncUSManager(USManagerBase):
 
     async def get_collection(
         self,
-        entry_cls: Optional[type[_ENTRY_TV]],
-        entry_type: Optional[str] = None,
-        entry_scope: Optional[str] = None,
-        meta: Optional[dict[str, Union[str, int, None]]] = None,
+        entry_cls: type[_ENTRY_TV] | None,
+        entry_type: str | None = None,
+        entry_scope: str | None = None,
+        meta: dict[str, str | int | None] | None = None,
         all_tenants: bool = False,
         include_data: bool = True,
-        ids: Optional[Iterable[str]] = None,
-        creation_time: Optional[dict[str, Union[str, int, None]]] = None,
+        ids: Iterable[str] | None = None,
+        creation_time: dict[str, str | int | None] | None = None,
         raise_on_broken_entry: bool = False,
     ) -> AsyncGenerator[_ENTRY_TV, None]:
         if all_tenants and include_data:

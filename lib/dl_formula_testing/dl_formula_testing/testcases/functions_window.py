@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Callable,
+    Sequence,
+)
 import decimal
 from typing import (
-    Callable,
     ClassVar,
-    Optional,
-    Sequence,
     TypeVar,
-    Union,
 )
 
 import pytest
@@ -16,8 +16,7 @@ import sqlalchemy as sa
 from dl_formula_testing.evaluator import DbEvaluator
 from dl_formula_testing.testcases.base import FormulaConnectorTestBase
 
-
-NUMERIC = Union[decimal.Decimal, int, float]
+NUMERIC = decimal.Decimal | int | float
 
 
 def approx(value):  # type: ignore  # 2024-01-29 # TODO: Function is missing a type annotation  [no-untyped-def]
@@ -171,7 +170,7 @@ class DefaultWindowFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase):
         )
         assert dbe.eval(
             "SUM_IF([id], [id] < 11 WITHIN [int_value])", from_=data_table, order_by=["[id]"], many=True
-        ) == ([val for val in range(1, 11)] + [val for val in range(1, 11)])
+        ) == (list(range(1, 11)) + list(range(1, 11)))
 
     def test_count_if(self, dbe: DbEvaluator, data_table: sa.Table) -> None:
         values = data_table.int_values  # type: ignore  # 2024-01-29 # TODO: "Table" has no attribute "int_values"  [attr-defined]
@@ -193,7 +192,7 @@ class DefaultWindowFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase):
         )
         assert dbe.eval(
             "AVG_IF([id], [id] < 11 WITHIN [int_value])", from_=data_table, order_by=["[id]"], many=True
-        ) == pytest.approx([val / 1.0 for val in range(1, 11)] + [val for val in range(1, 11)])
+        ) == pytest.approx([val / 1.0 for val in range(1, 11)] + list(range(1, 11)))
 
     def _check_rfunc(
         self, dbe: DbEvaluator, data_table: sa.Table, func_name: str, py_agg_func: Callable[[list[NUMERIC]], NUMERIC]
@@ -280,8 +279,8 @@ class DefaultWindowFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase):
             values: Sequence[VALUE_TV],
             idx: int,
             offset: int = 1,
-            default: Optional[VALUE_TV] = None,
-        ) -> Optional[VALUE_TV]:
+            default: VALUE_TV | None = None,
+        ) -> VALUE_TV | None:
             offset_idx = idx - offset
             if offset_idx < 0 or offset_idx >= len(values):
                 return default

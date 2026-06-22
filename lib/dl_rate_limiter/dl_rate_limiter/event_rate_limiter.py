@@ -5,7 +5,6 @@ import attr
 import redis
 import redis.asyncio
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -43,19 +42,15 @@ redis.register_function('{ADD_EVENT_FUNCTION_NAME}', {ADD_EVENT_FUNCTION_NAME})
 
 
 class SyncEventRateLimiterProtocol(typing.Protocol):
-    def check_limit(self, event_key: str, limit: int, window_ms: int) -> bool:
-        ...
+    def check_limit(self, event_key: str, limit: int, window_ms: int) -> bool: ...
 
-    def prepare(self) -> None:
-        ...
+    def prepare(self) -> None: ...
 
 
 class AsyncEventRateLimiterProtocol(typing.Protocol):
-    async def check_limit(self, event_key: str, limit: int, window_ms: int) -> bool:
-        ...
+    async def check_limit(self, event_key: str, limit: int, window_ms: int) -> bool: ...
 
-    async def prepare(self) -> None:
-        ...
+    async def prepare(self) -> None: ...
 
 
 @attr.s(auto_attribs=True)
@@ -88,10 +83,7 @@ class SyncRedisEventRateLimiter:
 
             raise
 
-        if result == 0:
-            return False
-
-        return True
+        return result != 0
 
     def _load_function(self, replace: bool = True) -> None:
         try:
@@ -133,10 +125,7 @@ class AsyncRedisEventRateLimiter:
 
             raise
 
-        if result == 0:
-            return False
-
-        return True
+        return result != 0
 
     async def _load_function(self, replace: bool = True) -> None:
         try:

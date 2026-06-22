@@ -1,22 +1,18 @@
 from __future__ import annotations
 
 import abc
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-)
+from typing import TYPE_CHECKING
 
 import attr
 
 from dl_formula_ref.i18n.registry import get_localizer
 from dl_formula_ref.texts import FUNCTION_CATEGORY_TAG
 
-
 if TYPE_CHECKING:
     import dl_formula_ref.registry.base as _registry_base
 
 
-def translate(text: Optional[str], locale: str) -> str:
+def translate(text: str | None, locale: str) -> str:
     # Note: for `text=None` returns an empty string `''`
     gtext = get_localizer(locale).translate
     return gtext(text) if text else ""
@@ -49,9 +45,9 @@ class DefaultNamingProvider(NamingProviderBase):
 
 @attr.s
 class CustomNamingProvider(DefaultNamingProvider):
-    _internal_name: Optional[str] = attr.ib(kw_only=True, default=None)
-    _title: Optional[str] = attr.ib(kw_only=True, default=None)
-    _short_title: Optional[str] = attr.ib(kw_only=True, default=None)
+    _internal_name: str | None = attr.ib(kw_only=True, default=None)
+    _title: str | None = attr.ib(kw_only=True, default=None)
+    _short_title: str | None = attr.ib(kw_only=True, default=None)
 
     def get_internal_name(self, item: _registry_base.FunctionDocRegistryItem) -> str:
         if self._internal_name is not None:

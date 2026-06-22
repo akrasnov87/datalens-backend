@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import Sequence
 from itertools import count
 from typing import (
     TYPE_CHECKING,
     ClassVar,
-    Optional,
-    Sequence,
-    Union,
     cast,
 )
 
 import pandas as pd
 
-from dl_constants.enums import (
+from dl_constants import (
     OrderDirection,
     PivotRole,
 )
@@ -33,7 +31,6 @@ from dl_pivot_pandas.pandas.data_frame import (
 )
 import dl_query_processing.exc as exc
 
-
 if TYPE_CHECKING:
     from dl_pivot.primitives import PivotMeasureSortingSettings
 
@@ -50,7 +47,7 @@ class PdPivotSorterBase(PivotSorter):
     """
 
     @abc.abstractmethod
-    def _get_pd_obj(self) -> Union[pd.DataFrame, pd.Series]:
+    def _get_pd_obj(self) -> pd.DataFrame | pd.Series:
         raise NotImplementedError
 
     def _resolve_axis_order(self) -> dict[SortAxis, list[OrderDirection]]:
@@ -79,7 +76,7 @@ class PdPivotSorterBase(PivotSorter):
 
     def _single_axis_sort(self, axis: SortAxis, directions: Sequence[OrderDirection]) -> None:
         ascending_list = [direction == OrderDirection.asc for direction in directions]
-        ascending: Union[bool, list[bool]] = ascending_list  # Separate var to avoid typing errors
+        ascending: bool | list[bool] = ascending_list  # Separate var to avoid typing errors
         if len(ascending_list) == 1:
             # If there is only one dimension, then it must be a scalar
             ascending = ascending_list[0]
@@ -118,7 +115,7 @@ class PdPivotSorterBase(PivotSorter):
         )
 
     def _sort_by_measure(self, axis: SortAxis, sorting_piid: int, settings: PivotMeasureSortingSettings) -> None:
-        sorting_idx: Optional[int] = None
+        sorting_idx: int | None = None
 
         for idx, header in enumerate(self._pivot_dframe.iter_axis_headers(axis)):
             if header.compare_sorting_settings(settings):
@@ -126,9 +123,9 @@ class PdPivotSorterBase(PivotSorter):
                     sorting_idx = idx
                     header.info.sorting_direction = settings.direction
                 else:  # should never actually occur, as header_values + role_spec uniquely identify sorting_idx
-                    raise exc.PivotSortingRowOrColumnIsAmbiguous()
+                    raise exc.PivotSortingRowOrColumnIsAmbiguousError()
         if sorting_idx is None:
-            raise exc.PivotSortingRowOrColumnNotFound()
+            raise exc.PivotSortingRowOrColumnNotFoundError()
 
         # we can use sort_values to sort a DataFrame by row or column,
         # however tuples in indexes make it incredibly hard to apply,

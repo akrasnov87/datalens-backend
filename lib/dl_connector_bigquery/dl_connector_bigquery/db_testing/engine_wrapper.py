@@ -1,7 +1,4 @@
-from typing import (
-    Optional,
-    Sequence,
-)
+from collections.abc import Sequence
 
 import attr
 import sqlalchemy as sa
@@ -27,21 +24,19 @@ class BigQueryEngineWrapper(EngineWrapperBase):
         return self._config
 
     def get_conn_credentials(self, full: bool = False) -> dict:
-        creds = dict(
-            db_name=self.url.database,
-        )
-        return creds
+        return {
+            "db_name": self.url.database,
+        }
 
     def table_from_columns(
         self,
         columns: Sequence[sa.Column],
         *,
-        schema: Optional[str] = None,
-        table_name: Optional[str] = None,
+        schema: str | None = None,
+        table_name: str | None = None,
     ) -> sa.Table:
-        table = super().table_from_columns(
+        return super().table_from_columns(
             columns=columns,
             schema=schema or self.config.default_dataset_name,
             table_name=table_name,
         )
-        return table

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from itertools import chain
 import logging
 from typing import (
     TYPE_CHECKING,
     ClassVar,
-    Optional,
-    Sequence,
 )
 
 from dl_api_lib.dataset.dialect import resolve_dialect_name
@@ -17,7 +16,7 @@ from dl_api_lib.query.registry import (
     is_compeng_enabled,
 )
 from dl_api_lib.service_registry.service_registry import ApiServiceRegistry
-from dl_constants.enums import (
+from dl_constants import (
     DataSourceRole,
     SourceBackendType,
 )
@@ -37,8 +36,8 @@ from dl_core.data_source.collection import (
 )
 from dl_core.dataset_capabilities import DatasetCapabilities
 from dl_core.exc import (
-    FieldNotFound,
-    ReferencedUSEntryNotFound,
+    FieldNotFoundError,
+    ReferencedUSEntryNotFoundError,
 )
 from dl_core.us_dataset import Dataset
 from dl_core.us_manager.us_manager import USManagerBase
@@ -76,7 +75,6 @@ from dl_query_processing.multi_query.mutators.base import MultiQueryMutatorBase
 from dl_query_processing.translation.multi_level_translator import MultiLevelQueryTranslator
 from dl_query_processing.translation.primitives import TranslatedMultiQueryBase
 
-
 if TYPE_CHECKING:
     from dl_core.components.ids import FieldIdGenerator
     from dl_core.db.elements import SchemaColumn
@@ -108,7 +106,7 @@ class AvatarAliasMapper:
         avatar_idx = self.next_idx
         self.next_idx += 1
         result = f"t{avatar_idx}"
-        LOGGER.debug(f"AvatarAliasMapper: mapping {avatar_id!r} -> {result!r}")
+        LOGGER.debug("AvatarAliasMapper: mapping %r -> %r", avatar_id, result)
         self.avatar_map[avatar_id] = result
         return result
 
@@ -127,10 +125,10 @@ class DatasetBaseWrapper:
         ds: Dataset,
         *,
         us_manager: USManagerBase,
-        block_spec: Optional[BlockSpec] = None,
+        block_spec: BlockSpec | None = None,
         function_scopes: int = Scope.EXPLICIT_USAGE,
         debug_mode: bool = False,
-    ):
+    ) -> None:
         self._ds = ds
         self._us_manager = us_manager
         service_registry = self._us_manager.get_services_registry()
@@ -154,10 +152,10 @@ class DatasetBaseWrapper:
         self.dialect: DialectCombo = D.DUMMY
 
         # field-dependent stuff (helper mappings)
-        self.inspect_env: Optional[InspectionEnvironment] = None
-        self._column_reg: Optional[ColumnRegistry] = None
-        self._formula_compiler: Optional[FormulaCompiler] = None
-        self._query_spec: Optional[QuerySpec] = None
+        self.inspect_env: InspectionEnvironment | None = None
+        self._column_reg: ColumnRegistry | None = None
+        self._formula_compiler: FormulaCompiler | None = None
+        self._query_spec: QuerySpec | None = None
 
         self._reload_sources()
         self._reload_formalized_specs(block_spec=block_spec)
@@ -200,20 +198,18 @@ class DatasetBaseWrapper:
 
     def _get_data_source_coll_strict(self, source_id: str) -> DataSourceCollection:
         dsrc_coll_spec = self._ds_accessor.get_data_source_coll_spec_strict(source_id=source_id)
-        dsrc_coll = self._dsrc_coll_factory.get_data_source_collection(
+        return self._dsrc_coll_factory.get_data_source_collection(
             spec=dsrc_coll_spec,
             dataset_parameter_values=self._get_dataset_parameter_values(),
             dataset_template_enabled=self._ds_accessor.get_template_enabled(),
         )
-        return dsrc_coll
 
-    def _get_data_source_strict(self, source_id: str, role: Optional[DataSourceRole] = None) -> DataSource:
+    def _get_data_source_strict(self, source_id: str, role: DataSourceRole | None = None) -> DataSource:
         if role is None:
             role = self.resolve_role()
         assert role is not None
         dsrc_coll = self._get_data_source_coll_strict(source_id=source_id)
-        dsrc = dsrc_coll.get_strict(role=role)
-        return dsrc
+        return dsrc_coll.get_strict(role=role)
 
     def make_id_generator(self) -> FieldIdGenerator:
         id_generator_factory = self._service_registry.get_field_id_generator_factory()
@@ -306,13 +302,13 @@ class DatasetBaseWrapper:
                     dialect_name=dialect_name,
                     dialect_version=db_version,
                 )
-            except ReferencedUSEntryNotFound:
+            except ReferencedUSEntryNotFoundError:
                 self.dialect = D.DUMMY
 
         if self._query_spec is not None:
             self.load_exbuilders()
 
-    def _reload_formalized_specs(self, block_spec: Optional[BlockSpec] = None) -> None:
+    def _reload_formalized_specs(self, block_spec: BlockSpec | None = None) -> None:
         assert block_spec is not None, "block_spec must not be None in this implementation"
         self._query_spec = self._formalizer.make_query_spec(block_spec=block_spec)
         if self._formula_compiler is None:
@@ -367,7 +363,7 @@ class DatasetBaseWrapper:
         try:
             return self._ds.result_schema.by_guid(field_id)
         except KeyError:
-            raise FieldNotFound(f"Field {field_id} not found in dataset") from None
+            raise FieldNotFoundError(f"Field {field_id} not found in dataset") from None
 
     def process_compiled_query(self, compiled_query: CompiledQuery) -> CompiledMultiQueryBase:
         try:

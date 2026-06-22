@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 import functools
-from typing import Optional
+from typing import Any
 
 from aiomysql.sa.result import (
     ResultMetaData,
@@ -11,7 +11,7 @@ import shortuuid
 import sqlalchemy as sa
 from sqlalchemy.dialects import mysql as mysql_types
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_core.connection_executors.async_base import AsyncConnExecutorBase
 from dl_core.connection_executors.common_base import ConnExecutorQuery
 from dl_core.connection_executors.sync_base import SyncConnExecutorBase
@@ -50,7 +50,7 @@ class StarRocksSyncAsyncConnectionExecutorCheckBase(
         },
     )
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def db_ident(self) -> DBIdent:
         return DBIdent(db_name=test_config.CoreConnectionSettings.DB_NAME)
 
@@ -71,7 +71,7 @@ class TestStarRocksSyncConnectionExecutor(
     ) -> None:
         fqn = f"{test_config.CoreConnectionSettings.CATALOG}.{test_config.CoreConnectionSettings.DB_NAME}.nonexistent_table_{shortuuid.uuid().lower()}"
         query = ConnExecutorQuery(query=f"SELECT * from {fqn}")
-        with pytest.raises(core_exc.SourceDoesNotExist):
+        with pytest.raises(core_exc.SourceDoesNotExistError):
             sync_connection_executor.execute(query)
 
     def get_schemas_for_type_recognition(self) -> dict[str, Sequence[DefaultSyncConnectionExecutorTestSuite.CD]]:
@@ -118,7 +118,7 @@ class TestStarRocksSyncConnectionExecutor(
         self,
         request: pytest.FixtureRequest,
         db: Db,
-        sample_table_schema: Optional[str],
+        sample_table_schema: str | None,
         sync_connection_executor: SyncConnExecutorBase,
     ) -> None:
         for type_schema in self.get_schemas_for_type_recognition().values():
@@ -140,7 +140,7 @@ class TestStarRocksSyncConnectionExecutor(
             ).schema
 
             assert len(detected_columns) == len(type_schema)
-            for col_schema, cd in zip(detected_columns, type_schema):
+            for col_schema, cd in zip(detected_columns, type_schema, strict=True):
                 assert (
                     col_schema.user_type == cd.user_type
                 ), f"Column {col_schema.name}: expected {cd.user_type}, got {col_schema.user_type}"
@@ -176,10 +176,10 @@ class TestStarRocksAsyncConnectionExecutor(
     ) -> None:
         fqn = f"{test_config.CoreConnectionSettings.CATALOG}.{test_config.CoreConnectionSettings.DB_NAME}.nonexistent_table_{shortuuid.uuid().lower()}"
         query = ConnExecutorQuery(query=f"SELECT * from {fqn}")
-        with pytest.raises(core_exc.SourceDoesNotExist):
+        with pytest.raises(core_exc.SourceDoesNotExistError):
             await async_connection_executor.execute(query)
 
-    @pytest.fixture(autouse=True, scope="function")
+    @pytest.fixture(autouse=True)
     def mock_aiomysql_prepare(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Patch ResultProxy._prepare to avoid 'Event loop is closed' warnings.
 
@@ -188,7 +188,7 @@ class TestStarRocksAsyncConnectionExecutor(
         See dl_connector_mysql tests for the full explanation.
         """
 
-        async def _prepare(self, *args, **kwargs):  # type: ignore
+        async def _prepare(self, *args: Any, **kwargs: Any) -> None:
             cursor = self._cursor
             self._weak = None
             if cursor.description is not None:

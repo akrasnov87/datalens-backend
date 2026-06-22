@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import (
-    Optional,
-    Sequence,
+    Self,
     TypeVar,
 )
 
 import attr
-from typing_extensions import Self
 
 from dl_core.connection_executors.adapters.common_base import CommonBaseDirectAdapter
 from dl_core.connection_executors.async_sa_executors import DefaultSqlAlchemyConnExecutor
@@ -17,7 +16,6 @@ from dl_connector_postgresql.core.postgresql_base.async_adapters_postgres import
 from dl_connector_postgresql.core.postgresql_base.constants import PGEnforceCollateMode
 from dl_connector_postgresql.core.postgresql_base.dto import PostgresConnDTOBase
 from dl_connector_postgresql.core.postgresql_base.target_dto import PostgresConnTargetDTO
-
 
 _BASE_POSTGRES_ADAPTER_TV = TypeVar("_BASE_POSTGRES_ADAPTER_TV", bound=CommonBaseDirectAdapter)
 
@@ -35,36 +33,33 @@ class BasePostgresConnExecutor(DefaultSqlAlchemyConnExecutor[_BASE_POSTGRES_ADAP
             enforce_collate = PGEnforceCollateMode.off
         return enforce_collate
 
-    async def _make_target_conn_dto_pool(self) -> list[PostgresConnTargetDTO]:  # type: ignore  # TODO: fix
-        dto_pool = []
+    async def _make_target_conn_dto_pool(self) -> list[PostgresConnTargetDTO]:
         effective_enforce_collate = self._get_effective_enforce_collate(
             enforce_collate=self._conn_dto.enforce_collate,
             multihosts=self._conn_dto.multihosts,
         )
-        for host in self._conn_hosts_pool:
-            # Определяем read_only: если не задано явно, то False
-            read_only = getattr(self._conn_dto, 'read_only', False)
+        read_only = getattr(self._conn_dto, 'read_only', False)
 
-            dto_pool.append(
-                PostgresConnTargetDTO(
-                    conn_id=self._conn_dto.conn_id,
-                    pass_db_messages_to_user=self._conn_options.pass_db_messages_to_user,
-                    pass_db_query_to_user=self._conn_options.pass_db_query_to_user,
-                    host=host,
-                    port=self._conn_dto.port,
-                    db_name=self._conn_dto.db_name,
-                    username=self._conn_dto.username,
-                    password=self._conn_dto.password,
-                    enforce_collate=effective_enforce_collate,
-                    ssl_enable=self._conn_dto.ssl_enable,
-                    ssl_ca=self._conn_dto.ssl_ca,
-                    # Прокидываем параметр
-                    read_only=read_only,
-                )
+        return [
+            PostgresConnTargetDTO(
+                conn_id=self._conn_dto.conn_id,
+                pass_db_messages_to_user=self._conn_options.pass_db_messages_to_user,
+                pass_db_query_to_user=self._conn_options.pass_db_query_to_user,
+                host=host,
+                port=self._conn_dto.port,
+                db_name=self._conn_dto.db_name,
+                username=self._conn_dto.username,
+                password=self._conn_dto.password,
+                enforce_collate=effective_enforce_collate,
+                ssl_enable=self._conn_dto.ssl_enable,
+                ssl_ca=self._conn_dto.ssl_ca,
+                # Прокидываем параметр
+                read_only=read_only,
             )
-        return dto_pool
+            for host in self._conn_hosts_pool
+        ]
 
-    def mutate_for_dashsql(self, db_params: Optional[dict[str, str]] = None) -> Self:
+    def mutate_for_dashsql(self, db_params: dict[str, str] | None = None) -> Self:
         if db_params:
             # TODO: better exception class for HTTP 4xx response
             raise Exception("No db_params supported here at the moment")

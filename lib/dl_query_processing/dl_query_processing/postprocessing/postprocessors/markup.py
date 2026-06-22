@@ -4,21 +4,22 @@ from dataclasses import dataclass
 from typing import (
     Any,
     ClassVar,
-    Generic,
-    Optional,
+    TypeAlias,
     TypeVar,
-    Union,
 )
+
+from frozendict import frozendict
 
 from dl_formula.core.exc import ValidationError
 
+NODE_TV = TypeVar("NODE_TV")
 
-_NODE_TV = TypeVar("_NODE_TV")
-NodeActual = Union[_NODE_TV, str]  # what can act as a node
-NodeInput = Union[_NODE_TV, str]  # what can be passed to node-builders
+# PEP 695 conversion would require restructuring the TypeVar binding shared with `MarkupProcessingBase[NODE_TV]`
+NodeActual: TypeAlias = NODE_TV | str  # noqa: UP040  # what can act as a node
+NodeInput: TypeAlias = NODE_TV | str  # noqa: UP040  # what can be passed to node-builders
 
 
-class MarkupProcessingBase(Generic[_NODE_TV]):
+class MarkupProcessingBase[NODE_TV]:
     quot: ClassVar[str] = '"'
     lpar: ClassVar[str] = "("
     rpar: ClassVar[str] = ")"
@@ -36,21 +37,21 @@ class MarkupProcessingBase(Generic[_NODE_TV]):
     node_image: ClassVar[str] = "img"
     node_tooltip: ClassVar[str] = "tooltip"
 
-    _node_cls: ClassVar[type[_NODE_TV]]  # type: ignore  # 2024-01-24 # TODO: ClassVar cannot contain type variables  [misc]
+    _node_cls: ClassVar[type[NODE_TV]]
 
     _dbg: bool = False
 
-    empty_verbose_node = dict(type="concat", children=[])
+    empty_verbose_node = frozendict({"type": "concat", "children": ()})
 
     def _dbg_print(self, msg: str, *args: Any) -> None:
         if not self._dbg:
             return
         print("DBG:", msg % args)
 
-    def _make_node(self, funcname: str, *funcargs: NodeActual) -> _NODE_TV:
+    def _make_node(self, funcname: str, *funcargs: NodeActual) -> NODE_TV:
         raise NotImplementedError
 
-    def _unpack_node(self, node: _NODE_TV) -> tuple[str, tuple[NodeActual, ...]]:
+    def _unpack_node(self, node: NODE_TV) -> tuple[str, tuple[NodeActual, ...]]:
         raise NotImplementedError
 
     class DumpError(ValueError):
@@ -90,38 +91,37 @@ class MarkupProcessingBase(Generic[_NODE_TV]):
 
     # Node-building
 
-    def n_concat(self, *children: NodeInput) -> _NODE_TV:
+    def n_concat(self, *children: NodeInput) -> NODE_TV:
         return self._make_node(self.node_concat, *(self._proc_arg(child) for child in children))
 
-    def n_url(self, addr: str, title: Optional[NodeInput] = None) -> _NODE_TV:
+    def n_url(self, addr: str, title: NodeInput | None = None) -> NODE_TV:
         return self._make_node(self.node_url, str(addr), self._proc_arg(title or addr))
 
-    def n_i(self, child: NodeInput) -> _NODE_TV:
+    def n_i(self, child: NodeInput) -> NODE_TV:
         return self._make_node(self.node_i, self._proc_arg(child))
 
-    def n_b(self, child: NodeInput) -> _NODE_TV:
+    def n_b(self, child: NodeInput) -> NODE_TV:
         return self._make_node(self.node_b, self._proc_arg(child))
 
-    def n_sz(self, child: NodeInput, size: str) -> _NODE_TV:
+    def n_sz(self, child: NodeInput, size: str) -> NODE_TV:
         return self._make_node(self.node_sz, self._proc_arg(child), str(size))
 
-    def n_cl(self, child: NodeInput, color: str) -> _NODE_TV:
+    def n_cl(self, child: NodeInput, color: str) -> NODE_TV:
         return self._make_node(self.node_cl, self._proc_arg(child), str(color))
 
-    def n_br(self) -> _NODE_TV:
+    def n_br(self) -> NODE_TV:
         return self._make_node(self.node_br)
 
-    def n_userinfo(self, user_id: str, user_info: str) -> _NODE_TV:
+    def n_userinfo(self, user_id: str, user_info: str) -> NODE_TV:
         return self._make_node(self.node_userinfo, str(user_id), str(user_info))
 
-    def n_img(self, src: str, width: int, height: int, alt: str) -> _NODE_TV:
+    def n_img(self, src: str, width: int, height: int, alt: str) -> NODE_TV:
         return self._make_node(self.node_image, src, width, height, alt)
 
-    def n_tooltip(self, text: NodeInput, tooltip: NodeInput, placement: Optional[str] = "") -> _NODE_TV:
+    def n_tooltip(self, text: NodeInput, tooltip: NodeInput, placement: str | None = "") -> NODE_TV:
         if placement:
             return self._make_node(self.node_tooltip, self._proc_arg(text), self._proc_arg(tooltip), str(placement))
-        else:
-            return self._make_node(self.node_tooltip, self._proc_arg(text), self._proc_arg(tooltip))
+        return self._make_node(self.node_tooltip, self._proc_arg(text), self._proc_arg(tooltip))
 
     # Node-structure into a string
 
@@ -147,7 +147,7 @@ class MarkupProcessingBase(Generic[_NODE_TV]):
             + self.rpar
         )
 
-    def dump(self, node: _NODE_TV) -> str:
+    def dump(self, node: NODE_TV) -> str:
         if not isinstance(node, self._node_cls):
             raise self.DumpError("Outer value should be a node", type(node))
         return self._dump_i(node)
@@ -163,7 +163,7 @@ class MarkupProcessingBase(Generic[_NODE_TV]):
     def _is_at(self, data: str, pos: int, substr: str) -> bool:
         return self._get_at(data, pos, len(substr)) == substr
 
-    def _find_next(self, data: str, substr: str, start: int, end: Optional[int] = None) -> Optional[int]:
+    def _find_next(self, data: str, substr: str, start: int, end: int | None = None) -> int | None:
         try:
             return data.index(substr, start, end)
         except ValueError:
@@ -243,7 +243,7 @@ class MarkupProcessingBase(Generic[_NODE_TV]):
 
         raise self.ParseError("Unexpected data", data, pos)
 
-    def parse(self, data: Optional[str]) -> _NODE_TV:
+    def parse(self, data: str | None) -> NODE_TV:
         if data is None:
             return None  # type: ignore  # TODO: fix
         if not data.startswith(self.lpar) or not data.endswith(self.rpar):
@@ -254,21 +254,23 @@ class MarkupProcessingBase(Generic[_NODE_TV]):
         assert isinstance(node, self._node_cls)
         return node
 
-    _verbalized_info = {
-        node_text: dict(name="text", arg="content"),
-        node_concat: dict(name="concat", args="children"),
-        node_url: dict(name="url", argnames=("url", "content")),
-        node_i: dict(name="italics", arg="content"),
-        node_b: dict(name="bold", arg="content"),
-        node_sz: dict(name="size", argnames=("content", "size")),
-        node_cl: dict(name="color", argnames=("content", "color")),
-        node_br: dict(name="br"),
-        node_userinfo: dict(name="user_info", argnames=("content", "user_info")),
-        node_image: dict(name="image", argnames=("src", "width", "height", "alt")),
-        node_tooltip: dict(name="tooltip", argnames=("text", "tooltip", "placement")),
-    }
+    _verbalized_info = frozendict(
+        {
+            node_text: {"name": "text", "arg": "content"},
+            node_concat: {"name": "concat", "args": "children"},
+            node_url: {"name": "url", "argnames": ("url", "content")},
+            node_i: {"name": "italics", "arg": "content"},
+            node_b: {"name": "bold", "arg": "content"},
+            node_sz: {"name": "size", "argnames": ("content", "size")},
+            node_cl: {"name": "color", "argnames": ("content", "color")},
+            node_br: {"name": "br"},
+            node_userinfo: {"name": "user_info", "argnames": ("content", "user_info")},
+            node_image: {"name": "image", "argnames": ("src", "width", "height", "alt")},
+            node_tooltip: {"name": "tooltip", "argnames": ("text", "tooltip", "placement")},
+        }
+    )
 
-    def _argcount_mismatch(self, node, **kwargs):  # type: ignore  # TODO: fix
+    def _argcount_mismatch(self, node: NODE_TV, **kwargs: Any) -> Any:
         # Would be nice to do `self.DumpError("Argcount mismatch", node)` here,
         # but NULL-related behavior makes it unfeasible.
         # Thus, return an empty node (equivalent to an empty string).
@@ -277,7 +279,7 @@ class MarkupProcessingBase(Generic[_NODE_TV]):
     def _verbalize_i(self, node: NodeActual) -> Any:
         """A kind-of the other way from dump: more verbose serializable structure. Still a dump."""
         if isinstance(node, str):
-            return dict(type="text", content=node)
+            return {"type": "text", "content": node}
 
         if not isinstance(node, self._node_cls):
             raise self.DumpError("Value should be a node", type(node))
@@ -285,37 +287,38 @@ class MarkupProcessingBase(Generic[_NODE_TV]):
         funcname, funcargs = self._unpack_node(node)
 
         if funcname == self.node_concat:
-            return dict(type="concat", children=[self._verbalize_i(arg) for arg in funcargs])
+            return {"type": "concat", "children": [self._verbalize_i(arg) for arg in funcargs]}
         if funcname == self.node_url:
             if len(funcargs) != 2:
                 return self._argcount_mismatch(node=node, funcname=funcname, funcargs=funcargs, expected_args=2)
             url, content = funcargs
-            return dict(type="url", url=url, content=self._verbalize_i(content))
+            return {"type": "url", "url": url, "content": self._verbalize_i(content)}
         if funcname == self.node_cl:
             if len(funcargs) != 2:
                 return self._argcount_mismatch(node=node, funcname=funcname, funcargs=funcargs, expected_args=2)
             content, color = funcargs
-            return dict(type="color", color=color, content=self._verbalize_i(content))
+            return {"type": "color", "color": color, "content": self._verbalize_i(content)}
         if funcname == self.node_sz:
             if len(funcargs) != 2:
                 return self._argcount_mismatch(node=node, funcname=funcname, funcargs=funcargs, expected_args=2)
             content, size = funcargs
-            return dict(type="size", size=size, content=self._verbalize_i(content))
+            return {"type": "size", "size": size, "content": self._verbalize_i(content)}
         if funcname == self.node_userinfo:
             if len(funcargs) != 2:
                 return self._argcount_mismatch(node=node, funcname=funcname, funcargs=funcargs, expected_args=2)
             content, user_info = funcargs
-            return dict(type="user_info", user_info=user_info, content=self._verbalize_i(content))
+            return {"type": "user_info", "user_info": user_info, "content": self._verbalize_i(content)}
         if funcname == self.node_br:
             if len(funcargs) != 0:
                 return self._argcount_mismatch(node=node, funcname=funcname, funcargs=funcargs, expected_args=2)
-            return dict(type="br")
+            return {"type": "br"}
         if funcname in (self.node_i, self.node_b):
             if len(funcargs) != 1:
                 return self._argcount_mismatch(node=node, funcname=funcname, funcargs=funcargs, expected_args=1)
-            return dict(
-                type={self.node_i: "italics", self.node_b: "bold"}[funcname], content=self._verbalize_i(funcargs[0])
-            )
+            return {
+                "type": {self.node_i: "italics", self.node_b: "bold"}[funcname],
+                "content": self._verbalize_i(funcargs[0]),
+            }
         if funcname == self.node_image:
             if len(funcargs) != 4:
                 return self._argcount_mismatch(node=node, funcname=funcname, funcargs=funcargs, expected_args=4)
@@ -335,7 +338,7 @@ class MarkupProcessingBase(Generic[_NODE_TV]):
                     raise ValidationError("Height can only be greater than 0")
             else:
                 height = None
-            return dict(type="img", src=src, width=width, height=height, alt=alt)
+            return {"type": "img", "src": src, "width": width, "height": height, "alt": alt}
         if funcname == self.node_tooltip:
             if len(funcargs) == 3:
                 text, tooltip, placement = funcargs
@@ -347,13 +350,16 @@ class MarkupProcessingBase(Generic[_NODE_TV]):
             if placement not in ["top", "right", "bottom", "left", "auto"]:
                 raise ValidationError('Placement can only be "top", "right", "bottom" or "left"')
 
-            return dict(
-                type="tooltip", content=self._verbalize_i(text), tooltip=self._verbalize_i(tooltip), placement=placement
-            )
+            return {
+                "type": "tooltip",
+                "content": self._verbalize_i(text),
+                "tooltip": self._verbalize_i(tooltip),
+                "placement": placement,
+            }
 
         raise self.DumpError("Unknown func", node)
 
-    def verbalize(self, node: Optional[_NODE_TV]) -> Any:
+    def verbalize(self, node: NODE_TV | None) -> Any:
         """A kind-of the other way from dump: more verbose serializable structure. Still a dump."""
         if node is None:
             return None
@@ -366,7 +372,7 @@ class MarkupProcessingBase(Generic[_NODE_TV]):
 
 
 _TNode = tuple
-_TNodeActual = Union[_TNode, str]
+_TNodeActual: TypeAlias = _TNode | str  # noqa: UP040
 
 
 class MarkupProcessing(MarkupProcessingBase[_TNode]):
@@ -374,7 +380,7 @@ class MarkupProcessing(MarkupProcessingBase[_TNode]):
 
     def _make_node(self, funcname: str, *funcargs: _TNodeActual) -> _TNode:
         # return self._node_cls(funcname, *funcargs)
-        return self._node_cls((funcname,) + funcargs)
+        return self._node_cls((funcname, *funcargs))
 
     def _unpack_node(self, node: _TNode) -> tuple[str, tuple[_TNodeActual, ...]]:
         return node[0], node[1:]
@@ -387,7 +393,7 @@ class DCNode:
 
 
 _DCNode = DCNode
-_DCNodeActual = Union[_DCNode, str]
+_DCNodeActual = _DCNode | str
 
 
 class MarkupProcessingDC(MarkupProcessingBase[_DCNode]):

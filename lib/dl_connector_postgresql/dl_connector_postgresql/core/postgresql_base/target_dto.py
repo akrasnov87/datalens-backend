@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import (
     TYPE_CHECKING,
-    Optional,
     TypeVar,
 )
 
@@ -11,7 +10,6 @@ import attr
 from dl_core.connection_executors.models.connection_target_dto_base import BaseSQLConnTargetDTO
 
 from dl_connector_postgresql.core.postgresql_base.constants import PGEnforceCollateMode
-
 
 if TYPE_CHECKING:
     from dl_constants.types import TJSONLike
@@ -24,7 +22,7 @@ _CT_DTO_TV = TypeVar("_CT_DTO_TV", bound="PostgresConnTargetDTO")
 class PostgresConnTargetDTO(BaseSQLConnTargetDTO):
     enforce_collate: PGEnforceCollateMode = attr.ib(kw_only=True, default=PGEnforceCollateMode.off)
     ssl_enable: bool = attr.ib(kw_only=True, default=False)
-    ssl_ca: Optional[str] = attr.ib(kw_only=True, default=None)
+    ssl_ca: str | None = attr.ib(kw_only=True, default=None)
     # НОВЫЙ ПАРАМЕТР
     read_only: bool = attr.ib(kw_only=True, default=True)
 

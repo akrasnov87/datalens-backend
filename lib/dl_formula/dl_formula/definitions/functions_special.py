@@ -9,7 +9,6 @@ from dl_formula.definitions.base import (
 from dl_formula.definitions.scope import Scope
 from dl_formula.definitions.type_strategy import Fixed
 
-
 V = TranslationVariant.make
 
 
@@ -20,7 +19,7 @@ class SpecialFunction(Function):
 class FuncMakeNan(SpecialFunction):
     name = "_make_nan"
     arg_cnt = 0
-    argument_types = [ArgTypeSequence([])]
+    argument_types = (ArgTypeSequence([]),)
     return_type = Fixed(DataType.FLOAT)
 
 

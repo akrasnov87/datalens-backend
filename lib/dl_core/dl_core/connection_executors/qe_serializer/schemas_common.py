@@ -4,13 +4,14 @@ from base64 import (
     b64decode,
     b64encode,
 )
-import json
-from typing import (
-    Any,
-    Optional,
+from collections.abc import (
+    Mapping,
     Sequence,
 )
+import json
+from typing import Any
 
+from frozendict import frozendict
 from marshmallow import fields
 from marshmallow_oneofschema import OneOfSchema
 from multidict import CIMultiDict
@@ -43,7 +44,7 @@ from dl_utils.utils import get_type_full_name
 
 
 class SATextField(fields.String):
-    def _serialize(self, value: Any, attr: Any, obj: Any, **kwargs: Any) -> Optional[str]:
+    def _serialize(self, value: Any, attr: Any, obj: Any, **kwargs: Any) -> str | None:
         assert isinstance(value, sa.sql.elements.TextClause)
         text_value = value.text
         return super()._serialize(text_value, attr, obj, **kwargs)
@@ -63,6 +64,10 @@ class DBAdapterQueryStrSchema(BaseQEAPISchema):
         allow_none=True, dump_default=None, serialize="dump_conn_params", deserialize="load_conn_params"
     )
     is_dashsql_query = fields.Boolean()
+    allow_write = fields.Boolean(load_default=False)
+    limit = fields.Integer(allow_none=True, load_default=None)
+    offset = fields.Integer(allow_none=True, load_default=None)
+    query_settings = fields.Dict(keys=fields.String(), values=fields.String(), load_default=dict)
 
     def to_object(self, data: dict) -> DBAdapterQuery:
         return DBAdapterQuery(
@@ -72,9 +77,13 @@ class DBAdapterQueryStrSchema(BaseQEAPISchema):
             disable_streaming=data["disable_streaming"],
             connector_specific_params=data["connector_specific_params"],
             is_dashsql_query=data["is_dashsql_query"],
+            allow_write=data["allow_write"],
+            limit=data["limit"],
+            offset=data["offset"],
+            query_settings=data["query_settings"],
         )
 
-    def dump_conn_params(self, dba_query: DBAdapterQuery) -> Optional[dict]:
+    def dump_conn_params(self, dba_query: DBAdapterQuery) -> dict | None:
         conn_params = (
             dict(dba_query.connector_specific_params) if dba_query.connector_specific_params is not None else None
         )
@@ -83,7 +92,7 @@ class DBAdapterQueryStrSchema(BaseQEAPISchema):
                 conn_params[k] = json.dumps(v, cls=DataLensJSONEncoder)
         return conn_params
 
-    def load_conn_params(self, conn_params: Optional[dict]) -> Optional[dict[str, Any]]:
+    def load_conn_params(self, conn_params: dict | None) -> dict[str, Any] | None:
         if conn_params is not None:
             for k, v in conn_params.items():
                 conn_params[k] = json.loads(v, cls=DataLensJSONDecoder)
@@ -132,7 +141,7 @@ class DBAdapterQuerySQLASchema(DBAdapterQueryStrSchema):
 
 class GenericDBAQuerySchema(OneOfSchema):
     type_field = "mode"
-    type_schemas = {
+    type_schemas = {  # noqa: RUF012
         t.name: s
         for t, s in {
             QueryExecutorMode.sqla_dump: DBAdapterQuerySQLASchema,
@@ -143,8 +152,7 @@ class GenericDBAQuerySchema(OneOfSchema):
     def get_obj_type(self, obj: DBAdapterQuery) -> str:
         if isinstance(obj.query, str):
             return QueryExecutorMode.text.name
-        else:
-            return QueryExecutorMode.sqla_dump.name
+        return QueryExecutorMode.sqla_dump.name
 
 
 # TODO FIX: Validation
@@ -213,11 +221,15 @@ class SATextTableDefinitionSchema(BaseQEAPISchema):
 
 class TableDefinitionSchema(OneOfSchema):
     type_field = "mode"
-    supported_types = {
-        TableIdent: TableIdentSchema,
-        SATextTableDefinition: SATextTableDefinitionSchema,
+    supported_types: Mapping[type[TableDefinition], type[BaseQEAPISchema]] = frozendict(
+        {
+            TableIdent: TableIdentSchema,
+            SATextTableDefinition: SATextTableDefinitionSchema,
+        }
+    )
+    type_schemas = {  # noqa: RUF012
+        type_obj.def_type.name: schema_cls for type_obj, schema_cls in supported_types.items()
     }
-    type_schemas = {type_obj.def_type.name: schema_cls for type_obj, schema_cls in supported_types.items()}  # type: ignore  # TODO: fix
 
     def get_obj_type(self, obj: TableDefinition) -> str:
         if type(obj) in self.supported_types:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.mysql.pymysql import MySQLDialect_pymysql as UPSTREAM
@@ -14,44 +15,40 @@ class DLMYSQLCompilerBasic(UPSTREAM.statement_compiler):
     def _add_collate(self, result):
         collate = self.dialect.enforce_collate
         if collate:
-            return "%s COLLATE %s" % (result, collate)
+            return f"{result} COLLATE {collate}"
         return result
 
-    def visit_like_op_binary(self, binary, operator, **kw):
+    def visit_like_op_binary(self, binary, operator, **kw: Any):
         result = super().visit_like_op_binary(binary, operator, **kw)
         return self._add_collate(result)
 
-    def visit_not_like_op_binary(self, binary, operator, **kw):
+    def visit_not_like_op_binary(self, binary, operator, **kw: Any):
         result = super().visit_not_like_op_binary(binary, operator, **kw)
         return self._add_collate(result)
 
-    def visit_grouping(self, grouping, asfrom=False, add_grouping_collate=False, **kwargs):
+    def visit_grouping(self, grouping, asfrom=False, add_grouping_collate=False, **kwargs: Any):
         if add_grouping_collate:
             result = grouping.element._compiler_dispatch(self, **kwargs)
             result = self._add_collate(result)
-            return "(%s)" % (result,)
+            return f"({result})"
         return super().visit_grouping(grouping, asfrom=asfrom, **kwargs)
 
-    def _func_with_collate(self, func, **kwargs):
-        result = "%s%s" % (
-            func.name,
-            self.function_argspec(func, add_grouping_collate=True, **kwargs),
-        )
-        return result
+    def _func_with_collate(self, func, **kwargs: Any):
+        return f"{func.name}{self.function_argspec(func, add_grouping_collate=True, **kwargs)}"
 
-    def visit_lower_func(self, func, **kwargs):
+    def visit_lower_func(self, func, **kwargs: Any):
         return self._func_with_collate(func, **kwargs)
 
-    def visit_upper_func(self, func, **kwargs):
+    def visit_upper_func(self, func, **kwargs: Any):
         return self._func_with_collate(func, **kwargs)
 
-    def visit_max_func(self, func, **kwargs):
+    def visit_max_func(self, func, **kwargs: Any):
         return self._func_with_collate(func, **kwargs)
 
-    def visit_min_func(self, func, **kwargs):
+    def visit_min_func(self, func, **kwargs: Any):
         return self._func_with_collate(func, **kwargs)
 
-    def order_by_clause(self, select, **kw):
+    def order_by_clause(self, select, **kw: Any):
         order_by = select._order_by_clause
         if order_by is not None and len(order_by):
             order_by_clauses = []
@@ -63,7 +60,7 @@ class DLMYSQLCompilerBasic(UPSTREAM.statement_compiler):
             return " ORDER BY " + ", ".join(order_by_clauses)
         return ""
 
-    def group_by_clause(self, select, **kw):
+    def group_by_clause(self, select, **kw: Any):
         group_by = select._group_by_clause
         if group_by is not None and len(group_by):
             group_by_clauses = []
@@ -92,10 +89,7 @@ class DLMYSQLCompilerBasic(UPSTREAM.statement_compiler):
             if isinstance(type_, type_key):
                 for value_type, value_conv in value_converters.items():
                     if isinstance(value, value_type):
-                        return "{type_key}'{value_string}'".format(
-                            type_key=type_literal,
-                            value_string=value_conv(value),
-                        )
+                        return f"{type_literal}'{value_conv(value)}'"
 
         return super().render_literal_value(value, type_)
 
@@ -103,11 +97,11 @@ class DLMYSQLCompilerBasic(UPSTREAM.statement_compiler):
 class DLMYSQLCompiler(DLMYSQLCompilerBasic, UPSTREAM.statement_compiler, CompilerPrettyMixin):
     """Added prettification"""
 
-    def limit_clause(self, select, **kw):
+    def limit_clause(self, select, **kw: Any):
         sup = super().limit_clause(select, **kw)
         return self._pretty.postprocess_block("LIMIT", sup)
 
-    def visit_join(self, join, asfrom=False, from_linter=None, **kwargs):
+    def visit_join(self, join, asfrom=False, from_linter=None, **kwargs: Any):
         if from_linter:
             from_linter.edges.add((join.left, join.right))
 
@@ -131,7 +125,7 @@ class DLMYSQLCompiler(DLMYSQLCompilerBasic, UPSTREAM.statement_compiler, Compile
 class DLMYSQLDialectBasic(UPSTREAM):
     statement_compiler = DLMYSQLCompilerBasic
 
-    def __init__(self, enforce_collate=None, **kwargs):
+    def __init__(self, enforce_collate=None, **kwargs: Any) -> None:
         self.enforce_collate = enforce_collate
         super().__init__(**kwargs)
 

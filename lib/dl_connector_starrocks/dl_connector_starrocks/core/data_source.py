@@ -1,7 +1,7 @@
 import logging
 from typing import ClassVar
 
-from dl_constants.enums import (
+from dl_constants import (
     DataSourceType,
     JoinType,
 )
@@ -16,7 +16,6 @@ from dl_connector_starrocks.core.constants import (
     SOURCE_TYPE_STARROCKS_SUBSELECT,
     SOURCE_TYPE_STARROCKS_TABLE,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import (
-    Any,
-    AsyncGenerator,
-)
+from typing import Any
 import uuid
 
 import aiopg.sa
@@ -16,7 +14,7 @@ import pytest_asyncio
 from dl_compeng_pg.compeng_aiopg.exec_adapter_aiopg import AiopgExecAdapter
 from dl_compeng_pg.compeng_asyncpg.exec_adapter_asyncpg import AsyncpgExecAdapter
 from dl_compeng_pg.compeng_pg_base.exec_adapter_base import PostgreSQLExecAdapterAsync
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_core.data_processing.cache.utils import CompengOptionsBuilder
 from dl_core.data_processing.processing.context import OpExecutionContext
 from dl_core.services_registry.top_level import ServicesRegistry
@@ -26,11 +24,23 @@ from dl_utils.streaming import AsyncChunked
 
 
 async def get_active_queries(pg_adapter: PostgreSQLExecAdapterAsync) -> list[dict[str, Any]]:
-    columns = """
-    datid datname pid usesysid usename application_name
-    client_addr client_hostname client_port
-    backend_start xact_start query_start
-    state_change state query""".split()
+    columns = [
+        "datid",
+        "datname",
+        "pid",
+        "usesysid",
+        "usename",
+        "application_name",
+        "client_addr",
+        "client_hostname",
+        "client_port",
+        "backend_start",
+        "xact_start",
+        "query_start",
+        "state_change",
+        "state",
+        "query",
+    ]
     ctx = OpExecutionContext(processing_id="", streams=[], operations=[])
     # Get the PID of our connection to filter only our queries
     connection_pid = await pg_adapter.scalar(
@@ -51,8 +61,7 @@ async def get_active_queries(pg_adapter: PostgreSQLExecAdapterAsync) -> list[dic
     queries = await queries_resp.all()
     queries = [dict(zip(columns, row, strict=True)) for row in queries]  # should've perhaps been in the cursor?
     # skip self
-    queries = [query for query in queries if query["query"] and "active_queries_query" not in query["query"]]
-    return queries
+    return [query for query in queries if query["query"] and "active_queries_query" not in query["query"]]
 
 
 class BaseTestPGOpExecAdapter(DefaultCoreTestClass):
@@ -155,13 +164,15 @@ class TestAiopgOpRunner(BaseTestPGOpExecAdapter):
         service_registry: ServicesRegistry,
         compeng_pg_dsn: str,
     ) -> AsyncGenerator[PostgreSQLExecAdapterAsync, None]:
-        async with aiopg.sa.create_engine(compeng_pg_dsn, minsize=self.min_size, maxsize=self.max_size) as engine:
-            async with engine.acquire() as conn:
-                yield AiopgExecAdapter(
-                    reporting_registry=service_registry.get_reporting_registry(),
-                    conn=conn,
-                    cache_options_builder=CompengOptionsBuilder(),
-                )
+        async with (
+            aiopg.sa.create_engine(compeng_pg_dsn, minsize=self.min_size, maxsize=self.max_size) as engine,
+            engine.acquire() as conn,
+        ):
+            yield AiopgExecAdapter(
+                reporting_registry=service_registry.get_reporting_registry(),
+                conn=conn,
+                cache_options_builder=CompengOptionsBuilder(),
+            )
 
 
 class TestAsyncpgOpRunner(BaseTestPGOpExecAdapter):
@@ -172,11 +183,9 @@ class TestAsyncpgOpRunner(BaseTestPGOpExecAdapter):
         compeng_pg_dsn: str,
     ) -> AsyncGenerator[PostgreSQLExecAdapterAsync, None]:
         pool = await asyncpg.create_pool(compeng_pg_dsn, min_size=self.min_size, max_size=self.max_size)
-        async with pool:
-            async with pool.acquire() as conn:
-                async with conn.transaction():
-                    yield AsyncpgExecAdapter(
-                        reporting_registry=service_registry.get_reporting_registry(),
-                        conn=conn,
-                        cache_options_builder=CompengOptionsBuilder(),
-                    )
+        async with pool, pool.acquire() as conn, conn.transaction():
+            yield AsyncpgExecAdapter(
+                reporting_registry=service_registry.get_reporting_registry(),
+                conn=conn,
+                cache_options_builder=CompengOptionsBuilder(),
+            )

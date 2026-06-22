@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import (
-    Optional,
-    Sequence,
-)
+from collections.abc import Sequence
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     OrderDirection,
     PivotItemType,
     PivotRole,
@@ -30,14 +27,14 @@ class PivotDimensionRoleSpec(PivotRoleSpec):
 @attr.s(frozen=True)
 class PivotAnnotationRoleSpec(PivotRoleSpec):
     annotation_type: str = attr.ib(kw_only=True)
-    target_legend_item_ids: Optional[list[int]] = attr.ib(
+    target_legend_item_ids: list[int] | None = attr.ib(
         kw_only=True, default=None
     )  # if None, then applies to all measures
 
 
 @attr.s(frozen=True)
 class PivotMeasureRoleSpec(PivotRoleSpec):
-    sorting: Optional[PivotMeasureSorting] = attr.ib(kw_only=True, default=None)
+    sorting: PivotMeasureSorting | None = attr.ib(kw_only=True, default=None)
 
 
 @attr.s(frozen=True)

@@ -1,5 +1,3 @@
-from typing import Optional
-
 import pytest
 
 from dl_api_client.dsmaker.api.http_sync_base import SyncHttpClientBase
@@ -13,7 +11,7 @@ class TestPostgreSQLConnection(PostgreSQLConnectionTestBase, DefaultConnectorCon
         self,
         control_api_sync_client: SyncHttpClientBase,
         saved_connection_id: str,
-        bi_headers: Optional[dict[str, str]],
+        bi_headers: dict[str, str] | None,
     ) -> None:
         assert saved_connection_id
         response = control_api_sync_client.get(
@@ -25,7 +23,7 @@ class TestPostgreSQLConnection(PostgreSQLConnectionTestBase, DefaultConnectorCon
         assert response.json["cache_ttl_sec"] is None
 
     @pytest.mark.parametrize(
-        "args,expected_status_code",
+        ("args", "expected_status_code"),
         [
             ("", 200),
             ("?search_text=ampl&db_name=test_memory_catalog", 400),

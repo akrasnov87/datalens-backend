@@ -5,9 +5,11 @@ https://www.python.org/dev/peps/pep-0249/
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import date
 from enum import Enum
 from functools import wraps
+from typing import Any
 from urllib.parse import parse_qs
 
 import dateutil.parser
@@ -31,24 +33,23 @@ from dl_sqlalchemy_metrica_api.api_info.metrika import (
     fields_by_namespace,
 )
 from dl_sqlalchemy_metrica_api.exceptions import (  # noqa
-    ConnectionClosedException,
-    CursorClosedException,
+    ConnectionClosedError,
+    CursorClosedError,
     DatabaseError,
     DataError,
     Error,
     IntegrityError,
     InterfaceError,
     InternalError,
-    MetrikaApiAccessDeniedException,
-    MetrikaApiException,
-    MetrikaApiObjectNotFoundException,
-    MetrikaHttpApiException,
+    MetrikaApiAccessDeniedError,
+    MetrikaApiError,
+    MetrikaApiObjectNotFoundError,
+    MetrikaHttpApiError,
     NotSupportedError,
     OperationalError,
     ProgrammingError,
     Warning,
 )
-
 
 apilevel = "2.0"
 threadsafety = 2
@@ -94,28 +95,27 @@ cast_type_to_sqla_type = {
 
 def check_connected(func):
     @wraps(func)
-    def func_wrapper(self, *args, **kwargs):
+    def func_wrapper(self, *args: Any, **kwargs: Any):
         if self.is_connected is False:
-            raise ConnectionClosedException("Connection object is closed")
-        else:
-            return func(self, *args, **kwargs)
+            raise ConnectionClosedError("Connection object is closed")
+        return func(self, *args, **kwargs)
 
     return func_wrapper
 
 
-class Connection(object):
+class Connection:
     metrica_host = METRIKA_API_HOST
     metrica_fields_namespaces_enum = MetrikaApiCounterSource
 
     fields_namespace = None
     accuracy = None
 
-    def __init__(self, oauth_token, fields_namespace=None, accuracy=None, **client_kwargs):
+    def __init__(self, oauth_token, fields_namespace=None, accuracy=None, **client_kwargs: Any) -> None:
         client_kwargs.setdefault("host", self.metrica_host)
         self._cli = MetrikaApiClient(oauth_token, **client_kwargs)
         if fields_namespace:
             if not hasattr(self.metrica_fields_namespaces_enum, fields_namespace):
-                raise MetrikaApiException("Unknown fields namespace: %s" % fields_namespace)
+                raise MetrikaApiError(f"Unknown fields namespace: {fields_namespace}")
             self.fields_namespace = self.metrica_fields_namespaces_enum[fields_namespace]
         self.accuracy = accuracy
 
@@ -142,7 +142,7 @@ class Connection(object):
     @check_connected
     def get_table_names(self):
         avail_counters = self._cli.get_available_counters()
-        return list(str(c_info["id"]) for c_info in avail_counters)
+        return [str(c_info["id"]) for c_info in avail_counters]
 
     def get_columns(self):
         field_props = ("name", "type", "is_dim")
@@ -158,7 +158,7 @@ class Connection(object):
         return self._cli.get_counter_creation_date(counter_id)
 
 
-def connect(oauth_token=None, **kwargs):
+def connect(oauth_token=None, **kwargs: Any):
     oauth_token = oauth_token or kwargs.get("password")
     fields_namespace = kwargs.get("database")
     accuracy = kwargs.get("accuracy")
@@ -167,13 +167,12 @@ def connect(oauth_token=None, **kwargs):
 
 def check_cursor_connected(func):
     @wraps(func)
-    def func_wrapper(self, *args, **kwargs):
+    def func_wrapper(self, *args: Any, **kwargs: Any):
         if not self._connected:
-            raise CursorClosedException("Cursor object is closed")
-        elif not self.connection.is_connected:
-            raise ConnectionClosedException("Connection object is closed")
-        else:
-            return func(self, *args, **kwargs)
+            raise CursorClosedError("Cursor object is closed")
+        if not self.connection.is_connected:
+            raise ConnectionClosedError("Connection object is closed")
+        return func(self, *args, **kwargs)
 
     return func_wrapper
 
@@ -185,13 +184,13 @@ class InternalCommands(Enum):
     get_avail_date_max = "__GET_AVAILABLE_DATE_MAX__"
 
 
-class Cursor(object):
+class Cursor:
     description = None
     rowcount = -1
     arraysize = 1
     _result_data = None
 
-    def __init__(self, api_client: MetrikaApiClient, connection: Connection):
+    def __init__(self, api_client: MetrikaApiClient, connection: Connection) -> None:
         self._cli = api_client
         self.connection = connection
         self._connected = True
@@ -210,7 +209,7 @@ class Cursor(object):
         if subst_params:
             for k, v in query_params.items():
                 if len(v) != 1:
-                    raise ProgrammingError("Unexpected multiple parameter %s values %s" % (k, v))
+                    raise ProgrammingError(f"Unexpected multiple parameter {k} values {v}")
                 v = v[0] % subst_params
                 query_params[k] = v
 
@@ -246,7 +245,7 @@ class Cursor(object):
 
     def _exec_get_avail_date_max(self, operation, parameters):
         # TODO: use counter timezone
-        today = date.today()
+        today = date.today()  # noqa: DTZ011  # TODO: fix in BI-7500
         self._result_data = [(today.isoformat(),)]
         self.rowcount = 1
         result_columns = parameters.pop("__RESULT_COLUMNS__", [])
@@ -259,13 +258,12 @@ class Cursor(object):
         ]
 
     def _meth_by_operation(self, operation):
-        meth = {
+        return {
             InternalCommands.get_columns.value: self._exec_get_columns,
             InternalCommands.get_tables.value: self._exec_get_tables,
             InternalCommands.get_avail_date_min.value: self._exec_get_avail_date_min,
             InternalCommands.get_avail_date_max.value: self._exec_get_avail_date_max,
         }.get(operation)
-        return meth
 
     @check_cursor_connected
     def execute(self, operation, parameters=None):
@@ -313,8 +311,7 @@ class Cursor(object):
         try:
             if self._result_data:
                 return self._result_data.pop(0)
-            else:
-                return None
+            return None
         except StopIteration:
             return None
 
@@ -332,11 +329,11 @@ class Cursor(object):
         self._result_data = []
         return rows
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator:
         raise NotImplementedError()
 
-    def setinputsizes(self, *args, **kwargs):
+    def setinputsizes(self, *args: Any, **kwargs: Any):
         pass
 
-    def setoutputsize(self, *args, **kwargs):
+    def setoutputsize(self, *args: Any, **kwargs: Any):
         pass

@@ -1,4 +1,3 @@
-import abc
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -20,9 +19,10 @@ class ExtTestSuiteSettings(dl_settings.BaseSettings):
     APP_VERSION: str
     EXPECTED_DYNCONFIG: dict[str, Any]
     READINESS_SUBSYSTEMS: list[ReadinessSubsystemSettings]
+    METRICS_PATH: str = "/system/metrics"
 
 
-class ExtTestSuiteBase(abc.ABC):
+class ExtTestSuiteBase:
     @pytest_asyncio.fixture(name="default_app_client")
     async def fixture_default_app_client(
         self,

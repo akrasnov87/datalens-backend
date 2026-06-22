@@ -51,7 +51,6 @@ from dl_connector_starrocks.core.adapters_base_starrocks import BaseStarRocksAda
 from dl_connector_starrocks.core.error_transformer import async_starrocks_db_error_transformer
 from dl_connector_starrocks.core.target_dto import StarRocksConnTargetDTO
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -98,8 +97,7 @@ class AsyncStarRocksAdapter(
 
     @property
     def _dialect(self) -> sa.engine.default.DefaultDialect:
-        dialect = BIStarRocksDialect(paramstyle="pyformat")
-        return dialect
+        return BIStarRocksDialect(paramstyle="pyformat")
 
     def _cursor_column_to_nullable(self, cursor_col: tuple[Any, ...]) -> bool | None:
         # See https://aiomysql.readthedocs.io/en/latest/cursors.html#Cursor.description
@@ -149,8 +147,7 @@ class AsyncStarRocksAdapter(
                 LOGGER.info("Using SSL for async StarRocks connection")
                 create_engine_using_ssl = partial(self._create_engine, force_ssl=True)
                 return await self._engines.get("", generator=create_engine_using_ssl)
-            else:
-                raise
+            raise
 
     @contextlib.asynccontextmanager
     async def _get_connection(self, db_name_from_query: str | None) -> AsyncIterator[aiomysql.sa.SAConnection]:

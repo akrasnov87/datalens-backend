@@ -1,11 +1,9 @@
 from typing import (
     Any,
-    Optional,
     TypeVar,
 )
 
 import attr
-
 
 _RR_TV = TypeVar("_RR_TV", bound="ReportingRecord")
 
@@ -20,5 +18,5 @@ class ReportingRecord:
 
 @attr.s(frozen=True, auto_attribs=True)
 class RequestResultReportingRecord(ReportingRecord):
-    response_status_code: Optional[int] = 200
-    err_code: Optional[str] = None
+    response_status_code: int | None = 200
+    err_code: str | None = None

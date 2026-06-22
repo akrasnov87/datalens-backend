@@ -1,5 +1,5 @@
 import asyncio
-from typing import Generator
+from collections.abc import Generator
 
 import pytest
 
@@ -45,7 +45,7 @@ class DefaultCoreTestClass(BaseDatasetTestClass[ConnectionClickhouse]):
     def engine_config(self, db_url: str, engine_params: dict) -> ClickhouseDbEngineConfig:
         return ClickhouseDbEngineConfig(url=db_url, engine_params=engine_params)
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def connection_creation_params(self) -> dict:
         return dict(
             db_name=test_config.CoreConnectionSettings.DB_NAME,
@@ -53,10 +53,10 @@ class DefaultCoreTestClass(BaseDatasetTestClass[ConnectionClickhouse]):
             port=test_config.CoreConnectionSettings.PORT,
             username=test_config.CoreConnectionSettings.USERNAME,
             password=test_config.CoreConnectionSettings.PASSWORD,
-            **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level} if self.raw_sql_level is not None else {}),
         )
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def dataset_builder_factory(
         self,
         sync_us_manager: SyncUSManager,

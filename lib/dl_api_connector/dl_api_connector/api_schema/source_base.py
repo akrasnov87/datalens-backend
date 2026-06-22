@@ -1,11 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import (
     TYPE_CHECKING,
     Any,
-    Mapping,
-    Optional,
-    Union,
 )
 
 from marshmallow import EXCLUDE
@@ -13,7 +11,7 @@ from marshmallow import fields as ma_fields
 from marshmallow import post_load
 from marshmallow_oneofschema import OneOfSchema
 
-from dl_constants.enums import (
+from dl_constants import (
     BinaryJoinOperator,
     ConditionPartCalcMode,
     DataSourceType,
@@ -37,7 +35,6 @@ from dl_core.multisource import (
 from dl_model_tools.schema.base import BaseSchema
 from dl_model_tools.schema.dynamic_enum_field import DynamicEnumField
 from dl_type_transformer.native_type_schema import OneOfNativeTypeSchema
-
 
 if TYPE_CHECKING:
     from dl_core.multisource import ConditionPart
@@ -80,10 +77,10 @@ class IndexInfoSchema(BaseSchema):
 
 
 class SimpleParametersSchema(BaseSchema):
-    pass
+    manual = ma_fields.Boolean(allow_none=True, load_default=None)
 
 
-class SQLParametersSchema(BaseSchema):
+class SQLParametersSchema(SimpleParametersSchema):
     db_name = ma_fields.String(allow_none=True)
     table_name = ma_fields.String(allow_none=True)
     db_version = ma_fields.String(allow_none=True)
@@ -135,26 +132,27 @@ class DataSourceTemplateResponseField(ma_fields.Field):
             "group",
             "form",
             "disabled",
+            "disabled_text",
         )
     )
 
-    def _serialize(self, value: Optional[dict], attr: Optional[str], obj: Any, **kwargs: Any) -> Optional[dict]:
+    def _serialize(self, value: dict | None, attr: str | None, obj: Any, **kwargs: Any) -> dict | None:
         if value is None:
             return None
         assert isinstance(value, dict)
         allowed_keys = self._allowed_keys
         value = {key: val for key, val in value.items() if key in allowed_keys}
-        st = value.get("source_type", None)
+        st = value.get("source_type")
         if st is not None:
             value["source_type"] = st.name
         return value
 
-    def _deserialize(self, value: Any, attr: Optional[str], data: Optional[Mapping[str, Any]], **kwargs: Any) -> Any:
+    def _deserialize(self, value: Any, attr: str | None, data: Mapping[str, Any] | None, **kwargs: Any) -> Any:
         raise Exception("Not Applicable")
 
 
 class VirtualFlagField(ma_fields.Field):
-    def _serialize(self, value: Union[str, ManagedBy, None], attr: Optional[str], obj: Any, **kwargs: Any) -> bool:
+    def _serialize(self, value: str | ManagedBy | None, attr: str | None, obj: Any, **kwargs: Any) -> bool:
         if isinstance(value, str):
             value = ManagedBy[value]
         if value is None:
@@ -256,7 +254,7 @@ class ConditionPartGenericSchema(OneOfSchema):
 
     type_field_remove = False
     type_field = "calc_mode"
-    type_schemas = {
+    type_schemas = {  # noqa: RUF012
         ConditionPartCalcMode.direct.name: ConditionPartDirectSchema,
         ConditionPartCalcMode.formula.name: ConditionPartFormulaSchema,
         ConditionPartCalcMode.result_field.name: ConditionPartResultFieldSchema,

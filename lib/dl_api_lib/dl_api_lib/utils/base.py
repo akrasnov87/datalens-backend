@@ -1,8 +1,9 @@
-""" ... """
+"""..."""
 
 from __future__ import annotations
 
 import cProfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 import datetime
 import logging
@@ -10,8 +11,6 @@ import os
 from typing import (
     TYPE_CHECKING,
     Any,
-    Iterator,
-    Optional,
 )
 import uuid
 
@@ -22,8 +21,8 @@ from dl_api_lib.common_models.data_export import (
     DataExportResult,
 )
 from dl_api_lib.enums import USPermissionKind
+from dl_core.base_models import WorkbookEntryLocation
 import dl_core.exc as common_exc
-
 
 if TYPE_CHECKING:
     from dl_core.us_entry import USEntry
@@ -34,9 +33,9 @@ LOGGER = logging.getLogger(__name__)
 @contextmanager
 def query_execution_context(
     log_error: bool = True,
-    dataset_id: Optional[str] = None,
-    version: Optional[str] = None,
-    body: Optional[dict] = None,
+    dataset_id: str | None = None,
+    version: str | None = None,
+    body: dict | None = None,
 ) -> Iterator[None]:
     try:
         yield  # execute query here
@@ -55,7 +54,7 @@ def query_execution_context(
 
 
 @contextmanager
-def profile_stats(stats_dir: Optional[str] = None) -> Iterator[None]:
+def profile_stats(stats_dir: str | None = None) -> Iterator[None]:
     """Save profiler stats to file"""
     stats_dir = stats_dir or "./cprofiler"
     if not os.path.exists(stats_dir):
@@ -68,7 +67,9 @@ def profile_stats(stats_dir: Optional[str] = None) -> Iterator[None]:
         pr.disable()
         filename = os.path.join(
             stats_dir,
-            "{}-{}.stats".format(datetime.datetime.utcnow().strftime("%Y-%m-%d-%H-%M-%S"), str(uuid.uuid4())[:4]),
+            "{}-{}.stats".format(
+                datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d-%H-%M-%S"), str(uuid.uuid4())[:4]
+            ),
         )
         pr.dump_stats(filename)
 
@@ -82,7 +83,19 @@ def need_permission_on_entry(us_entry: USEntry, permission: USPermissionKind) ->
     assert us_entry.permissions is not None
     assert us_entry.uuid is not None
     if not us_entry.permissions[permission.name]:
-        raise common_exc.USPermissionRequired(us_entry.uuid, permission.name)
+        raise common_exc.USPermissionRequiredError(us_entry.uuid, permission.name)
+
+
+def need_delete_permission_on_entry(us_entry: USEntry) -> None:
+    """Check the permission required to delete *us_entry*.
+
+    Workbook entries only need ``edit``; all other entries (path, collection)
+    require ``admin``.
+    """
+    if isinstance(us_entry.entry_key, WorkbookEntryLocation):
+        need_permission_on_entry(us_entry, USPermissionKind.edit)
+    else:
+        need_permission_on_entry(us_entry, USPermissionKind.admin)
 
 
 def get_data_export_base_result(data_export_info: DataExportInfo) -> DataExportResult:
@@ -134,13 +147,13 @@ def enrich_resp_dict_with_data_export_info(data: dict[str, Any], data_export_res
     is_background_export_allowed = data_export_result.background.allowed
     background_export_forbidden_reason = None if is_background_export_allowed else data_export_result.background.reason
 
-    data["data_export"] = dict(
-        basic=dict(
-            allowed=is_basic_export_allowed,
-            reason=basic_export_forbidden_reason,
-        ),
-        background=dict(
-            allowed=is_background_export_allowed,
-            reason=background_export_forbidden_reason,
-        ),
-    )
+    data["data_export"] = {
+        "basic": {
+            "allowed": is_basic_export_allowed,
+            "reason": basic_export_forbidden_reason,
+        },
+        "background": {
+            "allowed": is_background_export_allowed,
+            "reason": background_export_forbidden_reason,
+        },
+    }

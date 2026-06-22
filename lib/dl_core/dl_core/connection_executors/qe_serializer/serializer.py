@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from typing import (
-    ClassVar,
-    Optional,
-    Union,
-)
+from typing import ClassVar
 
 from marshmallow import Schema
 
@@ -16,8 +12,7 @@ from dl_core.connection_executors.qe_serializer import (
     schemas_exc,
 )
 
-
-ResponseTypes = Union[RawSchemaInfo, list[str], Optional[str], None, bool, int]
+ResponseTypes = RawSchemaInfo | list[str] | str | None | None | bool | int
 
 
 class ActionSerializer:
@@ -54,7 +49,7 @@ class ActionSerializer:
         if action_cls is None:
             raise TypeError(f"Action {action_cls_qualname} is not listed in serializable actions")
 
-        schema = self.MAP_ACT_TYPE_SCHEMA_CLS[action_cls](context=dict(allowed_dba_classes=allowed_dba_classes))
+        schema = self.MAP_ACT_TYPE_SCHEMA_CLS[action_cls](context={"allowed_dba_classes": allowed_dba_classes})
         obj = schema.load(data)
 
         if not isinstance(obj, action_cls):

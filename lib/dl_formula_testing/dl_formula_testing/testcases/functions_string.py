@@ -13,7 +13,6 @@ from dl_formula_testing.util import (
     to_unicode,
 )
 
-
 CONTAINS_TESTS = [
     ('"a b c % d e"', '""', True),
     ('"a b c % d e"', '"c % d"', True),
@@ -219,7 +218,7 @@ class DefaultStringFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase):
         assert not dbe.eval('NOTCONTAINS(#2019-03-04#, "019")')
         assert not dbe.eval('NOTCONTAINS(#2019-03-04T12:34:56#, "019")')
 
-    @pytest.mark.parametrize("value_fl,pattern_fl,expected", CONTAINS_TESTS)
+    @pytest.mark.parametrize(("value_fl", "pattern_fl", "expected"), CONTAINS_TESTS)
     def test_contains_extended(
         self,
         dbe: DbEvaluator,
@@ -234,14 +233,14 @@ class DefaultStringFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase):
             return
 
         # const:
-        statement = "CONTAINS(__LIT__({}), {})".format(value_fl, pattern_fl)
+        statement = f"CONTAINS(__LIT__({value_fl}), {pattern_fl})"
         assert dbe.eval(statement) is expected, (statement, expected)
 
         # var:
-        statement = "CONTAINS(__LIT__({}), __LIT__({}))".format(value_fl, pattern_fl)
+        statement = f"CONTAINS(__LIT__({value_fl}), __LIT__({pattern_fl}))"
         assert dbe.eval(statement) is expected, (statement, expected)
 
-    @pytest.mark.parametrize("value_fl,pattern_fl,expected", CONTAINS_TESTS)
+    @pytest.mark.parametrize(("value_fl", "pattern_fl", "expected"), CONTAINS_TESTS)
     def test_notcontains_extended(
         self,
         dbe: DbEvaluator,
@@ -256,12 +255,12 @@ class DefaultStringFunctionFormulaConnectorTestSuite(FormulaConnectorTestBase):
             return
 
         # const:
-        statement = "NOTCONTAINS(__LIT__({}), {})".format(value_fl, pattern_fl)
+        statement = f"NOTCONTAINS(__LIT__({value_fl}), {pattern_fl})"
         dbe.eval(statement)
         assert dbe.eval(statement) is not expected, (statement, expected)
 
         # var:
-        statement = "NOTCONTAINS(__LIT__({}), __LIT__({}))".format(value_fl, pattern_fl)
+        statement = f"NOTCONTAINS(__LIT__({value_fl}), __LIT__({pattern_fl}))"
         assert dbe.eval(statement) is not expected, (statement, expected)
 
     def test_icontains_simple(self, dbe: DbEvaluator, forced_literal_use: Any) -> None:

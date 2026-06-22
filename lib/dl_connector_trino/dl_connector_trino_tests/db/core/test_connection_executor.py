@@ -1,9 +1,9 @@
-from collections.abc import Sequence
-import datetime
-from typing import (
+from collections.abc import (
     Callable,
     Generator,
+    Sequence,
 )
+import datetime
 
 import pytest
 import sqlalchemy as sa
@@ -11,7 +11,7 @@ from sqlalchemy.exc import CompileError
 from sqlalchemy.sql import compiler
 import trino.sqlalchemy.datatype as tsa
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_core.connection_executors.adapters.adapters_base_sa_classic import BaseClassicAdapter
 from dl_core.connection_executors.common_base import ConnExecutorQuery
 from dl_core.connection_executors.sync_base import (
@@ -38,6 +38,7 @@ from dl_connector_trino.core.us_connection import (
     ConnectionTrino,
     ConnectionTrinoBase,
 )
+from dl_connector_trino_tests.db.config import CoreConnectionSettings
 from dl_connector_trino_tests.db.core.base import BaseTrinoTestClass
 
 
@@ -45,7 +46,7 @@ class TrinoSyncConnectionExecutorBase(
     BaseTrinoTestClass,
     DefaultSyncAsyncConnectionExecutorCheckBase[ConnectionTrino],
 ):
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def db_ident(self) -> DBIdent:
         return None
 
@@ -58,8 +59,21 @@ class TestTrinoSyncConnectionExecutor(
     TrinoSyncConnectionExecutorBase,
     DefaultSyncConnectionExecutorTestSuite[ConnectionTrino],
 ):
+    def test_modifying_query_returns_empty_result(
+        self,
+        sync_connection_executor: SyncConnExecutorBase,
+    ) -> None:
+        # A modifying / no-result-set statement makes the DBAPI cursor expose `description = None`.
+        # The classic SA adapter must emit an empty result instead of crashing while building cursor info.
+        query = ConnExecutorQuery(
+            query=f"DROP TABLE IF EXISTS {CoreConnectionSettings.CATALOG}.{CoreConnectionSettings.SCHEMA}.dl_no_result_test"
+        )
+        result = sync_connection_executor.execute(query)
+        assert result.cursor_info["names"] == []
+        assert result.get_all() == []
+
     @pytest.mark.parametrize(
-        "layer, expected_error_name",
+        ("layer", "expected_error_name"),
         [
             ("table_name", "TABLE_NOT_FOUND"),
             ("schema_name", "SCHEMA_NOT_FOUND"),
@@ -73,11 +87,11 @@ class TestTrinoSyncConnectionExecutor(
         sync_connection_executor: SyncConnExecutorBase,
         existing_table_ident: TableIdent,
     ) -> None:
-        nonexistent_table_features = dict(
-            db_name=existing_table_ident.db_name,
-            schema_name=existing_table_ident.schema_name,
-            table_name=existing_table_ident.table_name,
-        )
+        nonexistent_table_features = {
+            "db_name": existing_table_ident.db_name,
+            "schema_name": existing_table_ident.schema_name,
+            "table_name": existing_table_ident.table_name,
+        }
         nonexistent_table_features[layer] = "nonexistent_" + nonexistent_table_features[layer]
         nonexistent_table_ident = TableIdent(**nonexistent_table_features)
 
@@ -89,7 +103,7 @@ class TestTrinoSyncConnectionExecutor(
         )
         sa_query = nonexistent_table.select()
         conn_executor_query = ConnExecutorQuery(sa_query, db_name=nonexistent_table_ident.db_name)
-        with pytest.raises(core_exc.SourceDoesNotExist) as exc_info:
+        with pytest.raises(core_exc.SourceDoesNotExistError) as exc_info:
             sync_connection_executor.execute(conn_executor_query)
 
         exc_instance = exc_info.value
@@ -109,7 +123,7 @@ class TestTrinoSyncConnectionExecutor(
             schema=table_ident.schema_name,
         )
         conn_executor_query = ConnExecutorQuery(table.select(), db_name=table_ident.db_name)
-        with pytest.raises(core_exc.ColumnDoesNotExist) as exc_info:
+        with pytest.raises(core_exc.ColumnDoesNotExistError) as exc_info:
             sync_connection_executor.execute(conn_executor_query)
 
         exc_instance = exc_info.value
@@ -174,8 +188,7 @@ class TestTrinoSyncConnectionExecutor(
             )
 
         conn_executor_query = ConnExecutorQuery(sa_query, db_name=existing_table_ident.db_name)
-        result = sync_connection_executor.execute(conn_executor_query)
-        return result
+        return sync_connection_executor.execute(conn_executor_query)
 
     def test_duplicate_parametrized_expression_in_select_fails(
         self,
@@ -237,7 +250,7 @@ class TestTrinoSyncConnectionExecutor(
 
 
 class TestTrinoSyncConnectionExecutorTimeout(TrinoSyncConnectionExecutorBase):
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def sync_connection_executor(
         self,
         sync_conn_executor_factory: Callable[[], SyncConnExecutorBase],
@@ -271,5 +284,5 @@ class TestTrinoSyncConnectionExecutorTimeout(TrinoSyncConnectionExecutorBase):
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         conn_executor_query = ConnExecutorQuery("SELECT count(*) FROM blackhole.default.sleeper3")
-        with pytest.raises(core_exc.SourceTimeout):
+        with pytest.raises(core_exc.SourceTimeoutError):
             sync_connection_executor.execute(conn_executor_query)

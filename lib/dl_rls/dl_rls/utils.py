@@ -1,17 +1,11 @@
-from typing import (
-    Iterable,
-    TypeVar,
-)
+from collections.abc import Iterable
 
-from dl_constants.enums import RLSSubjectType
+from dl_constants import RLSSubjectType
 from dl_rls.models import RLSEntry
 
 
-_T = TypeVar("_T")
-
-
 # TODO: replace with itertools.batched after switching to Python 3.12
-def chunks(lst: list[_T], size: int) -> Iterable[list[_T]]:
+def chunks[T](lst: list[T], size: int) -> Iterable[list[T]]:
     """Yield successive chunks from lst. No padding."""
     for idx in range(0, len(lst), size):
         yield lst[idx : idx + size]
@@ -60,7 +54,7 @@ def quote_by_quote(value: str, quote: str = "'") -> str:
     >>> split_by_quoted_quote(quote_by_quote("a'b'") + "and 'stuff'")
     ("a'b'", "and 'stuff'")
     """
-    return "{}{}{}".format(quote, value.replace(quote, quote + quote), quote)
+    return f"{quote}{value.replace(quote, quote + quote)}{quote}"
 
 
 def is_slug(group_id: str, group_name: str) -> bool:

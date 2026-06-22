@@ -5,6 +5,8 @@ https://www.python.org/dev/peps/pep-0249/
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy.types import (  # noqa: F401  TODO: might actually be unnecessary.
     DATE,
     DATETIME,
@@ -21,24 +23,23 @@ from dl_sqlalchemy_metrica_api.api_info.appmetrica import (
     fields_by_namespace,
 )
 from dl_sqlalchemy_metrica_api.exceptions import (  # noqa
-    ConnectionClosedException,
-    CursorClosedException,
+    ConnectionClosedError,
+    CursorClosedError,
     DatabaseError,
     DataError,
     Error,
     IntegrityError,
     InterfaceError,
     InternalError,
-    MetrikaApiAccessDeniedException,
-    MetrikaApiException,
-    MetrikaApiObjectNotFoundException,
-    MetrikaHttpApiException,
+    MetrikaApiAccessDeniedError,
+    MetrikaApiError,
+    MetrikaApiObjectNotFoundError,
+    MetrikaHttpApiError,
     NotSupportedError,
     OperationalError,
     ProgrammingError,
     Warning,
 )
-
 
 apilevel = "2.0"
 threadsafety = 2
@@ -57,7 +58,7 @@ class Connection(metrika_dbapi.Connection):
     @metrika_dbapi.check_connected
     def get_table_names(self):
         avail_counters = self._cli.get_available_counters()
-        return list(str(c_info["id"]) for c_info in avail_counters)
+        return [str(c_info["id"]) for c_info in avail_counters]
 
     def get_columns(self):
         field_props = ("name", "type", "is_dim")
@@ -69,7 +70,7 @@ class Connection(metrika_dbapi.Connection):
         }
 
 
-def connect(oauth_token=None, **kwargs):
+def connect(oauth_token=None, **kwargs: Any):
     oauth_token = oauth_token or kwargs.get("password")
     fields_namespace = kwargs.get("database")
     accuracy = kwargs.get("accuracy")

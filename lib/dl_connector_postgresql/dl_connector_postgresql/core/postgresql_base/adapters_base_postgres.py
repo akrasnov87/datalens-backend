@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import (
     Any,
-    Optional,
+    ClassVar,
 )
 
 import attr
@@ -15,7 +16,6 @@ from dl_type_transformer.native_type import SATypeSpec
 from dl_connector_postgresql.core.postgresql.constants import CONNECTION_TYPE_POSTGRES
 from dl_connector_postgresql.core.postgresql_base.constants import PGEnforceCollateMode
 from dl_connector_postgresql.core.postgresql_base.target_dto import PostgresConnTargetDTO
-
 
 # One way to obtain this data:
 # docker exec bi-api_db-postgres_1 psql -U datalens -d  bi_db -A -t -F, -c 'select oid, typname from pg_type order by oid'
@@ -377,8 +377,7 @@ class PostgresQueryConstructorMixin:
     def get_list_all_tables_query(
         self, search_text: str | None = None, limit: int | None = None, offset: int | None = None
     ) -> sa.sql.elements.TextClause:
-        sql_parts = [
-            """
+        sql_parts = ["""
         SELECT
             pg_namespace.nspname as schema,
             pg_class.relname as name
@@ -391,8 +390,7 @@ class PostgresQueryConstructorMixin:
             AND pg_namespace.nspname != 'information_schema'
             AND pg_class.relkind in ('m', 'p', 'r', 'v')
             AND NOT COALESCE((row_to_json(pg_class)->>'relispartition')::boolean, false)
-        """
-        ]
+        """]
 
         if search_text:
             sql_parts.append("AND (pg_namespace.nspname || '.' || pg_class.relname) ILIKE :search_text")
@@ -402,19 +400,15 @@ class PostgresQueryConstructorMixin:
         sql = " ".join(sql_parts)
         query = sa.text(sql)
         params = self._compile_pagination_params(search_text, limit, offset)
-        query = query.bindparams(*params)
-
-        return query
+        return query.bindparams(*params)
 
     def get_list_schema_names_query(
         self, search_text: str | None = None, limit: int | None = None, offset: int | None = None
     ) -> sa.sql.elements.TextClause:
-        sql_parts = [
-            """
+        sql_parts = ["""
         SELECT nspname FROM pg_namespace
         WHERE nspname NOT LIKE 'pg\_%'
-        """
-        ]
+        """]
 
         if search_text:
             sql_parts.append("AND nspname ILIKE :search_text")
@@ -424,22 +418,18 @@ class PostgresQueryConstructorMixin:
         sql = " ".join(sql_parts)
         query = sa.text(sql)
         params = self._compile_pagination_params(search_text, limit, offset)
-        query = query.bindparams(*params)
-
-        return query
+        return query.bindparams(*params)
 
     def get_list_table_and_view_names_query(
         self, schema_name: str, search_text: str | None = None, limit: int | None = None, offset: int | None = None
     ) -> sa.sql.elements.TextClause:
-        sql_parts = [
-            """
+        sql_parts = ["""
         SELECT c.relname FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = :schema
         AND c.relkind in ('r', 'p', 'v', 'm')
         AND NOT COALESCE((row_to_json(c)->>'relispartition')::boolean, false)
-        """
-        ]
+        """]
 
         if search_text:
             sql_parts.append("AND c.relname ILIKE :search_text")
@@ -453,9 +443,7 @@ class PostgresQueryConstructorMixin:
             sa.bindparam("schema", schema_name, type_=sa.String),
             *self._compile_pagination_params(search_text, limit, offset),
         ]
-        query = query.bindparams(*params)
-
-        return query
+        return query.bindparams(*params)
 
 
 @attr.s(cmp=False)
@@ -470,7 +458,7 @@ class BasePostgresAdapter(BaseSSLCertAdapter, PostgresQueryConstructorMixin):
     # It is potentially possible to plug into the sqlalchemy logic
     # (with a few extra raw sql queries),
     # but for now, a more simple mapping is preferred.
-    _type_code_to_sa: Optional[dict[Any, SATypeSpec]] = {
+    _type_code_to_sa: ClassVar[Mapping[Any, SATypeSpec] | None] = {
         16: sa_pg.BOOLEAN,
         17: sa_pg.BYTEA,  # unsupported
         # 19: 'name',
@@ -504,7 +492,7 @@ class BasePostgresAdapter(BaseSSLCertAdapter, PostgresQueryConstructorMixin):
     }
 
     @staticmethod
-    def _convert_bytea(value: memoryview) -> Optional[str]:
+    def _convert_bytea(value: memoryview) -> str | None:
         str_value = bytes(value[:110]).decode("utf-8", errors="replace")
         if len(value) > 110 or len(str_value) > 100:
             str_value = str_value[:100]
@@ -513,7 +501,7 @@ class BasePostgresAdapter(BaseSSLCertAdapter, PostgresQueryConstructorMixin):
 
     # it's static because of typing hell in target_dto
     @staticmethod
-    def _get_enforce_collate(target_dto: PostgresConnTargetDTO) -> Optional[str]:
+    def _get_enforce_collate(target_dto: PostgresConnTargetDTO) -> str | None:
         if target_dto.enforce_collate == PGEnforceCollateMode.auto:
             raise Exception("Resolution of PGEnforceCollateMode.auto is not allowed at this point")
         if target_dto.enforce_collate == PGEnforceCollateMode.on:

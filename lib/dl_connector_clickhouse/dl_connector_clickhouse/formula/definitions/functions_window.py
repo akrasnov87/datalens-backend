@@ -1,6 +1,5 @@
 from typing import (
     Any,
-    Optional,
     cast,
 )
 
@@ -25,14 +24,13 @@ from dl_formula.translation.env import TranslationEnvironment
 
 from dl_connector_clickhouse.formula.constants import ClickHouseDialect as D
 
-
 V = TranslationVariant.make
 
 SUPPORTED_DIALECTS = D.and_above(D.CLICKHOUSE_22_10)
 
 
 class WinLagClickHouseBase(base.WinLagBase):
-    variants = [
+    variants = (
         V(
             SUPPORTED_DIALECTS,
             translation=lambda x, offset=sa.literal(1), default=sa.null(), *_: (  # noqa: B008
@@ -47,7 +45,7 @@ class WinLagClickHouseBase(base.WinLagBase):
             translation_rows=lambda x, offset=sa.literal(1), *_: (None, None),  # noqa: B008
             as_winfunc=True,
         ),
-    ]
+    )
 
 
 class WinLag1ClickHouse(WinLagClickHouseBase):
@@ -67,15 +65,15 @@ class RankPercentileTranslationImplementation(FuncTranslationImplementationBase)
         self,
         *raw_args: TranslationCtx,
         translator_cb: TranslateCallback,
-        partition_by: Optional[ClauseList] = None,
-        default_order_by: Optional[ClauseList] = None,
-        translation_ctx: Optional[TranslationCtx] = None,
-        translation_env: Optional[TranslationEnvironment] = None,
+        partition_by: ClauseList | None = None,
+        default_order_by: ClauseList | None = None,
+        translation_ctx: TranslationCtx | None = None,
+        translation_env: TranslationEnvironment | None = None,
     ) -> ClauseElement:
         def translation_rank(value: Any, *args: Any) -> SAFunction:
             return sa.func.RANK(value)
 
-        args, kwargs = self._handle_args(
+        args, _kwargs = self._handle_args(
             raw_args,
             translation_func=translation_rank,
             translation_ctx=translation_ctx,
@@ -91,12 +89,12 @@ class RankPercentileTranslationImplementation(FuncTranslationImplementationBase)
 
 
 class WinRankPercentileClickHouseBase(base.WinRankPercentileBase):
-    variants = [
+    variants = (
         TranslationVariant(
             dialects=SUPPORTED_DIALECTS,
             value=RankPercentileTranslationImplementation(),
         ),
-    ]
+    )
 
 
 class WinRankPercentile1ClickHouse(WinRankPercentileClickHouseBase):

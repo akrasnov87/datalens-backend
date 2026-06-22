@@ -1,17 +1,17 @@
 from collections import defaultdict
+from collections.abc import Iterable
 from copy import deepcopy
 import logging
-from typing import (
-    Any,
-    Iterable,
-)
+from typing import Any
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     DataSourceCreatedVia,
     DataSourceRole,
     DataSourceType,
+    ExtractMode,
+    ExtractStatus,
     JoinType,
     ManagedBy,
 )
@@ -38,6 +38,8 @@ from dl_core.db.elements import (
 import dl_core.exc as exc
 from dl_core.fields import (
     BIField,
+    FilterField,
+    OrderField,
     ResultSchema,
 )
 from dl_core.multisource import (
@@ -47,7 +49,6 @@ from dl_core.multisource import (
 )
 from dl_core.us_connection_base import ConnectionBase
 from dl_core.us_dataset import Dataset
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -105,7 +106,7 @@ class DatasetComponentEditor:
             bound_avatars = self._ds_accessor.get_avatar_list(source_id=source_id)
             if bound_avatars:
                 raise exc.DatasetConfigurationError(
-                    "Can't delete source because it is bound by avatars: {}".format([ava.id for ava in bound_avatars])
+                    f"Can't delete source because it is bound by avatars: {[ava.id for ava in bound_avatars]}"
                 )
         dsrc_coll_spec = self._ds_accessor.get_data_source_coll_spec_strict(source_id=source_id)
         assert dsrc_coll_spec is not None
@@ -196,7 +197,7 @@ class DatasetComponentEditor:
             dsrc_coll_spec = self._ds_accessor.get_data_source_coll_spec_strict(source_id=source_id)
 
             if dsrc_coll_spec.managed_by != ManagedBy.user:
-                LOGGER.info(f"dsrc_coll_spec.managed_by = {dsrc_coll_spec.managed_by}. Skipping datasource deletion.")
+                LOGGER.info("dsrc_coll_spec.managed_by = %s. Skipping datasource deletion.", dsrc_coll_spec.managed_by)
                 return
 
             # We can delete only sources from non-ref collections
@@ -266,7 +267,7 @@ class DatasetComponentEditor:
         ) + self._ds_accessor.get_avatar_relation_list(right_avatar_id=avatar_id)
         if bound_relations:
             raise exc.DatasetConfigurationError(
-                "Can't delete avatar because it is bound by relations: {}".format([rel.id for rel in bound_relations])
+                f"Can't delete avatar because it is bound by relations: {[rel.id for rel in bound_relations]}"
             )
 
         avatar = self._ds_accessor.get_avatar_strict(avatar_id=avatar_id)
@@ -317,7 +318,7 @@ class DatasetComponentEditor:
     ) -> None:
         # validate
         if self._ds_accessor.get_avatar_relation_list(right_avatar_id=right_avatar_id):
-            raise exc.DatasetConfigurationError("Avatar {} already has a left relation".format(right_avatar_id))
+            raise exc.DatasetConfigurationError(f"Avatar {right_avatar_id} already has a left relation")
         for avatar_id in (left_avatar_id, right_avatar_id):
             if avatar_id:  # isn't it always true?
                 self.ensure_avatar_exists(avatar_id=avatar_id)
@@ -410,10 +411,9 @@ class DatasetComponentEditor:
         raise exc.DatasetConfigurationError(f"Obligatory filter with id {obfilter_id} not found.")
 
     def remove_obligatory_filter(self, obfilter_id: str) -> None:
-        new_filters = []
-        for filter_object in self._dataset.data.obligatory_filters:
-            if filter_object.id != obfilter_id:
-                new_filters.append(filter_object)
+        new_filters = [
+            filter_object for filter_object in self._dataset.data.obligatory_filters if filter_object.id != obfilter_id
+        ]
         self._dataset.data.obligatory_filters = new_filters
 
     def set_result_schema(self, result_schema: ResultSchema | Iterable[BIField]) -> None:
@@ -444,6 +444,9 @@ class DatasetComponentEditor:
     def set_cache_invalidation_source(self, cache_invalidation_source: CacheInvalidationSource) -> None:
         self._dataset.data.cache_invalidation_source = cache_invalidation_source
 
+    def set_query_settings(self, query_settings: dict[str, str]) -> None:
+        self._dataset.data.query_settings = query_settings
+
     def replace_connection(self, old_connection: ConnectionBase, new_connection: ConnectionBase) -> None:
         old_migrator = get_data_source_migrator(old_connection.conn_type)
         new_migrator = get_data_source_migrator(new_connection.conn_type)
@@ -461,3 +464,56 @@ class DatasetComponentEditor:
                 migration_dtos=migration_dtos, connection_ref=new_connection_ref
             )
             old_source_coll_spec.set_for_role(role=role, value=new_source_spec)
+
+    def update_extract_filter(
+        self,
+        filter_id: str,
+        valid: bool | None = None,
+    ) -> None:
+        filter = self._ds_accessor.get_extract_filter(filter_id=filter_id)
+        if filter is not None and valid is not None:
+            filter.valid = valid
+
+    def update_extract_sort(
+        self,
+        sort_id: str,
+        valid: bool | None = None,
+    ) -> None:
+        sort = self._ds_accessor.get_extract_sort(sort_id=sort_id)
+        if sort is not None and valid is not None:
+            sort.valid = valid
+
+    def update_extract_properties(
+        self,
+        valid: bool | None = None,
+    ) -> None:
+        properties = self._ds_accessor.get_extract_properties()
+        if valid is not None:
+            properties.valid = valid
+
+    def set_extract_mode(self, extract_mode: ExtractMode) -> None:
+        self._dataset.data.extract.mode = extract_mode
+
+        # TODO(DLPROJECTS-749): Change type when mode != disabled
+        # if extract_mode != ExtractMode.disabled:
+        #     self._dataset.type_ = "extract"
+        # else:
+        #     self._dataset.type_ = ""
+
+    def set_extract_status(self, extract_status: ExtractStatus) -> None:
+        self._dataset.data.extract.status = extract_status
+
+    def set_extract_errors(self, extract_errors: list[str]) -> None:
+        self._dataset.data.extract.errors = extract_errors
+
+    def set_extract_last_completed(self, extract_last_completed: int) -> None:
+        self._dataset.data.extract.last_completed = extract_last_completed
+
+    def set_extract_filters(self, extract_filters: list[FilterField]) -> None:
+        self._dataset.data.extract.filters = extract_filters
+
+    def set_extract_sorting(self, extract_sorting: list[OrderField]) -> None:
+        self._dataset.data.extract.sorting = extract_sorting
+
+    def set_extract_data_dataset_revision(self, data_dataset_revision: str | None) -> None:
+        self._dataset.data.extract.data_dataset_revision = data_dataset_revision

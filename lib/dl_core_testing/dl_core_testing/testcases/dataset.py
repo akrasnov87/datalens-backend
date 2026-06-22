@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-from typing import (
-    AbstractSet,
-    ClassVar,
-    Generic,
-    Optional,
-    TypeVar,
-)
+from collections.abc import Set
+from typing import ClassVar
 
 import pytest
 import sqlalchemy as sa
 
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DataSourceRole,
     DataSourceType,
@@ -42,30 +37,27 @@ from dl_core_testing.testcases.connection import BaseConnectionTestClass
 from dl_testing.regulated_test import RegulatedTestCase
 
 
-_CONN_TV = TypeVar("_CONN_TV", bound=ConnectionBase)
-
-
-class BaseDatasetTestClass(BaseConnectionTestClass[_CONN_TV], Generic[_CONN_TV]):
+class BaseDatasetTestClass[CONN_TV: ConnectionBase](BaseConnectionTestClass[CONN_TV]):
     source_type: ClassVar[DataSourceType]
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def dataset_table(self, sample_table: DbTable) -> DbTable:
         """The table to be used for datasets. By default use the sample table"""
         return sample_table
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def dsrc_params(self, dataset_table: DbTable) -> dict:
-        return dict(
-            db_name=dataset_table.db.name,
-            schema_name=dataset_table.schema,
-            table_name=dataset_table.name,
-        )
+        return {
+            "db_name": dataset_table.db.name,
+            "schema_name": dataset_table.schema,
+            "table_name": dataset_table.name,
+        }
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def saved_dataset(
         self,
         sync_us_manager: SyncUSManager,
-        saved_connection: _CONN_TV,
+        saved_connection: CONN_TV,
         dsrc_params: dict,
     ) -> Dataset:
         dataset = make_dataset(
@@ -77,17 +69,17 @@ class BaseDatasetTestClass(BaseConnectionTestClass[_CONN_TV], Generic[_CONN_TV])
         sync_us_manager.save(dataset)
         return dataset
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def empty_saved_dataset(self, sync_us_manager: SyncUSManager) -> Dataset:
         dataset = make_dataset(sync_usm=sync_us_manager)
         sync_us_manager.save(dataset)
         return dataset
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def dataset_wrapper(self, saved_dataset: Dataset, sync_us_manager: SyncUSManager) -> DatasetTestWrapper:
         return DatasetTestWrapper(dataset=saved_dataset, us_manager=sync_us_manager)
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def editable_dataset_wrapper(
         self,
         saved_dataset: Dataset,
@@ -102,7 +94,7 @@ class BaseDatasetTestClass(BaseConnectionTestClass[_CONN_TV], Generic[_CONN_TV])
         sync_us_manager: SyncUSManager,
         bi_query: BIQuery,
         from_subquery: bool = False,
-        subquery_limit: Optional[int] = None,
+        subquery_limit: int | None = None,
     ) -> DataStream:
         data_fetcher = DataFetcher(
             service_registry=service_registry,
@@ -117,7 +109,7 @@ class BaseDatasetTestClass(BaseConnectionTestClass[_CONN_TV], Generic[_CONN_TV])
         )
 
 
-class DefaultDatasetTestSuite(RegulatedTestCase, BaseDatasetTestClass[_CONN_TV], Generic[_CONN_TV]):
+class DefaultDatasetTestSuite[CONN_TV: ConnectionBase](RegulatedTestCase, BaseDatasetTestClass[CONN_TV]):
     def _check_simple_select(
         self,
         dataset_wrapper: DatasetTestWrapper,
@@ -125,9 +117,9 @@ class DefaultDatasetTestSuite(RegulatedTestCase, BaseDatasetTestClass[_CONN_TV],
         async_service_registry: ServicesRegistry,
         sync_us_manager: SyncUSManager,
         result_cnt: int,
-        limit: Optional[int] = None,
+        limit: int | None = None,
         from_subquery: bool = False,
-        subquery_limit: Optional[int] = None,
+        subquery_limit: int | None = None,
     ) -> None:
         assert limit is not None or (from_subquery and subquery_limit is not None)
         avatar_id = dataset_wrapper.get_root_avatar_strict().id
@@ -214,13 +206,13 @@ class DefaultDatasetTestSuite(RegulatedTestCase, BaseDatasetTestClass[_CONN_TV],
 
         assert found_template
 
-    def _check_compatible_source_types(self, compat_source_types: AbstractSet[DataSourceType]) -> None:
+    def _check_compatible_source_types(self, compat_source_types: Set[DataSourceType]) -> None:
         assert self.source_type in compat_source_types
 
-    def _check_compatible_connection_types(self, compat_conn_types: AbstractSet[ConnectionType]) -> None:
+    def _check_compatible_connection_types(self, compat_conn_types: Set[ConnectionType]) -> None:
         assert not compat_conn_types, "Multiple connections are not supported"
 
-    def _check_supported_join_types(self, supp_join_types: AbstractSet[JoinType]) -> None:
+    def _check_supported_join_types(self, supp_join_types: Set[JoinType]) -> None:
         assert set(supp_join_types).issuperset({JoinType.inner, JoinType.left})
 
     def _allow_adding_sources(self, dataset: Dataset) -> bool:

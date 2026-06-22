@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-)
+from typing import TYPE_CHECKING
 
 import attr
 
@@ -20,7 +17,6 @@ from dl_formula_ref.examples.query import (
     RawQueryContext,
 )
 
-
 if TYPE_CHECKING:
     from dl_formula.parser.base import FormulaParser
 
@@ -33,7 +29,7 @@ class QueryGenerator:
     def __attrs_post_init__(self) -> None:
         self._parser = get_parser(self._parser_type)
 
-    def _make_formula_ctx(self, formula: str, alias: Optional[str] = None) -> FormulaContext:
+    def _make_formula_ctx(self, formula: str, alias: str | None = None) -> FormulaContext:
         formula_obj = self._parser.parse(formula)
         return FormulaContext(formula=formula_obj, alias=alias)
 
@@ -65,10 +61,9 @@ class QueryGenerator:
                 )
             )
 
-        query_ctx = RawQueryContext(
+        return RawQueryContext(
             result_columns=result_columns,
             select=select,
             group_by=group_by,
             order_by=order_by,
         )
-        return query_ctx

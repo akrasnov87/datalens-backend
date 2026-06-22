@@ -1,16 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import datetime
 import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
-    Optional,
 )
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_core import exc
 from dl_core.data_source.sql import PseudoSQLDataSource
 from dl_core.db import (
@@ -23,7 +22,6 @@ from dl_connector_metrica.core.constants import (
     CONNECTION_TYPE_METRICA_API,
 )
 from dl_connector_metrica.core.us_connection import MetrikaApiConnection
-
 
 if TYPE_CHECKING:
     from dl_core.connection_executors.async_base import AsyncConnExecutorBase
@@ -51,7 +49,7 @@ class MetrikaApiDataSource(PseudoSQLDataSource):
         return True
 
     @property
-    def saved_raw_schema(self) -> Optional[list[SchemaColumn]]:
+    def saved_raw_schema(self) -> list[SchemaColumn] | None:
         assert self.conn_type is not None
         db_name = self.db_name
         assert db_name is not None
@@ -77,7 +75,7 @@ class MetrikaApiDataSource(PseudoSQLDataSource):
             raise exc.InvalidColumnError("Invalid field for value range")
 
         creation_date = self.connection.data.counter_creation_date
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         if column.user_type in (UserDataType.datetime, UserDataType.genericdatetime):
             min_value = datetime.datetime(creation_date.year, creation_date.month, creation_date.day)
             max_value = now

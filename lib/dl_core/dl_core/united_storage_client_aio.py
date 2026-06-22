@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import (
+    AsyncGenerator,
+    Iterable,
+)
 from datetime import (
     datetime,
     timedelta,
@@ -8,13 +12,7 @@ from datetime import (
 import json
 import logging
 import time
-from typing import (
-    Any,
-    AsyncGenerator,
-    Iterable,
-    Optional,
-    Union,
-)
+from typing import Any
 
 import aiohttp
 
@@ -22,22 +20,21 @@ from dl_api_commons.aiohttp.aiohttp_client import BIAioHTTPClient
 from dl_api_commons.retrier.aiohttp import AiohttpPolicyRetrier
 from dl_api_commons.tracing import get_current_tracing_headers
 from dl_app_tools.profiling_base import GenericProfiler
-from dl_core.base_models import EntryLocation
-from dl_core.enums import (
+from dl_constants import (
     USEntryBranch,
     USEntryMode,
 )
+from dl_core.base_models import EntryLocation
 from dl_core.exc import (
-    USLockUnacquiredException,
-    USReqException,
+    USLockUnacquiredError,
+    USReqError,
 )
 from dl_core.united_storage_client import (
     USAuthContextBase,
-    USClientHTTPExceptionWrapper,
+    USClientHTTPExceptionWrapperError,
     UStorageClientBase,
 )
 import dl_retrier
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -50,7 +47,7 @@ class UStorageClientAIO(UStorageClientBase):
             content: bytes,
             request_data: UStorageClientBase.RequestData,
             elapsed_seconds: float,
-        ):
+        ) -> None:
             self._response = response
             self._content = content
             self._request_data = request_data
@@ -63,7 +60,7 @@ class UStorageClientAIO(UStorageClientBase):
         def status_code(self) -> int:
             return self._response.status
 
-        def get_header(self, name: str) -> Optional[str]:
+        def get_header(self, name: str) -> str | None:
             return self._response.headers.get(name)
 
         @property
@@ -75,7 +72,7 @@ class UStorageClientAIO(UStorageClientBase):
             return self._content
 
         @property
-        def request(self) -> "UStorageClientBase.RequestAdapter":
+        def request(self) -> UStorageClientBase.RequestAdapter:
             return self._request_adapter
 
         def raise_for_status(self) -> None:
@@ -83,7 +80,7 @@ class UStorageClientAIO(UStorageClientBase):
                 self._response.raise_for_status()
             except aiohttp.ClientResponseError as err:
                 if err.status is not None:
-                    raise USClientHTTPExceptionWrapper(str(err)) from err
+                    raise USClientHTTPExceptionWrapperError(str(err)) from err
                 raise
 
         def json(self) -> dict:
@@ -93,7 +90,7 @@ class UStorageClientAIO(UStorageClientBase):
             return self._parsed_json_data
 
     class RequestAdapter(UStorageClientBase.RequestAdapter):
-        def __init__(self, request: aiohttp.RequestInfo, request_data: UStorageClientBase.RequestData):
+        def __init__(self, request: aiohttp.RequestInfo, request_data: UStorageClientBase.RequestData) -> None:
             self._request = request
             self._request_data = request_data
 
@@ -105,11 +102,11 @@ class UStorageClientAIO(UStorageClientBase):
         def method(self) -> str:
             return self._request_data.method
 
-        def get_header(self, name: str) -> Optional[str]:
+        def get_header(self, name: str) -> str | None:
             return self._request.headers.get(name)
 
         @property
-        def json(self) -> Optional[dict]:
+        def json(self) -> dict | None:
             return self._request_data.json
 
     _bi_http_client: BIAioHTTPClient
@@ -117,16 +114,16 @@ class UStorageClientAIO(UStorageClientBase):
     def __init__(
         self,
         host: str,
-        prefix: Optional[str],
+        prefix: str | None,
         auth_ctx: USAuthContextBase,
         ca_data: bytes,
         retry_policy_factory: dl_retrier.BaseRetryPolicyFactory,
-        context_request_id: Optional[str] = None,
-        context_forwarded_for: Optional[str] = None,
-        context_real_ip: Optional[str] = None,
-        context_workbook_id: Optional[str] = None,
-        context_rpc_authorization_id: Optional[str] = None
-    ):
+        context_request_id: str | None = None,
+        context_forwarded_for: str | None = None,
+        context_real_ip: str | None = None,
+        context_workbook_id: str | None = None,
+        context_rpc_authorization_id: str = None
+    ) -> None:
         super().__init__(
             host=host,
             auth_ctx=auth_ctx,
@@ -140,7 +137,7 @@ class UStorageClientAIO(UStorageClientBase):
         )
 
         self._bi_http_client = BIAioHTTPClient(
-            base_url="/".join([self.host, self.prefix]),
+            base_url=f"{self.host}/{self.prefix}",
             headers=self._default_headers,
             cookies=self._cookies,
             raise_for_status=False,
@@ -150,8 +147,8 @@ class UStorageClientAIO(UStorageClientBase):
     async def _request(
         self,
         request_data: UStorageClientBase.RequestData,
-        retry_policy_name: Optional[str] = None,
-        context_name: Optional[str] = None,
+        retry_policy_name: str | None = None,
+        context_name: str | None = None,
     ) -> dict:
         self._raise_for_disabled_interactions()
         self._log_request_start(request_data)
@@ -191,11 +188,11 @@ class UStorageClientAIO(UStorageClientBase):
     async def get_entry(
         self,
         entry_id: str,
-        params: Optional[dict[str, str]] = None,
+        params: dict[str, str] | None = None,
         include_permissions: bool = True,
         include_links: bool = True,
         include_favorite: bool = False,
-        context_name: Optional[str] = None,
+        context_name: str | None = None,
         branch: USEntryBranch = USEntryBranch.published,
     ) -> dict:
         return await self._request(
@@ -215,13 +212,13 @@ class UStorageClientAIO(UStorageClientBase):
         self,
         key: EntryLocation,
         scope: str,
-        meta: Optional[dict[str, str]] = None,
-        annotation: Optional[dict[str, Any]] = None,
-        data: Optional[dict[str, Any]] = None,
-        unversioned_data: Optional[dict[str, Any]] = None,
-        type_: Optional[str] = None,
-        hidden: Optional[bool] = None,
-        links: Optional[dict[str, Any]] = None,
+        meta: dict[str, str] | None = None,
+        annotation: dict[str, Any] | None = None,
+        data: dict[str, Any] | None = None,
+        unversioned_data: dict[str, Any] | None = None,
+        type_: str | None = None,
+        hidden: bool = False,
+        links: dict[str, Any] | None = None,
         mode: USEntryMode = USEntryMode.publish,
         **kwargs: Any,
     ) -> dict[str, Any]:
@@ -246,14 +243,14 @@ class UStorageClientAIO(UStorageClientBase):
     async def update_entry(
         self,
         entry_id: str,
-        data: Optional[dict[str, Any]] = None,
-        unversioned_data: Optional[dict[str, Any]] = None,
-        meta: Optional[dict[str, str]] = None,
-        annotation: Optional[dict[str, Any]] = None,
-        lock: Optional[str] = None,
-        hidden: Optional[bool] = None,
-        links: Optional[dict[str, Any]] = None,
-        update_revision: Optional[bool] = None,
+        data: dict[str, Any] | None = None,
+        unversioned_data: dict[str, Any] | None = None,
+        meta: dict[str, str] | None = None,
+        annotation: dict[str, Any] | None = None,
+        lock: str | None = None,
+        hidden: bool = False,
+        links: dict[str, Any] | None = None,
+        update_revision: bool | None = None,
         mode: USEntryMode = USEntryMode.publish,
     ) -> dict[str, Any]:
         return await self._request(
@@ -272,7 +269,7 @@ class UStorageClientAIO(UStorageClientBase):
             retry_policy_name="update_entry",
         )
 
-    async def delete_entry(self, entry_id: str, lock: Optional[str] = None) -> None:
+    async def delete_entry(self, entry_id: str, lock: str | None = None) -> None:
         await self._request(
             self._req_data_delete_entry(entry_id, lock=lock),
             retry_policy_name="delete_entry",
@@ -281,13 +278,13 @@ class UStorageClientAIO(UStorageClientBase):
     async def entries_iterator(
         self,
         scope: str,
-        entry_type: Optional[str] = None,
-        meta: Optional[dict] = None,
+        entry_type: str | None = None,
+        meta: dict | None = None,
         all_tenants: bool = False,
         include_data: bool = False,
-        ids: Optional[Iterable[str]] = None,
-        creation_time: Optional[dict[str, Union[str, int, None]]] = None,
-        limit: Optional[int] = None,
+        ids: Iterable[str] | None = None,
+        creation_time: dict[str, str | int | None] | None = None,
+        limit: int | None = None,
     ) -> AsyncGenerator[dict, None]:
         """
         implements 2-in-1 pagination:
@@ -363,9 +360,9 @@ class UStorageClientAIO(UStorageClientBase):
     async def acquire_lock(
         self,
         entry_id: str,
-        duration: Optional[int] = None,
-        wait_timeout: Optional[int] = None,
-        force: Optional[bool] = None,
+        duration: int | None = None,
+        wait_timeout: int | None = None,
+        force: bool | None = None,
     ) -> str:
         """
         :param entry_id: US entry ID to lock
@@ -385,7 +382,7 @@ class UStorageClientAIO(UStorageClientBase):
                 lock = resp["lockToken"]
                 LOGGER.info('Acquired lock "%s" for object "%s"', lock, entry_id)
                 return lock
-            except USLockUnacquiredException:
+            except USLockUnacquiredError:
                 if wait_timeout and time.time() - start_ts < wait_timeout:
                     await asyncio.sleep(0.25)
                 else:
@@ -397,7 +394,7 @@ class UStorageClientAIO(UStorageClientBase):
                 self._req_data_release_lock(entry_id, lock=lock),
                 retry_policy_name="release_lock",
             )
-        except USReqException:
+        except USReqError:
             LOGGER.exception('Unable to release lock "%s"', lock)
 
     async def close(self) -> None:

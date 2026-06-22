@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    Callable,
-    ClassVar,
-    Optional,
-)
+from collections.abc import Callable
+from typing import ClassVar
 
 import attr
 
@@ -41,13 +38,15 @@ class ConnectionSQLOracle(
     allow_dashsql: ClassVar[bool] = True
     allow_cache: ClassVar[bool] = True
     is_always_user_source: ClassVar[bool] = True
+    supports_source_search: ClassVar[bool] = True
+    supports_source_pagination: ClassVar[bool] = True
     settings_type = OracleConnectorSettings
 
     @attr.s(kw_only=True)
     class DataModel(ClassicConnectionSQL.DataModel):
         db_name_type: OracleDbNameType = attr.ib(default=OracleDbNameType.service_name)
         ssl_enable: bool = attr.ib(kw_only=True, default=False)
-        ssl_ca: Optional[str] = attr.ib(kw_only=True, default=None)
+        ssl_ca: str | None = attr.ib(kw_only=True, default=None)
 
     def get_conn_dto(self) -> OracleConnDTO:
         return OracleConnDTO(
@@ -73,6 +72,7 @@ class ConnectionSQLOracle(
                     source_type=SOURCE_TYPE_ORACLE_TABLE,
                     localizer=localizer,
                     disabled=not self.is_subselect_allowed,
+                    disabled_text=self.subselect_disabled_text,
                     template_enabled=self.is_datasource_template_allowed,
                     schema_name_form_enabled=True,
                 ),
@@ -84,6 +84,7 @@ class ConnectionSQLOracle(
                 source_type=SOURCE_TYPE_ORACLE_SUBSELECT,
                 localizer=localizer,
                 disabled=not self.is_subselect_allowed,
+                disabled_text=self.subselect_disabled_text,
                 template_enabled=self.is_datasource_template_allowed,
             ),
         )
@@ -103,8 +104,14 @@ class ConnectionSQLOracle(
 
         assert self.has_schema
         return [
-            dict(schema_name=tid.schema_name, table_name=tid.table_name)
-            for tid in self.get_tables(schema_name=None, conn_executor_factory=conn_executor_factory)
+            {"schema_name": tid.schema_name, "table_name": tid.table_name}
+            for tid in self.get_tables(
+                conn_executor_factory=conn_executor_factory,
+                schema_name=None,
+                search_text=search_text,
+                limit=limit,
+                offset=offset,
+            )
         ]
 
     @property

@@ -1,19 +1,19 @@
 import asyncio
+from collections.abc import Mapping
+import contextlib
 import datetime
 import logging
-from typing import Mapping
+from typing import Self
 
 import attrs
 import temporalio.api
 import temporalio.client
 import temporalio.service
-from typing_extensions import Self
 
 import dl_settings
 import dl_temporal.base as base
 import dl_temporal.client.exc as exc
 import dl_temporal.client.metadata as metadata
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -98,10 +98,8 @@ class TemporalClient:
         if self._update_metadata_task.done():
             return
         self._update_metadata_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await self._update_metadata_task
-        except asyncio.CancelledError:
-            pass
 
     async def check_health(self) -> bool:
         try:
@@ -124,7 +122,7 @@ class TemporalClient:
         except temporalio.service.RPCError as e:
             try:
                 exc.wrap_temporal_error(e)
-            except exc.PermissionDenied:
+            except exc.PermissionDeniedError:
                 return False
 
         return True
@@ -170,6 +168,7 @@ class TemporalClient:
             task_queue=task_queue,
             result_type=workflow.Result,
             execution_timeout=params.execution_timeout,
+            run_timeout=params.run_timeout,
         )
 
     async def get_schedule(
@@ -192,6 +191,7 @@ class TemporalClient:
             id=schedule_id,
             task_queue=task_queue,
             execution_timeout=params.execution_timeout,
+            run_timeout=params.run_timeout,
         )
         schedule = temporalio.client.Schedule(
             action=action,
@@ -223,6 +223,7 @@ class TemporalClient:
             schedule.action.id = schedule_id
             schedule.action.task_queue = task_queue
             schedule.action.execution_timeout = params.execution_timeout
+            schedule.action.run_timeout = params.run_timeout
             schedule.spec = spec
 
             return temporalio.client.ScheduleUpdate(schedule=schedule)
@@ -290,3 +291,11 @@ class TemporalClient:
     ) -> None:
         handle = await self.get_schedule(schedule_id)
         await handle.unpause()
+
+    async def trigger_schedule(
+        self,
+        schedule_id: str,
+        overlap: temporalio.client.ScheduleOverlapPolicy | None = None,
+    ) -> None:
+        handle = await self.get_schedule(schedule_id)
+        await handle.trigger(overlap=overlap)

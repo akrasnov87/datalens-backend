@@ -1,17 +1,17 @@
-from collections.abc import Mapping
+from collections.abc import (
+    Iterator,
+    Mapping,
+)
 import logging
 from typing import (
     Any,
     ClassVar,
-    Iterator,
-    Optional,
 )
 
 import attr
 import yaml
 
 from dl_configs.settings_loaders.common import SDict
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class ObjectLikeConfig(Mapping):
 
     def _get_key(self, key: Any) -> Any:
         if key not in self._data:
-            path = ".".join(self._path + [key])
+            path = ".".join([*self._path, key])
             raise AttributeError(f'There is no record in config by path: "{path}"')
         return self._data[key]
 
@@ -49,25 +49,24 @@ class ObjectLikeConfig(Mapping):
         return self._get_key(key)
 
     @classmethod
-    def from_dict(cls, data: dict, path: Optional[list] = None) -> "ObjectLikeConfig":
+    def from_dict(cls, data: dict, path: list | None = None) -> "ObjectLikeConfig":
         if path is None:
             path = []
 
         def _get_value_for_cfg(k: Any, v: Any) -> Any:
             if isinstance(v, dict):
-                return cls.from_dict(v, path + [k])
+                return cls.from_dict(v, [*path, k])
             if isinstance(v, (list, tuple)):
                 return [
-                    cls.from_dict(item, path + [k] + [str(idx)]) if isinstance(item, dict) else item
+                    cls.from_dict(item, [*path, k, str(idx)]) if isinstance(item, dict) else item
                     for idx, item in enumerate(v)
                 ]
             return v
 
-        ret = cls(
+        return cls(
             data={k: _get_value_for_cfg(k, v) for k, v in data.items()},
             path=path,
         )
-        return ret
 
     def to_dict(self) -> dict[str, Any]:
         def _get_value_for_dict(v: Any) -> Any:
@@ -85,7 +84,7 @@ class YamlFileConfigResolver(FallbackConfigResolver):
     config_path_key: ClassVar[str] = "CONFIG_PATH"
 
     @classmethod
-    def _get_config_path(cls, s_dict: SDict) -> Optional[str]:
+    def _get_config_path(cls, s_dict: SDict) -> str | None:
         path = s_dict.get(cls.config_path_key)
         LOGGER.info('Config path is "%s"', path)
         return path

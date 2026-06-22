@@ -1,21 +1,21 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import (
+    AsyncIterable,
+    Awaitable,
+    Callable,
+    Sequence,
+)
 import functools
 import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncIterable,
-    Awaitable,
-    Callable,
-    Optional,
-    Sequence,
-    TypeVar,
+    final,
 )
 
 import attr
-from typing_extensions import final
 
 from dl_core.connection_executors.common_base import (
     ConnExecutorBase,
@@ -25,9 +25,8 @@ from dl_core.connection_executors.common_base import (
 from dl_core.connection_executors.models.db_adapter_data import DBAdapterQuery
 from dl_core.db import SchemaInfo
 
-
 if TYPE_CHECKING:
-    from dl_constants.enums import UserDataType
+    from dl_constants import UserDataType
     from dl_constants.types import TBIDataTable
     from dl_core.connection_models.common_models import (
         DBIdent,
@@ -57,7 +56,7 @@ class AsyncExecutionResult:
     cursor_info: dict = attr.ib()
     result: AsyncIterable[TBIDataTable] = attr.ib()  # iterable of tables (chunks)
     # for `autodetect_user_types` result
-    user_types: Optional[list[UserDataType]] = attr.ib(default=None)
+    user_types: list[UserDataType] | None = attr.ib(default=None)
     # DB-specific result. Should be mutable, and get filled after `result` is consumed.
     result_footer: dict = attr.ib(factory=dict)
 
@@ -72,12 +71,9 @@ class AsyncExecutionResult:
         return result
 
 
-_RET_TV = TypeVar("_RET_TV")
-
-
-def init_required(wrapped: Callable[..., Awaitable[_RET_TV]]) -> Callable[..., Awaitable[_RET_TV]]:
+def init_required[RET_TV](wrapped: Callable[..., Awaitable[RET_TV]]) -> Callable[..., Awaitable[RET_TV]]:
     @functools.wraps(wrapped)
-    async def wrapper(self: "AsyncConnExecutorBase", *args: Any, **kwargs: Any) -> _RET_TV:
+    async def wrapper(self: AsyncConnExecutorBase, *args: Any, **kwargs: Any) -> RET_TV:
         if not self._is_initialized:
             await self.initialize()
 
@@ -138,7 +134,7 @@ class AsyncConnExecutorBase(ConnExecutorBase, metaclass=abc.ABCMeta):
 
     @final
     @init_required
-    async def get_db_version(self, db_ident: DBIdent) -> Optional[str]:
+    async def get_db_version(self, db_ident: DBIdent) -> str | None:
         return await self._get_db_version(db_ident)
 
     @final
@@ -184,7 +180,7 @@ class AsyncConnExecutorBase(ConnExecutorBase, metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    async def _get_db_version(self, db_ident: DBIdent) -> Optional[str]:
+    async def _get_db_version(self, db_ident: DBIdent) -> str | None:
         pass
 
     @abc.abstractmethod

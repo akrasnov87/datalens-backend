@@ -1,14 +1,15 @@
+from collections.abc import (
+    Mapping,
+    Sequence,
+)
 from typing import (
     Any,
-    Mapping,
-    Optional,
-    Sequence,
     TypeVar,
 )
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     DashSQLQueryType,
     UserDataType,
 )
@@ -103,7 +104,7 @@ class TypedQueryRaw(TypedQueryBase):
 class TypedQueryRawResultData:
     status: int = attr.ib()
     headers: dict = attr.ib()
-    body: Optional[dict] = attr.ib()
+    body: dict | None = attr.ib()
 
 
 @attr.s(frozen=True, kw_only=True)

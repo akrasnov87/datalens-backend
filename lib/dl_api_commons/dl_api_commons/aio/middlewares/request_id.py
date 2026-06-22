@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
 
 from aiohttp import web
 import attr
@@ -26,7 +25,6 @@ from dl_constants.api_constants import DLHeadersCommon
 import dl_logging
 import dl_utils
 
-
 LOGGER = logging.getLogger(__name__)
 LOG_HELPER = RequestLogHelper(logger=LOGGER)
 
@@ -36,9 +34,9 @@ class RequestId:
     header_name: str = attr.ib(default="X-Request-ID")
     dl_request_cls: type[aiohttp_wrappers.DLRequestBase] = attr.ib(default=aiohttp_wrappers.DLRequestBase)
     append_own_req_id: bool = attr.ib(default=False)
-    app_prefix: Optional[str] = attr.ib(default=None)
+    app_prefix: str | None = attr.ib(default=None)
     accept_logging_ctx: bool = attr.ib(default=False)
-    logging_ctx_header_name: Optional[str] = attr.ib(default=None)
+    logging_ctx_header_name: str | None = attr.ib(default=None)
     # Is used only for reporting registry to determine if request is anonymous
     #  Remove after adding mechanisms to detect if request in anonymous via RCI (e.g. based on user ID/AuthData)
     is_public_env: bool = attr.ib(default=False)
@@ -96,7 +94,7 @@ class RequestId:
                 logging_ctx_from_header = json.loads(request.headers.get(self.logging_ctx_header_name) or "")
                 for ctx_key in NON_TRANSITIVE_LOGGING_CTX_KEYS:
                     logging_ctx_from_header.pop(ctx_key, None)
-            except Exception:  # noqa
+            except Exception:
                 LOGGER.exception("Can not parse logging context: %s", request.headers.get(self.logging_ctx_header_name))
             else:
                 for ctx_key, ctx_val in logging_ctx_from_header.items():

@@ -2,7 +2,7 @@ import pytest
 
 from dl_core.exc import (
     InvalidRequestError,
-    SourceDoesNotExist,
+    SourceDoesNotExistError,
 )
 from dl_core.us_connection_base import DataSourceTemplate
 from dl_core_testing.testcases.connection import DefaultConnectionTestClass
@@ -48,7 +48,7 @@ class TestTrinoConnection(
         assert dsrc_templates
 
         tmpl_info = {(dsrc_tmpl.title, *dsrc_tmpl.group) for dsrc_tmpl in dsrc_templates}
-        tmpl_titles, tmpl_db_names, tmpl_schema_names = zip(*tmpl_info)
+        tmpl_titles, tmpl_db_names, tmpl_schema_names = zip(*tmpl_info, strict=True)
 
         assert "sample" in tmpl_titles
 
@@ -58,7 +58,7 @@ class TestTrinoConnection(
         assert "test_memory_catalog" in tmpl_db_names
         assert len(set(tmpl_db_names) & set(TRINO_SYSTEM_CATALOGS)) == 0
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def catalog_name(self) -> str:
         return "test_memory_catalog"
 
@@ -154,18 +154,18 @@ class TestTrinoConnection(
         with pytest.raises(InvalidRequestError, match="db_name parameter is required when search_text is provided"):
             conn.get_data_source_templates_paginated(
                 sync_conn_executor_factory_for_conn,
-                search_text="some_search_term"
+                search_text="some_search_term",
                 # db_name is intentionally omitted
             )
         with pytest.raises(InvalidRequestError, match="db_name parameter is required when offset > 0 is provided"):
             conn.get_data_source_templates_paginated(
                 sync_conn_executor_factory_for_conn,
-                offset=1
+                offset=1,
                 # db_name is intentionally omitted
             )
 
         # Test with invalid/non-existent catalog name
-        with pytest.raises(SourceDoesNotExist):
+        with pytest.raises(SourceDoesNotExistError):
             conn.get_data_source_templates_paginated(
                 sync_conn_executor_factory_for_conn, db_name="non_existent_catalog_name_12345"
             )

@@ -14,7 +14,7 @@ from dl_api_lib_testing.connector.data_api_suites import (
     DefaultConnectorDataResultTestSuite,
 )
 from dl_api_lib_testing.data_api_base import DataApiTestParams
-from dl_constants.enums import (
+from dl_constants import (
     UserDataType,
     WhereClauseOperation,
 )
@@ -88,7 +88,7 @@ class TestPostgreSQLDataResult(PostgreSQLDataApiTestBase, DefaultConnectorDataRe
         data_rows = get_data_rows(result_resp)
         assert data_rows == [["var1", "str2", "2"]]
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def enabled_citext_extension(self, db: Db) -> None:
         db.execute("CREATE EXTENSION IF NOT EXISTS CITEXT;")
 
@@ -130,7 +130,7 @@ class TestPostgreSQLDataResult(PostgreSQLDataApiTestBase, DefaultConnectorDataRe
 
         data_rows = get_data_rows(result_resp)
         assert len(data_rows) == 3
-        assert list(sorted(data_rows)) == [["var1"], ["var2"], ["var3"]]
+        assert sorted(data_rows) == [["var1"], ["var2"], ["var3"]]
 
 
 class TestPostgreSQLDataGroupBy(PostgreSQLDataApiTestBase, DefaultConnectorDataGroupByFormulaTestSuite):

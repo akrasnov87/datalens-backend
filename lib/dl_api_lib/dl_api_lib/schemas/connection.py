@@ -4,15 +4,13 @@ import logging
 from typing import (
     Any,
     ClassVar,
+    cast,
 )
 
 from marshmallow import fields as ma_fields
 from marshmallow_oneofschema import OneOfSchema
 
-from dl_api_connector.api_schema.connection_base import (
-    ConnectionMetaMixin,
-    ConnectionSchema,
-)
+from dl_api_connector.api_schema.connection_base import ConnectionSchema
 from dl_api_connector.api_schema.source import DataSourceSchema
 from dl_api_connector.api_schema.source_base import (
     DataSourceTemplateResponseField,
@@ -20,13 +18,12 @@ from dl_api_connector.api_schema.source_base import (
 )
 from dl_api_lib.schemas.main import NotificationContentSchema
 from dl_api_lib.schemas.options import SourceListingSchema
-from dl_constants.enums import ConnectionType as CT
+from dl_constants import ConnectionType
 from dl_core.us_connection_base import (
     ConnectionBase,
     UnknownConnection,
 )
 from dl_model_tools.schema.base import BaseSchema
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -90,8 +87,12 @@ class BadRequestResponseSchema(BaseSchema):
     message = ma_fields.String()
 
 
+class ConnectionTemplateResponseSchema(BaseSchema):
+    template_name = ma_fields.String(required=True, data_key="templateName")
+
+
 class GenericConnectionSchema(OneOfSchema):
-    type_schemas: dict[str, type[ConnectionSchema]] = {}  # type: ignore  # 2024-01-24 # TODO: Incompatible types in assignment (expression has type "dict[str, type[ConnectionSchema]]", base class "OneOfSchema" defined the type as "dict[str, type[Schema]]")  [assignment]
+    type_schemas = {}  # noqa: RUF012
     supported_connections: ClassVar[set[type[ConnectionBase]]] = set()
 
     def get_data_type(self, data):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
@@ -117,7 +118,7 @@ class GenericConnectionSchema(OneOfSchema):
         :return: Schema class that will modify connection on `load`
         """
         type_discriminator = self.get_obj_type(obj)
-        return self.type_schemas[type_discriminator]
+        return cast(type[ConnectionSchema], self.type_schemas[type_discriminator])
 
     # TODO FIX: remove after type discriminator key will be normalized now we use 'db_type' in GET and 'type' in POST
     def _dump(self, obj: ConnectionBase, *, update_fields: bool = True, **kwargs: Any) -> dict[str, Any]:
@@ -126,7 +127,7 @@ class GenericConnectionSchema(OneOfSchema):
         return ret
 
 
-def register_sub_schema_class(conn_type: CT, schema_cls: type[ConnectionSchema]) -> None:
+def register_sub_schema_class(conn_type: ConnectionType, schema_cls: type[ConnectionSchema]) -> None:
     if conn_type.name in GenericConnectionSchema.type_schemas:
         registered_schema = GenericConnectionSchema.type_schemas[conn_type.name]
         assert (
@@ -137,8 +138,8 @@ def register_sub_schema_class(conn_type: CT, schema_cls: type[ConnectionSchema])
     GenericConnectionSchema.supported_connections.add(schema_cls.TARGET_CLS)
 
 
-class UnknownConnectionSchema(ConnectionMetaMixin, ConnectionSchema):
+class UnknownConnectionSchema(ConnectionSchema):
     TARGET_CLS = UnknownConnection
 
 
-register_sub_schema_class(CT.unknown, UnknownConnectionSchema)
+register_sub_schema_class(ConnectionType.unknown, UnknownConnectionSchema)

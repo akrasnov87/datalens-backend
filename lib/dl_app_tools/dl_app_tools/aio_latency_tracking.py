@@ -4,8 +4,6 @@ import asyncio
 import logging
 import math
 import time
-from typing import Optional
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -21,7 +19,7 @@ class LatencyTracker:
         self._bins: dict[int, int] = {}
         self._last_log_time = time.monotonic()
         self._logger = LOGGER.getChild(self.__class__.__name__)
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
     def _to_bin(self, value: float) -> int:
         return int(self.bins_base ** math.floor(math.log(value) / math.log(self.bins_base)))
@@ -35,7 +33,7 @@ class LatencyTracker:
         bins = self._bins
         self._bins = {}
         bins_s = ", ".join(f">={dur}ms: {cnt}" for dur, cnt in bins.items())
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         loop_scheduled = len(getattr(loop, "_scheduled", None) or ())
         loop_ready = len(getattr(loop, "_ready", None) or ())
         self._logger.debug(
@@ -43,11 +41,11 @@ class LatencyTracker:
             bins_s,
             loop_ready,
             loop_scheduled,
-            extra=dict(
-                latency_stats=bins,
-                loop_ready=loop_ready,
-                loop_scheduled=loop_scheduled,
-            ),
+            extra={
+                "latency_stats": bins,
+                "loop_ready": loop_ready,
+                "loop_scheduled": loop_scheduled,
+            },
         )
 
     def _maybe_log_stats(self) -> None:
@@ -78,7 +76,7 @@ class LatencyTracker:
 
     async def run_task(self) -> None:
         # Does not have to be `async`, but it is more consistent this way.
-        asyncio.create_task(self._task_main())
+        self._task = asyncio.create_task(self._task_main())
 
 
 async def atest_latency_tracker() -> None:
@@ -95,12 +93,14 @@ async def atest_latency_tracker() -> None:
     part_one_end = time.monotonic() + part_one_duration_sec
     while time.monotonic() < part_one_end:
         await asyncio.sleep(0.001)
-        time.sleep(0.005)
+        # intentional blocking sleep: this helper deliberately blocks the event loop to exercise latency tracking
+        time.sleep(0.005)  # noqa: ASYNC251
 
     for idx in range(1, 3000, 50):
         await asyncio.sleep(0.001)
         LOGGER.debug("Sleeping for %r msec", idx)
-        time.sleep(idx / 1000)
+        # intentional blocking sleep: deliberately blocks the event loop to exercise latency tracking
+        time.sleep(idx / 1000)  # noqa: ASYNC251
 
 
 def test_latency_tracker() -> None:

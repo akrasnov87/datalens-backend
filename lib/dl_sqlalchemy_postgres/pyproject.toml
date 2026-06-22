@@ -10,13 +10,13 @@ version = "0.3"
 [tool.poetry.dependencies]
 asyncpg = "*"
 dl-sqlalchemy-common = {path = "../dl_sqlalchemy_common"}
+frozendict = "*"
 psycopg2-binary = "*"
-python = ">=3.10, <3.13"
+python = ">=3.12, <3.13"
 sqlalchemy = "*"
 
 [tool.poetry.group.tests.dependencies]
 dl-testing = {path = "../dl_testing"}
-mock = "*"
 pytest = "*"
 pytz = "*"
 

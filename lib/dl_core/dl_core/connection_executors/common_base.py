@@ -1,27 +1,27 @@
 from __future__ import annotations
 
-import abc
+from collections.abc import (
+    Callable,
+    Generator,
+    Mapping,
+    Sequence,
+)
 import contextlib
 import enum
 import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
-    Generator,
-    Mapping,
-    Optional,
-    Sequence,
+    Self,
 )
 
 import attr
 from sqlalchemy.sql.elements import ClauseElement
-from typing_extensions import Self
 
 from dl_api_commons.base_models import RequestContextInfo
-from dl_constants.enums import UserDataType
-from dl_constants.exc import DLBaseException
+from dl_constants import UserDataType
+from dl_constants.exc import DLBaseError
 from dl_constants.types import TBIDataValue
 from dl_core.connection_executors.models.common import RemoteQueryExecutorData
 from dl_core.connection_executors.models.db_adapter_data import RawSchemaInfo
@@ -40,7 +40,6 @@ from dl_type_transformer.type_transformer import (
     TypeTransformer,
     get_type_transformer,
 )
-
 
 if TYPE_CHECKING:
     from dl_constants.types import TJSONExt
@@ -73,21 +72,25 @@ class ExecutionSettings(enum.Enum):
 @attr.s
 class ConnExecutorQuery:
     query: ClauseElement | str = attr.ib()
-    user_types: Optional[list[UserDataType]] = attr.ib(default=None)
-    debug_compiled_query: Optional[str] = attr.ib(default=None)
-    inspector_query: Optional[str] = attr.ib(default=None)
-    chunk_size: Optional[int] = attr.ib(default=None)
-    connector_specific_params: Optional[Mapping[str, TJSONExt]] = attr.ib(default=None)
+    user_types: list[UserDataType] | None = attr.ib(default=None)
+    debug_compiled_query: str | None = attr.ib(default=None)
+    inspector_query: str | None = attr.ib(default=None)
+    chunk_size: int | None = attr.ib(default=None)
+    connector_specific_params: Mapping[str, TJSONExt] | None = attr.ib(default=None)
     # TODO FIX: We really need it in query?
-    db_name: Optional[str] = attr.ib(default=None)
+    db_name: str | None = attr.ib(default=None)
     autodetect_user_types: bool = attr.ib(default=False)
     trusted_query: bool = attr.ib(default=False)
     is_ddl_dml_query: bool = attr.ib(default=False)
     is_dashsql_query: bool = attr.ib(default=False)
+    allow_write: bool = attr.ib(default=False)
+    limit: int | None = attr.ib(default=None)
+    offset: int | None = attr.ib(default=None)
+    query_settings: Mapping[str, str] = attr.ib(factory=dict)
 
 
 @attr.s(cmp=False, hash=False)
-class ConnExecutorBase(metaclass=abc.ABCMeta):
+class ConnExecutorBase:
     default_chunk_size: ClassVar[int] = 100
     supported_exec_mode: ClassVar[frozenset[ExecutionMode]] = frozenset(ExecutionMode)
 
@@ -95,12 +98,12 @@ class ConnExecutorBase(metaclass=abc.ABCMeta):
     _conn_options: ConnectOptions = attr.ib()
     _conn_hosts_pool: Sequence[str] = attr.ib()
     _host_fail_callback: Callable = attr.ib()
-    _req_ctx_info: Optional[RequestContextInfo] = attr.ib()
+    _req_ctx_info: RequestContextInfo | None = attr.ib()
     _exec_mode: ExecutionMode = attr.ib()
-    _sec_mgr: "ConnectionSecurityManager" = attr.ib()
-    _remote_qe_data: Optional[RemoteQueryExecutorData] = attr.ib()
+    _sec_mgr: ConnectionSecurityManager = attr.ib()
+    _remote_qe_data: RemoteQueryExecutorData | None = attr.ib()
     _ca_data: bytes = attr.ib()
-    _services_registry: Optional[ServicesRegistry] = attr.ib(
+    _services_registry: ServicesRegistry | None = attr.ib(
         kw_only=True, default=None
     )  # Do not use. To be deprecated. Somehow.
     _is_initialized: bool = attr.ib(init=False, default=False)
@@ -121,18 +124,18 @@ class ConnExecutorBase(metaclass=abc.ABCMeta):
     def is_conn_dto_equals(self, another: ConnDTO) -> bool:
         try:
             return self._conn_dto == another
-        except Exception:  # noqa
+        except Exception:
             LOGGER.exception("Exception during connection DTO comparision")
             return False
 
     def is_context_info_equals(self, another: RequestContextInfo) -> bool:
         try:
             return self._req_ctx_info == another
-        except Exception:  # noqa
+        except Exception:
             LOGGER.exception("Exception during request context info comparision")
             return False
 
-    def cast_row_to_output(self, row: Sequence, user_types: Optional[Sequence[UserDataType]]) -> Sequence[TBIDataValue]:
+    def cast_row_to_output(self, row: Sequence, user_types: Sequence[UserDataType] | None) -> Sequence[TBIDataValue]:
         if user_types is None:
             return row
 
@@ -172,7 +175,7 @@ class ConnExecutorBase(metaclass=abc.ABCMeta):
             )
             schema.append(schema_col)
 
-        index_info_set: Optional[frozenset[IndexInfo]] = None
+        index_info_set: frozenset[IndexInfo] | None = None
 
         if raw_schema_info.indexes is not None:
             index_info_set = frozenset(
@@ -192,7 +195,7 @@ class ConnExecutorBase(metaclass=abc.ABCMeta):
     def _postprocess_db_excs(self) -> Generator[None, None, None]:
         try:
             yield
-        except DLBaseException as exc:
+        except DLBaseError as exc:
             if self._conn_options.pass_db_messages_to_user:
                 for key in ("query", "db_message"):
                     value = exc.debug_info.get(key)
@@ -200,7 +203,7 @@ class ConnExecutorBase(metaclass=abc.ABCMeta):
                         exc.details[key] = value
             raise
 
-    def mutate_for_dashsql(self, db_params: Optional[dict[str, str]] = None) -> Self:
+    def mutate_for_dashsql(self, db_params: dict[str, str] | None = None) -> Self:
         """
         A place to do CE-specific alterations for DashSQL support.
         """

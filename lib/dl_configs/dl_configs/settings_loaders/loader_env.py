@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import inspect
 import json
 import logging
@@ -9,9 +10,7 @@ from types import MappingProxyType
 import typing
 from typing import (
     Any,
-    Callable,
     ClassVar,
-    Optional,
     TypeVar,
     Union,
     final,
@@ -25,7 +24,7 @@ from dl_configs.settings_loaders.common import (
     SDict,
 )
 from dl_configs.settings_loaders.env_remap import remap_env
-from dl_configs.settings_loaders.exc import SettingsLoadingException
+from dl_configs.settings_loaders.exc import SettingsLoadingError
 from dl_configs.settings_loaders.fallback_cfg_resolver import (
     FallbackConfigResolver,
     YamlFileConfigResolver,
@@ -38,7 +37,6 @@ from dl_configs.settings_loaders.meta_definition import (
 from dl_configs.settings_loaders.settings_obj_base import SettingsBase
 from dl_utils.utils import get_type_full_name
 
-
 _SETTINGS_TV = TypeVar("_SETTINGS_TV")
 
 SEP = "_"
@@ -46,12 +44,12 @@ SEP = "_"
 LOGGER = logging.getLogger(__name__)
 
 
-class InvalidConfigValueException(SettingsLoadingException):
+class InvalidConfigValueError(SettingsLoadingError):
     pass
 
 
-class ConfigFieldMissing(InvalidConfigValueException):
-    def __init__(self, field_set: set[str]):
+class ConfigFieldMissingError(InvalidConfigValueError):
+    def __init__(self, field_set: set[str]) -> None:
         super().__init__(field_set)
         self._field_set = field_set
 
@@ -65,13 +63,27 @@ def get_sub_keys(prefix: str, env: SDict) -> dict[str, str]:
     return {key[len(effective_prefix) :]: value for key, value in env.items() if key.startswith(effective_prefix)}
 
 
-NOT_SET = object()
+class NotSet:
+    """Typed sentinel for "value was not provided" (distinct from ``None``)."""
+
+    _instance: NotSet | None = None
+
+    def __new__(cls) -> NotSet:
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "NOT_SET"
+
+
+NOT_SET = NotSet()
 
 
 @attr.s
 class SDictExtractor:
     expected_type: type = attr.ib()
-    key: Optional[str] = attr.ib()
+    key: str | None = attr.ib()
     # TODO FIX: Validate default on creation time
     default: Any = attr.ib()
 
@@ -94,7 +106,7 @@ class SDictExtractor:
 
 @attr.s
 class ScalarExtractor(SDictExtractor):
-    converter: Optional[Callable[[str], Any]] = attr.ib()
+    converter: Callable[[str], Any] | None = attr.ib()
 
     def has_field(self, s_dict: SDict) -> bool:
         return self.key in s_dict
@@ -115,7 +127,7 @@ class ScalarExtractor(SDictExtractor):
             return self.converter(value)
         # TODO FIX: take in account potential sensivity of value
         except Exception as exc:
-            raise InvalidConfigValueException(f"Could not convert value {self.key}: {self.expected_type}") from exc
+            raise InvalidConfigValueError(f"Could not convert value {self.key}: {self.expected_type}") from exc
 
 
 @attr.s
@@ -132,7 +144,7 @@ class DefaultOnlyExtractor(SDictExtractor):
 
 @attr.s
 class DictExtractor(SDictExtractor):
-    value_converter: Optional[Callable[[str], Any]] = attr.ib()
+    value_converter: Callable[[str], Any] | None = attr.ib()
 
     def has_field(self, s_dict: SDict) -> bool:
         return len(self._get_scoped_s_dict(s_dict)) > 0
@@ -150,9 +162,9 @@ class CompositeExtractor(SDictExtractor):
     map_field_name_subextractor: dict[str, SDictExtractor] = attr.ib()
     map_field_name_field_override: dict[str, Any] = attr.ib()
     composition_factory: Callable = attr.ib()
-    json_value_converter: Optional[Callable[[Any], Any]] = attr.ib(default=None)
+    json_value_converter: Callable[[Any], Any] | None = attr.ib(default=None)
     is_root: bool = attr.ib(default=False)
-    field_enables_flag_extractor: Optional[ScalarExtractor] = attr.ib(default=None)
+    field_enables_flag_extractor: ScalarExtractor | None = attr.ib(default=None)
 
     def should_ignore(self, s_dict) -> bool:  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
         scoped_s_dict = self._get_scoped_s_dict(s_dict)
@@ -191,18 +203,18 @@ class CompositeExtractor(SDictExtractor):
         }
         missing_params = required_params - set(fields.keys())
         if missing_params:
-            raise ConfigFieldMissing(missing_params)
+            raise ConfigFieldMissingError(missing_params)
 
         return self.composition_factory(**fields)
 
     @staticmethod
     def _ensure_no_missing_fields(
-        obj: Any = None, map_field_name_missing_exc: Optional[dict[str, ConfigFieldMissing]] = None
+        obj: Any = None, map_field_name_missing_exc: dict[str, ConfigFieldMissingError] | None = None
     ) -> None:
         missing_required_fields: list[attr.Attribute] = []
         missing_sub_field_code_set: set[str] = set()
 
-        def handle_field_sub_exc(faulty_field_name: str, exc: ConfigFieldMissing) -> None:
+        def handle_field_sub_exc(faulty_field_name: str, exc: ConfigFieldMissingError) -> None:
             missing_sub_field_code_set.update(f"{faulty_field_name}.{sub_field}" for sub_field in exc.field_set)
 
         if obj is None:
@@ -219,14 +231,14 @@ class CompositeExtractor(SDictExtractor):
                     handle_field_sub_exc(field.name, map_field_name_missing_exc[field.name])
 
         if missing_required_fields or missing_sub_field_code_set:
-            raise ConfigFieldMissing(
-                field_set=set(field.name for field in missing_required_fields) | missing_sub_field_code_set
+            raise ConfigFieldMissingError(
+                field_set={field.name for field in missing_required_fields} | missing_sub_field_code_set
             )
 
     def _extract_from_json(self, s_dict: SDict) -> Any:
         converter = self.json_value_converter
         if converter is None:
-            raise InvalidConfigValueException(f"JSON converter is not defined for field {self.key!r}")
+            raise InvalidConfigValueError(f"JSON converter is not defined for field {self.key!r}")
 
         json_str = s_dict[ReservedKeys.JSON_VALUE]
 
@@ -237,7 +249,7 @@ class CompositeExtractor(SDictExtractor):
             illegal_fields = illegal_fields - {self.field_enables_flag_extractor.key}
 
         if illegal_fields:
-            raise InvalidConfigValueException(
+            raise InvalidConfigValueError(
                 f"{ReservedKeys.JSON_VALUE} can not be combined with any other keys: {' '.join(sorted(illegal_fields))}"
             )
 
@@ -245,13 +257,13 @@ class CompositeExtractor(SDictExtractor):
             json_value = json.loads(json_str)
         except json.JSONDecodeError:
             # TODO FIX: take in account potential sensivity of value
-            raise InvalidConfigValueException(f"Malformed JSON for {self.key!r}") from None
+            raise InvalidConfigValueError(f"Malformed JSON for {self.key!r}") from None
 
         try:
             return converter(json_value)
         except Exception as exc:
             # TODO FIX: take in account potential sensivity of value
-            raise InvalidConfigValueException(f"Can not convert JSON value to target object {self.key!r}") from exc
+            raise InvalidConfigValueError(f"Can not convert JSON value to target object {self.key!r}") from exc
 
     def _extract(self, s_dict: SDict) -> Any:
         default_value = self.default
@@ -265,7 +277,7 @@ class CompositeExtractor(SDictExtractor):
                 return self._extract_from_json(scoped_s_dict)
 
         fields = {}
-        map_field_name_missing_fields: dict[str, ConfigFieldMissing] = {}
+        map_field_name_missing_fields: dict[str, ConfigFieldMissingError] = {}
 
         for field_name, sub_extractor in self.map_field_name_subextractor.items():
             if field_name in self.map_field_name_field_override:
@@ -273,7 +285,7 @@ class CompositeExtractor(SDictExtractor):
             elif sub_extractor.has_field(scoped_s_dict) or sub_extractor.default is not NOT_SET:
                 try:
                     fields[field_name] = sub_extractor.extract(scoped_s_dict)
-                except ConfigFieldMissing as child_field_missing:
+                except ConfigFieldMissingError as child_field_missing:
                     map_field_name_missing_fields[field_name] = child_field_missing
 
         if default_value is None and not self.has_field(s_dict):
@@ -281,24 +293,23 @@ class CompositeExtractor(SDictExtractor):
                 self._ensure_no_missing_fields(map_field_name_missing_exc=map_field_name_missing_fields)
             return None
 
-        elif default_value is NOT_SET or default_value is None:
+        if default_value is NOT_SET or default_value is None:
             if map_field_name_missing_fields:
                 self._ensure_no_missing_fields(map_field_name_missing_exc=map_field_name_missing_fields)
             return self.run_composition_factory_with_validation(fields)
 
-        else:
-            updated_default_value = attr.evolve(self.default, **fields)
-            self._ensure_no_missing_fields(
-                obj=updated_default_value, map_field_name_missing_exc=map_field_name_missing_fields
-            )
-            return updated_default_value
+        updated_default_value = attr.evolve(self.default, **fields)
+        self._ensure_no_missing_fields(
+            obj=updated_default_value, map_field_name_missing_exc=map_field_name_missing_fields
+        )
+        return updated_default_value
 
 
 @attr.s
 class EnvSettingsLoader:
     file_remap_prefix: ClassVar[str] = "BIE_FILE_MAP"
 
-    _s_dict: Optional[SDict] = attr.ib(repr=False)
+    _s_dict: SDict | None = attr.ib(repr=False)
 
     def __attrs_post_init__(self) -> None:
         if self._s_dict is None:
@@ -316,7 +327,7 @@ class EnvSettingsLoader:
         loaded_keys: dict[str, str] = {}
 
         for key, file_path in map_key_file_path.items():
-            with open(file_path, "r", encoding="ascii") as file:
+            with open(file_path, encoding="ascii") as file:
                 loaded_keys[key] = file.read()
 
         return loaded_keys
@@ -328,7 +339,7 @@ class EnvSettingsLoader:
         field_type: type,
         meta: SMeta,
         default: Any,
-    ) -> Union[ScalarExtractor, DictExtractor]:
+    ) -> ScalarExtractor | DictExtractor:
         env_var_name = meta.name.upper()  # type: ignore  # 2024-01-24 # TODO: Item "None" of "str | None" has no attribute "upper"  [union-attr]
         unwrapped_type_set = cls.unwrap_union(field_type, ignore_none=True)
         assert len(unwrapped_type_set) == 1
@@ -347,17 +358,17 @@ class EnvSettingsLoader:
                 converter=meta.env_var_converter,
                 default=default,
             )
-        elif effective_type in simple_type_converters:
+        if effective_type in simple_type_converters:
             return ScalarExtractor(
                 expected_type=field_type,
                 key=env_var_name,
                 converter=simple_type_converters[effective_type],
                 default=default,
             )
-        elif typing.get_origin(effective_type) == dict:
+        if typing.get_origin(effective_type) == dict:
             key_type, value_type = typing.get_args(effective_type)
             assert key_type == str
-            value_converter: Optional[Callable[[str], Any]]
+            value_converter: Callable[[str], Any] | None
 
             if value_type in simple_type_converters:
                 value_converter = simple_type_converters[value_type]
@@ -370,8 +381,7 @@ class EnvSettingsLoader:
                 value_converter=value_converter,
                 default=default,
             )
-        else:
-            raise TypeError(f"Unsupported field type: {field_type!r} while extracting {env_var_name}")
+        raise TypeError(f"Unsupported field type: {field_type!r} while extracting {env_var_name}")
 
     @staticmethod
     def unwrap_union(the_type: type, ignore_none: bool) -> frozenset[type]:
@@ -412,9 +422,9 @@ class EnvSettingsLoader:
         fallback_cfg: Any = None,
         app_cfg_type: Any = None,
         is_root: bool = False,
-        field_enables_flag_extractor: Optional[ScalarExtractor] = None,
-        json_converter: Optional[Callable[[Any], Any]] = None,
-        field_overrides: Optional[dict[str, Any]] = None,
+        field_enables_flag_extractor: ScalarExtractor | None = None,
+        json_converter: Callable[[Any], Any] | None = None,
+        field_overrides: dict[str, Any] | None = None,
     ) -> CompositeExtractor:
         if is_root:
             assert field_enables_flag_extractor is None
@@ -483,7 +493,7 @@ class EnvSettingsLoader:
                 elif len(factory_signature.parameters) == 2:
                     field_default = fallback_factory(fallback_cfg, app_cfg_type)
                 else:
-                    raise SettingsLoadingException(f"Unexpected signature of fallback factory for {field}")
+                    raise SettingsLoadingError(f"Unexpected signature of fallback factory for {field}")
 
             else:
                 field_default = getattr(
@@ -513,16 +523,18 @@ class EnvSettingsLoader:
 
                 child_extractor = cls.build_composite_extractor(
                     settings_type=field.type,  # type: ignore  # 2024-01-24 # TODO: Argument "settings_type" to "build_composite_extractor" of "EnvSettingsLoader" has incompatible type "type[Any] | None"; expected "type[SettingsBase]"  [arg-type]
-                    key_prefix=key_prefix + (field_s_meta.name,),
+                    key_prefix=(*key_prefix, field_s_meta.name),
                     default=field_default,
                     json_converter=field_s_meta.json_converter,
-                    field_enables_flag_extractor=None  # type: ignore  # 2024-01-24 # TODO: Argument "field_enables_flag_extractor" to "build_composite_extractor" of "EnvSettingsLoader" has incompatible type "ScalarExtractor | DictExtractor | None"; expected "ScalarExtractor | None"  [arg-type]
-                    if enabled_key_name is None
-                    else cls.build_default_extractor(
-                        name="enabled",
-                        field_type=bool,
-                        meta=SMeta(enabled_key_name),
-                        default=NOT_SET,
+                    field_enables_flag_extractor=(
+                        None  # type: ignore  # 2024-01-24 # TODO: Argument "field_enables_flag_extractor" to "build_composite_extractor" of "EnvSettingsLoader" has incompatible type "ScalarExtractor | DictExtractor | None"; expected "ScalarExtractor | None"  [arg-type]
+                        if enabled_key_name is None
+                        else cls.build_default_extractor(
+                            name="enabled",
+                            field_type=bool,
+                            meta=SMeta(enabled_key_name),
+                            default=NOT_SET,
+                        )
                     ),
                 )
             else:
@@ -552,19 +564,18 @@ class EnvSettingsLoader:
         )
 
     @classmethod
-    def get_app_cfg_type_field(cls, settings_type: type[SettingsBase]) -> Optional[attr.Attribute]:
+    def get_app_cfg_type_field(cls, settings_type: type[SettingsBase]) -> attr.Attribute | None:
         candidates = [
             field
             for field in attr.fields(settings_type)  # type: ignore  # 2024-01-24 # TODO: Argument 1 to "fields" has incompatible type "type[SettingsBase]";
             if SMeta.from_attrib(field).is_app_cfg_type  # type: ignore  # 2024-02-09 # TODO: Item "None" of "SMeta | None" has no attribute
         ]
         if len(candidates) > 1:
-            raise SettingsLoadingException(
+            raise SettingsLoadingError(
                 f"Settings class {get_type_full_name(settings_type)}"
                 f" has more than one app_type attributes: {candidates}"
             )
-        else:
-            return next(iter(candidates)) if candidates else None
+        return next(iter(candidates)) if candidates else None
 
     @classmethod
     def get_app_cfg_type_value_from_env(cls, settings_type: type[SettingsBase], s_dict: SDict) -> Any:
@@ -584,11 +595,11 @@ class EnvSettingsLoader:
     def build_top_level_extractor(
         cls,
         settings_type: type[_SETTINGS_TV],
-        key_prefix: Optional[str] = None,
+        key_prefix: str | None = None,
         fallback_cfg: Any = None,
         app_cfg_type: Any = None,
-        default_value: Optional[_SETTINGS_TV] = None,
-        field_overrides: Optional[dict[str, Any]] = None,
+        default_value: _SETTINGS_TV | None = None,
+        field_overrides: dict[str, Any] | None = None,
     ) -> CompositeExtractor:
         return cls.build_composite_extractor(
             settings_type=settings_type,  # type: ignore  # 2024-01-24 # TODO: Argument "settings_type" to "build_composite_extractor" of "EnvSettingsLoader" has incompatible type "type[_SETTINGS_TV]"; expected "type[SettingsBase]"  [arg-type]
@@ -603,9 +614,9 @@ class EnvSettingsLoader:
     def load_settings(
         self,
         settings_type: type[_SETTINGS_TV],
-        key_prefix: Optional[str] = None,
-        fallback_cfg_resolver: Optional[FallbackConfigResolver] = None,
-        default_value: Optional[_SETTINGS_TV] = None,
+        key_prefix: str | None = None,
+        fallback_cfg_resolver: FallbackConfigResolver | None = None,
+        default_value: _SETTINGS_TV | None = None,
     ) -> _SETTINGS_TV:
         effective_s_dict = self.s_dict
         effective_s_dict = remap_env(effective_s_dict)
@@ -616,7 +627,7 @@ class EnvSettingsLoader:
         keys_from_files_intersection = effective_s_dict.keys() & keys_from_files.keys()
 
         if keys_from_files_intersection:
-            raise InvalidConfigValueException(
+            raise InvalidConfigValueError(
                 f"Got intersection of explicit env vars & file mapped vars:"
                 f" {' '.join(sorted(keys_from_files_intersection))}"
             )
@@ -643,11 +654,11 @@ class EnvSettingsLoader:
         return extractor.extract(effective_s_dict)
 
 
-def load_settings_from_env_with_fallback_legacy(
-    settings_type: type[_SETTINGS_TV],
+def load_settings_from_env_with_fallback_legacy[SETTINGS_TV](
+    settings_type: type[SETTINGS_TV],
     fallback_cfg_resolver: FallbackConfigResolver,
-    env: Optional[SDict] = None,
-) -> _SETTINGS_TV:
+    env: SDict | None = None,
+) -> SETTINGS_TV:
     effective_env = os.environ if env is None else env
 
     return EnvSettingsLoader(effective_env).load_settings(
@@ -656,11 +667,11 @@ def load_settings_from_env_with_fallback_legacy(
     )
 
 
-def load_settings_from_env_with_fallback(
-    settings_type: type[_SETTINGS_TV],
-    env: Optional[SDict] = None,
-    default_fallback_cfg_resolver: Optional[FallbackConfigResolver] = None,
-) -> _SETTINGS_TV:
+def load_settings_from_env_with_fallback[SETTINGS_TV](
+    settings_type: type[SETTINGS_TV],
+    env: SDict | None = None,
+    default_fallback_cfg_resolver: FallbackConfigResolver | None = None,
+) -> SETTINGS_TV:
     effective_env = os.environ if env is None else env
 
     if YamlFileConfigResolver.is_config_enabled(s_dict=effective_env):

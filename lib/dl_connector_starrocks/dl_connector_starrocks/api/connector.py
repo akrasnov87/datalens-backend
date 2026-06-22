@@ -11,7 +11,7 @@ from dl_api_connector.connector import (
     ApiSourceDefinition,
     MQMFactorySettingItem,
 )
-from dl_constants.enums import QueryProcessingMode
+from dl_constants import QueryProcessingMode
 from dl_query_processing.multi_query.factory import NoCompengMultiQueryMutatorFactory
 
 from dl_connector_starrocks.api.api_schema.connection import StarRocksConnectionSchema
@@ -49,10 +49,10 @@ class StarRocksApiConnectionDefinition(ApiConnectionDefinition):
 class StarRocksApiBackendDefinition(ApiBackendDefinition):
     core_backend_definition = StarRocksCoreBackendDefinition
     formula_dialect_name = DIALECT_NAME_STARROCKS
-    multi_query_mutation_factories = ApiBackendDefinition.multi_query_mutation_factories + (
+    multi_query_mutation_factories = (
+        *ApiBackendDefinition.multi_query_mutation_factories,
         MQMFactorySettingItem(
-            query_proc_mode=QueryProcessingMode.native_wf,
-            factory_cls=NoCompengMultiQueryMutatorFactory,
+            query_proc_mode=QueryProcessingMode.native_wf, factory_cls=NoCompengMultiQueryMutatorFactory
         ),
     )
 

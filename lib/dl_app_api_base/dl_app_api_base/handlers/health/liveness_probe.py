@@ -5,12 +5,11 @@ import aiohttp.web
 
 import dl_app_api_base.handlers.base as base
 
-
 logger = logging.getLogger(__name__)
 
 
 class LivenessProbeHandler(base.BaseHandler):
-    OPENAPI_TAGS = ["system"]
+    OPENAPI_TAGS = ("system",)
     OPENAPI_DESCRIPTION = "Liveness probe, checks if the system is alive"
 
     class ResponseSchema(base.BaseResponseSchema):

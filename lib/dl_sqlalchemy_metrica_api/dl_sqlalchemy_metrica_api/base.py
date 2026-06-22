@@ -3,6 +3,8 @@ from __future__ import annotations
 import datetime
 import logging
 import re
+from types import ModuleType
+from typing import Any
 from urllib.parse import urlencode
 
 import dateutil.parser
@@ -30,12 +32,11 @@ from dl_sqlalchemy_metrica_api import (
 from dl_sqlalchemy_metrica_api.api_info import appmetrica as appmetrica_api_info
 from dl_sqlalchemy_metrica_api.api_info import metrika as metrika_api_info
 from dl_sqlalchemy_metrica_api.exceptions import (
-    MetrikaApiDimensionInCalc,
-    MetrikaApiGroupByNotSupported,
-    MetrikaApiNoMetricsNorGroupBy,
+    MetrikaApiDimensionInCalcError,
+    MetrikaApiGroupByNotSupportedError,
+    MetrikaApiNoMetricsNorGroupByError,
     NotSupportedError,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -45,12 +46,12 @@ DEFAULT_DATE_PERIOD = 60  # days
 
 
 class MetrikaApiReqPreparer(compiler.IdentifierPreparer):
-    illegal_initial_characters = {"$"}
-    legal_characters = re.compile(r"^[A-Z0-9_:<>\-$]+$", re.I)  # added ":<>-"
+    illegal_initial_characters = frozenset({"$"})
+    legal_characters = re.compile(r"^[A-Z0-9_:<>\-$]+$", re.IGNORECASE)  # added ":<>-"
 
-    def __init__(self, dialect, **kwargs):
+    def __init__(self, dialect, **kwargs: Any) -> None:
         kwargs.update(initial_quote="'", escape_quote="'")
-        super(MetrikaApiReqPreparer, self).__init__(dialect, **kwargs)
+        super().__init__(dialect, **kwargs)
 
     def _requires_quotes(self, value):
         """Return True if the given identifier requires quoting."""
@@ -95,7 +96,7 @@ class MetrikaApiReqCompiler(compiler.SQLCompiler):
         add_to_result_map=None,
         include_table=True,
         _is_in_filter=False,
-        **kwargs,
+        **kwargs: Any,
     ):
         name = orig_name = column.name
         if name is None:
@@ -122,17 +123,16 @@ class MetrikaApiReqCompiler(compiler.SQLCompiler):
 
         return name
 
-    def visit_eq_binary(self, binary, operator_, **kw):
+    def visit_eq_binary(self, binary, operator_, **kw: Any):
         return self._generate_generic_binary(binary, "==", **kw)  # "==" instead of "="
 
-    def visit_inv_unary(self, element, operator_, **kw):
-        return "NOT(%s)" % self.process(element.element, **kw)
+    def visit_inv_unary(self, element, operator_, **kw: Any):
+        return f"NOT({self.process(element.element, **kw)})"
 
-    def bindparam_string(self, name, _extra_quoting=True, **kw):
+    def bindparam_string(self, name, _extra_quoting=True, **kw: Any):
         if _extra_quoting:
             return "'%s'" % (self.bindtemplate % {"name": name})
-        else:
-            return self.bindtemplate % {"name": name}
+        return self.bindtemplate % {"name": name}
 
     def render_literal_value(self, value, type_):
         if isinstance(type_, Unicode):
@@ -142,13 +142,12 @@ class MetrikaApiReqCompiler(compiler.SQLCompiler):
             if self.dialect.identifier_preparer._double_percents:
                 value = value.replace("%", "%%")
 
-            return "'%s'" % value
+            return f"'{value}'"
 
         processor = type_._cached_literal_processor(self.dialect)
         if processor:
             return processor(value)
-        else:
-            raise NotImplementedError("Don't know how to literal-quote value %r" % value)
+        raise NotImplementedError(f"Don't know how to literal-quote value {value!r}")
 
     def visit_bindparam(
         self,
@@ -157,12 +156,12 @@ class MetrikaApiReqCompiler(compiler.SQLCompiler):
         literal_binds=False,
         skip_bind_expression=False,
         _extra_quoting=True,
-        **kwargs,
+        **kwargs: Any,
     ):
         if literal_binds or (within_columns_clause and self.ansi_bind_rules):
             if bindparam.value is None and bindparam.callable is None:
                 raise exc.CompileError(
-                    "Bind parameter '%s' without a " "renderable value not allowed here." % bindparam.key
+                    f"Bind parameter '{bindparam.key}' without a " "renderable value not allowed here."
                 )
             return self.render_literal_bindparam(bindparam, within_columns_clause=True, **kwargs)
 
@@ -187,10 +186,10 @@ class MetrikaApiReqCompiler(compiler.SQLCompiler):
             value = escape(value)
 
         if _extra_quoting:
-            return "'%s'" % value
+            return f"'{value}'"
         return value
 
-    def visit_between_op_binary(self, binary, operator, **kw):
+    def visit_between_op_binary(self, binary, operator, **kw: Any):
         left_value = binary.left._compiler_dispatch(self, **kw)
         if self.check_field_is_date_datetime(left_value):
             if len(binary.right.clauses) != 2:
@@ -201,102 +200,95 @@ class MetrikaApiReqCompiler(compiler.SQLCompiler):
             )
         else:
             raise NotSupportedError(
-                "BETWEEN operator supported only for date/datetime fields. " "Requested field: {}".format(left_value)
+                "BETWEEN operator supported only for date/datetime fields. " f"Requested field: {left_value}"
             )
 
         return ""
 
-    def visit_not_between_op_binary(self, binary, operator, **kw):
+    def visit_not_between_op_binary(self, binary, operator, **kw: Any):
         raise NotSupportedError()
 
-    def visit_notbetween_op_binary(self, binary, operator, **kw):
+    def visit_notbetween_op_binary(self, binary, operator, **kw: Any):
         raise NotSupportedError()
 
     @util.memoized_property
     def _like_percent_literal(self):
         return elements.literal_column("'*'", type_=sqltypes.STRINGTYPE)
 
-    def visit_contains_op_binary(self, binary, operator, **kw):
+    def visit_contains_op_binary(self, binary, operator, **kw: Any):
         binary = binary._clone()
-        binary.right.value = "*%s*" % binary.right.value
+        binary.right.value = f"*{binary.right.value}*"
         return self.visit_like_op_binary(binary, operator, **kw)
 
-    def visit_not_contains_op_binary(self, binary, operator, **kw):
+    def visit_not_contains_op_binary(self, binary, operator, **kw: Any):
         binary = binary._clone()
-        binary.right.value = "*%s*" % binary.right.value
+        binary.right.value = f"*{binary.right.value}*"
         return self.visit_notlike_op_binary(binary, operator, **kw)
 
-    def visit_notcontains_op_binary(self, binary, operator, **kw):
+    def visit_notcontains_op_binary(self, binary, operator, **kw: Any):
         return self.visit_not_contains_op_binary(binary, operator, **kw)
 
-    def visit_startswith_op_binary(self, binary, operator, **kw):
+    def visit_startswith_op_binary(self, binary, operator, **kw: Any):
         binary = binary._clone()
-        binary.right.value = "%s*" % binary.right.value
+        binary.right.value = f"{binary.right.value}*"
         return self.visit_like_op_binary(binary, operator, **kw)
 
-    def visit_not_startswith_op_binary(self, binary, operator, **kw):
+    def visit_not_startswith_op_binary(self, binary, operator, **kw: Any):
         binary = binary._clone()
-        binary.right.value = "%s*" % binary.right.value
+        binary.right.value = f"{binary.right.value}*"
         return self.visit_notlike_op_binary(binary, operator, **kw)
 
-    def visit_notstartsswith_op_binary(self, binary, operator, **kw):
+    def visit_notstartsswith_op_binary(self, binary, operator, **kw: Any):
         return self.visit_not_startsswith_op_binary(binary, operator, **kw)
 
-    def visit_endswith_op_binary(self, binary, operator, **kw):
+    def visit_endswith_op_binary(self, binary, operator, **kw: Any):
         binary = binary._clone()
-        binary.right.value = "*%s" % binary.right.value
+        binary.right.value = f"*{binary.right.value}"
         return self.visit_like_op_binary(binary, operator, **kw)
 
-    def visit_not_endswith_op_binary(self, binary, operator, **kw):
+    def visit_not_endswith_op_binary(self, binary, operator, **kw: Any):
         binary = binary._clone()
-        binary.right.value = "*%s" % binary.right.value
+        binary.right.value = f"*{binary.right.value}"
         return self.visit_notlike_op_binary(binary, operator, **kw)
 
-    def visit_notendswith_op_binary(self, binary, operator, **kw):
+    def visit_notendswith_op_binary(self, binary, operator, **kw: Any):
         return self.visit_not_endswith_op_binary(binary, operator, **kw)
 
-    def visit_like_op_binary(self, binary, operator, **kw):
-        return "%s=*%s" % (
-            binary.left._compiler_dispatch(self, **kw),
-            binary.right._compiler_dispatch(self, **kw),
-        )
+    def visit_like_op_binary(self, binary, operator, **kw: Any):
+        return f"{binary.left._compiler_dispatch(self, **kw)}=*{binary.right._compiler_dispatch(self, **kw)}"
 
-    def visit_notlike_op_binary(self, binary, operator, **kw):
+    def visit_notlike_op_binary(self, binary, operator, **kw: Any):
         return self.visit_not_like_op_binary(binary, operator, **kw)
 
-    def visit_not_like_op_binary(self, binary, operator, **kw):
-        return "%s!*%s" % (
-            binary.left._compiler_dispatch(self, **kw),
-            binary.right._compiler_dispatch(self, **kw),
-        )
+    def visit_not_like_op_binary(self, binary, operator, **kw: Any):
+        return f"{binary.left._compiler_dispatch(self, **kw)}!*{binary.right._compiler_dispatch(self, **kw)}"
 
-    def visit_ilike_op_binary(self, binary, operator, **kw):
+    def visit_ilike_op_binary(self, binary, operator, **kw: Any):
         raise NotSupportedError()
 
-    def visit_not_ilike_op_binary(self, binary, operator, **kw):
+    def visit_not_ilike_op_binary(self, binary, operator, **kw: Any):
         raise NotSupportedError()
 
-    def visit_notilike_op_binary(self, binary, operator, **kw):
+    def visit_notilike_op_binary(self, binary, operator, **kw: Any):
         raise NotSupportedError()
 
-    def _get_clause_name(self, clause, **kwargs):
+    def _get_clause_name(self, clause, **kwargs: Any):
         if hasattr(clause, "name"):
             return clause.name
-        elif hasattr(clause, "clause") and hasattr(clause.clause, "name"):
+        if hasattr(clause, "clause") and hasattr(clause.clause, "name"):
             return clause.clause.name
-        else:
-            return clause._compiler_dispatch(self, **kwargs)
+        return clause._compiler_dispatch(self, **kwargs)
 
-    def visit_sum_func(self, func, **kwargs):
+    def visit_sum_func(self, func, **kwargs: Any):
         clauses = func.clause_expr.element.clauses
         for cla in clauses:
             cla_name = self._get_clause_name(cla, **kwargs)
             if cla_name in self.api_info.fields_by_name and self.api_info.fields_by_name[cla_name]["is_dim"]:
-                raise MetrikaApiDimensionInCalc('Not able to use dimensions in calculations: "%s"' % cla_name)
+                raise MetrikaApiDimensionInCalcError(f'Not able to use dimensions in calculations: "{cla_name}"')
 
         return " + ".join([cla._compiler_dispatch(self, **kwargs) for cla in clauses])
 
-    def visit_clauselist(self, clauselist, _group_by_clause=False, **kwargs):
+    def visit_clauselist(self, clauselist, _group_by_clause=False, **kwargs: Any):
         sep = clauselist.operator
         if sep is None:
             sep = " "
@@ -317,7 +309,7 @@ class MetrikaApiReqCompiler(compiler.SQLCompiler):
             for cla in clauses:
                 cla_name = self._get_clause_name(cla, **kwargs)
                 if cla_name not in self.api_info.fields_by_name or not self.api_info.fields_by_name[cla_name]["is_dim"]:
-                    raise MetrikaApiGroupByNotSupported('Grouping by field "%s" is not possible' % cla_name)
+                    raise MetrikaApiGroupByNotSupportedError(f'Grouping by field "{cla_name}" is not possible')
 
             self._group_by_fields = [name for name in (self._get_clause_name(cla, **kwargs) for cla in clauses) if name]
         else:
@@ -325,7 +317,7 @@ class MetrikaApiReqCompiler(compiler.SQLCompiler):
 
         return sep.join(s for s in (c._compiler_dispatch(self, **kwargs) for c in clauses) if s)
 
-    def visit_select(self, *args, **kwargs):
+    def visit_select(self, *args: Any, **kwargs: Any):
         self._flush_tmp_properties()
         return super().visit_select(*args, **kwargs)
 
@@ -412,7 +404,9 @@ class MetrikaApiReqCompiler(compiler.SQLCompiler):
                 any_metric = self.api_info.metrics_by_namespace[fields_namespace][0]["name"]
                 metrics_cols.append(any_metric)
             else:
-                raise MetrikaApiNoMetricsNorGroupBy("Not found neither metrics to select nor dimensions for group by.")
+                raise MetrikaApiNoMetricsNorGroupByError(
+                    "Not found neither metrics to select nor dimensions for group by."
+                )
         query_params.update(metrics=",".join(metrics_cols))
 
         if self._group_by_fields:
@@ -444,14 +438,14 @@ class MetrikaApiReqCompiler(compiler.SQLCompiler):
                 value = query_params[date_param]
                 if isinstance(value, list):
                     value = value[0]
-                if not type(value) == datetime.date:
+                if type(value) != datetime.date:
                     if isinstance(value, datetime.datetime):
                         value = value.date()
                     else:
                         value = dateutil.parser.parse(value).date()
                 query_params[date_param] = value
 
-        today = datetime.date.today()
+        today = datetime.date.today()  # noqa: DTZ011  # TODO: fix in BI-7500
         if not self._date_filter_present and not query_params.get("date1") and not query_params.get("date2"):
             # TODO: use counter timezone
             dt1 = today - datetime.timedelta(days=DEFAULT_DATE_PERIOD)
@@ -462,11 +456,10 @@ class MetrikaApiReqCompiler(compiler.SQLCompiler):
 
         return urlencode(query_params)
 
-    def visit_table(self, table, asfrom=False, ashint=False, **kwargs):
+    def visit_table(self, table, asfrom=False, ashint=False, **kwargs: Any):
         if asfrom or ashint:
             return table.name
-        else:
-            return ""
+        return ""
 
     def visit_label(
         self,
@@ -475,7 +468,7 @@ class MetrikaApiReqCompiler(compiler.SQLCompiler):
         within_label_clause=False,
         within_columns_clause=False,
         render_label_as_label=None,
-        **kw,
+        **kw: Any,
     ):
         # only render labels within the columns clause
         # or ORDER BY clause of a select.  dialect-specific compilers
@@ -494,7 +487,7 @@ class MetrikaApiReqCompiler(compiler.SQLCompiler):
                 add_to_result_map(
                     labelname,
                     label.name,
-                    (label, labelname) + label._alt_names,
+                    (label, labelname, *label._alt_names),
                     label.type,
                 )
 
@@ -503,38 +496,36 @@ class MetrikaApiReqCompiler(compiler.SQLCompiler):
             )
 
             def _unwrap_to_column_clause(element):
-                LOGGER.info(f"element {element} {type(element)}")
+                LOGGER.info("element %s %s", element, type(element))
                 if isinstance(element, elements.ColumnClause):
                     return element
                 if hasattr(element, "clause"):
                     return _unwrap_to_column_clause(element.clause)
-                else:
-                    LOGGER.warning("Unable dispatch to ColumnClause")
-                    return None
+                LOGGER.warning("Unable dispatch to ColumnClause")
+                return None
 
             internal_column_clause = _unwrap_to_column_clause(label.element)
             self._labeled_columns_map[labelname] = (element_processed, internal_column_clause)
 
             return element_processed
-        else:
-            return label.element._compiler_dispatch(self, within_columns_clause=False, **kw)
+        return label.element._compiler_dispatch(self, within_columns_clause=False, **kw)
 
-    def visit_asc_op_unary_modifier(self, unary, modifier, **kw):
+    def visit_asc_op_unary_modifier(self, unary, modifier, **kw: Any):
         return unary.element._compiler_dispatch(self, **kw)
 
-    def visit_desc_op_unary_modifier(self, unary, modifier, **kw):
+    def visit_desc_op_unary_modifier(self, unary, modifier, **kw: Any):
         return "-" + unary.element._compiler_dispatch(self, **kw)
 
-    def visit_cast(self, cast, **kwargs):
+    def visit_cast(self, cast, **kwargs: Any):
         param_name = cast.clause._compiler_dispatch(self, **kwargs)
         cast_type = cast.typeclause._compiler_dispatch(self, **kwargs)
         self._casts[param_name] = cast_type
         return param_name
 
-    def visit_insert(self, *args, **kwargs):
+    def visit_insert(self, *args: Any, **kwargs: Any):
         raise NotSupportedError("INSERT")
 
-    def visit_update(self, *args, **kwargs):
+    def visit_update(self, *args: Any, **kwargs: Any):
         raise NotSupportedError("UPDATE")
 
     def construct_params(
@@ -550,11 +541,11 @@ class MetrikaApiReqCompiler(compiler.SQLCompiler):
         for col in self._result_columns:
             field_name = self._labeled_columns_map.get(col[0], (col[0],))[0]
             result_cols.append(
-                dict(
-                    label=col[0],
-                    name=field_name,
-                    src_key=self.api_info.fields_by_name.get(field_name, {}).get("src_key"),
-                )
+                {
+                    "label": col[0],
+                    "name": field_name,
+                    "src_key": self.api_info.fields_by_name.get(field_name, {}).get("src_key"),
+                }
             )
         prepared_params["__RESULT_COLUMNS__"] = result_cols
         prepared_params.update(self._extra_bind_params)
@@ -591,29 +582,29 @@ class MetrikaApiDialect(default.DefaultDialect):
     preparer = MetrikaApiReqPreparer
 
     @reflection.cache
-    def get_table_names(self, connection, schema=None, **kw):
+    # `object` (not `Any`): @reflection.cache regenerates this signature via exec, whose namespace
+    # cannot resolve typing names; `object` is a builtin and is always available there.
+    def get_table_names(self, connection, schema=None, **kw: object):
         res = connection.execute(metrika_dbapi.InternalCommands.get_tables.value)
         return [item[0] for item in res]
 
     def has_table(self, connection, table_name, schema=None):
         return table_name in self.get_table_names(connection)
 
-    def get_columns(self, connection, table_name, schema=None, **kw):
+    def get_columns(self, connection, table_name, schema=None, **kw: Any):
         metrika_fields = connection.execute(metrika_dbapi.InternalCommands.get_columns.value)
 
-        columns = []
-        for col in metrika_fields:
-            columns.append(
-                {
-                    "name": col["name"],
-                    "type": metrika_dbapi.metrika_types_to_sqla[col["type"]],
-                    "nullable": not col["is_dim"],
-                }
-            )
-        return columns
+        return [
+            {
+                "name": col["name"],
+                "type": metrika_dbapi.metrika_types_to_sqla[col["type"]],
+                "nullable": not col["is_dim"],
+            }
+            for col in metrika_fields
+        ]
 
     @classmethod
-    def dbapi(cls):
+    def dbapi(cls) -> ModuleType:
         return metrika_dbapi
 
     def _check_unicode_returns(self, connection, additional_tests=None):
@@ -625,13 +616,13 @@ class MetrikaApiDialect(default.DefaultDialect):
     def do_rollback(self, dbapi_connection):
         pass
 
-    def get_foreign_keys(self, connection, table_name, schema=None, **kw):
+    def get_foreign_keys(self, connection, table_name, schema=None, **kw: Any):
         return []
 
-    def get_indexes(self, connection, table_name, schema=None, **kw):
+    def get_indexes(self, connection, table_name, schema=None, **kw: Any):
         return []
 
-    def get_pk_constraint(self, connection, table_name, schema=None, **kw):
+    def get_pk_constraint(self, connection, table_name, schema=None, **kw: Any):
         return []
 
 
@@ -647,5 +638,5 @@ class AppMetricaApiDialect(MetrikaApiDialect):
     supports_statement_cache = False
 
     @classmethod
-    def dbapi(cls):
+    def dbapi(cls) -> ModuleType:
         return appmetrica_dbapi

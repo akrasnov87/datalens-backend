@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from http import HTTPStatus
-from itertools import chain
-from typing import (
-    Any,
+from collections.abc import (
     Iterable,
-    Optional,
     Sequence,
 )
+from http import HTTPStatus
+from itertools import chain
+import logging
+from typing import Any
 
 import attr
 
@@ -18,6 +18,7 @@ from dl_api_client.dsmaker.api.schemas.dataset import (
     CacheInvalidationSourceSchema,
     ComponentErrorListSchema,
     DataSourceSchema,
+    ExtractPropertiesSchema,
     ObligatoryFilterSchema,
     ResultFieldSchema,
     ResultSchemaAuxSchema,
@@ -31,10 +32,12 @@ from dl_api_client.dsmaker.primitives import (
     UpdateAction,
 )
 
+LOGGER = logging.getLogger(__name__)
+
 
 @attr.s(frozen=True)
 class HttpDatasetApiResponse(HttpApiResponse):
-    _dataset: Optional[Dataset] = attr.ib(kw_only=True, default=None)
+    _dataset: Dataset | None = attr.ib(kw_only=True, default=None)
 
     @property
     def dataset(self) -> Dataset:
@@ -78,8 +81,10 @@ class DatasetApiV1SerializationAdapter(BaseApiV1SerializationAdapter):
             obligatory_filters=[
                 ObligatoryFilterSchema().load(filter_info) for filter_info in body["obligatory_filters"]
             ],
-            annotation=dict(description=body["description"]),
+            annotation={"description": body["description"]},
+            extract=ExtractPropertiesSchema().load(body.get("extract", {})),
             cache_invalidation_source=CacheInvalidationSourceSchema().load(body["cache_invalidation_source"]),
+            query_settings=body.get("query_settings", {}),
         )
 
         for dsrc_data in body["sources"]:
@@ -181,7 +186,7 @@ class SyncHttpDatasetApiV1(SyncHttpApiV1Base):
             # `fail_ok` should not mean `allow 5xx`
             assert response.status_code < 500, response.json
 
-        new_dataset: Optional[Dataset] = None
+        new_dataset: Dataset | None = None
         if response.status_code == HTTPStatus.OK:
             new_dataset = self.serial_adapter.load_dataset_from_response_body(dataset=dataset, body=response.json)
             if not dataset.created_:
@@ -211,8 +216,8 @@ class SyncHttpDatasetApiV1(SyncHttpApiV1Base):
         for dataset_id in self._created_dataset_id_list:
             try:
                 self.delete_dataset(dataset_id, fail_ok=True)
-            except Exception:  # noqa
-                pass
+            except Exception:
+                LOGGER.warning("Failed to clean up dataset %s", dataset_id, exc_info=True)
 
     def copy_dataset(
         self,
@@ -315,7 +320,7 @@ class SyncHttpDatasetApiV1(SyncHttpApiV1Base):
         source_ids: Iterable[str],
         fail_ok: bool = False,
     ) -> HttpDatasetApiResponse:
-        refresh_resp = self.apply_updates(
+        return self.apply_updates(
             dataset=dataset,
             fail_ok=fail_ok,
             updates=[
@@ -328,7 +333,6 @@ class SyncHttpDatasetApiV1(SyncHttpApiV1Base):
                 for source_id in source_ids
             ],
         )
-        return refresh_resp
 
     def replace_single_data_source(
         self,
@@ -336,7 +340,7 @@ class SyncHttpDatasetApiV1(SyncHttpApiV1Base):
         new_source: dict[str, Any],
         fail_ok: bool = False,
     ) -> HttpDatasetApiResponse:
-        response = self.apply_updates(
+        return self.apply_updates(
             dataset=dataset,
             fail_ok=fail_ok,
             updates=[
@@ -358,7 +362,6 @@ class SyncHttpDatasetApiV1(SyncHttpApiV1Base):
                 },
             ],
         )
-        return response
 
     def replace_connection(
         self,
@@ -366,7 +369,7 @@ class SyncHttpDatasetApiV1(SyncHttpApiV1Base):
         new_connection_id: str,
         fail_ok: bool = False,
     ) -> HttpDatasetApiResponse:
-        response = self.apply_updates(
+        return self.apply_updates(
             dataset=dataset,
             fail_ok=fail_ok,
             updates=[
@@ -379,7 +382,6 @@ class SyncHttpDatasetApiV1(SyncHttpApiV1Base):
                 },
             ],
         )
-        return response
 
     def update_setting(
         self,

@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import logging
-from typing import (
-    TYPE_CHECKING,
-    Callable,
-)
+from typing import TYPE_CHECKING
 
 import aiobotocore.session
 import boto3
 import botocore.exceptions
 
+from dl_s3.s3_service import S3ClientSettings
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client as SyncS3Client
@@ -18,7 +17,6 @@ if TYPE_CHECKING:
     from types_aiobotocore_s3.type_defs import LifecycleRuleOutputTypeDef
 
     from dl_configs.settings_submodels import S3Settings
-    from dl_file_uploader_lib.settings import S3ClientSettings
 
 
 LOGGER = logging.getLogger(__name__)
@@ -61,8 +59,9 @@ async def create_s3_bucket(
             break
         except botocore.exceptions.HTTPClientError:
             LOGGER.warning(
-                f"HTTPClientError during creating S3 bucket. Attempt {attempt} from {max_attempts}. "
-                "Retrying after 5 seconds...",
+                "HTTPClientError during creating S3 bucket. Attempt %s from %s. Retrying after 5 seconds...",
+                attempt,
+                max_attempts,
                 exc_info=True,
             )
             if attempt > max_attempts:

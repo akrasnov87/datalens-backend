@@ -18,7 +18,6 @@ from dl_task_processor.task import (
     TaskResult,
 )
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -67,7 +66,7 @@ class Executor:
                     task_result = await executor_task.run()
             except Exception:
                 # let it be in sentry
-                LOGGER.error("Task has raised an exception %s", task.instance_id.to_str(), exc_info=True)
+                LOGGER.exception("Task has raised an exception %s", task.instance_id.to_str())
                 task_result = Fail()
             if isinstance(task_result, Retry):
                 LOGGER.info(

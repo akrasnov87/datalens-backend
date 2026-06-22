@@ -5,9 +5,8 @@ import pytest
 
 import dl_pydantic
 
-
-ORIGINAL = datetime.datetime(2025, 1, 2, 3, 4, 5, 6, tzinfo=datetime.timezone.utc)
-EXPECTED = dl_pydantic.JsonableDatetimeWithTimeZone(2025, 1, 2, 3, 4, 5, 6, tzinfo=datetime.timezone.utc)
+ORIGINAL = datetime.datetime(2025, 1, 2, 3, 4, 5, 6, tzinfo=datetime.UTC)
+EXPECTED = dl_pydantic.JsonableDatetimeWithTimeZone(2025, 1, 2, 3, 4, 5, 6, tzinfo=datetime.UTC)
 
 
 def test_from_original() -> None:
@@ -24,11 +23,11 @@ def test_model_validate_with_original_type() -> None:
 
 
 @pytest.mark.parametrize(
-    "value,expected_value",
+    ("value", "expected_value"),
     [
         (
             "2025-01-02T03:04:05.000006Z",
-            dl_pydantic.JsonableDatetimeWithTimeZone(2025, 1, 2, 3, 4, 5, 6, tzinfo=datetime.timezone.utc),
+            dl_pydantic.JsonableDatetimeWithTimeZone(2025, 1, 2, 3, 4, 5, 6, tzinfo=datetime.UTC),
         ),
         (
             "2025-01-02T03:04:05.000006+03:00",
@@ -38,11 +37,11 @@ def test_model_validate_with_original_type() -> None:
         ),
         (
             "2025-01-02T03:04:05Z",
-            dl_pydantic.JsonableDatetimeWithTimeZone(2025, 1, 2, 3, 4, 5, tzinfo=datetime.timezone.utc),
+            dl_pydantic.JsonableDatetimeWithTimeZone(2025, 1, 2, 3, 4, 5, tzinfo=datetime.UTC),
         ),
         (
             "2025-01-02T03:04:05.006Z",
-            dl_pydantic.JsonableDatetimeWithTimeZone(2025, 1, 2, 3, 4, 5, 6000, tzinfo=datetime.timezone.utc),
+            dl_pydantic.JsonableDatetimeWithTimeZone(2025, 1, 2, 3, 4, 5, 6000, tzinfo=datetime.UTC),
         ),
     ],
     ids=[
@@ -73,10 +72,10 @@ def test_raises_validation_error_on_none() -> None:
 
 
 @pytest.mark.parametrize(
-    "value,expected_json",
+    ("value", "expected_json"),
     [
         (
-            dl_pydantic.JsonableDatetimeWithTimeZone(2025, 1, 2, 3, 4, 5, 6, tzinfo=datetime.timezone.utc),
+            dl_pydantic.JsonableDatetimeWithTimeZone(2025, 1, 2, 3, 4, 5, 6, tzinfo=datetime.UTC),
             "2025-01-02T03:04:05.000006Z",
         ),
         (
@@ -86,7 +85,7 @@ def test_raises_validation_error_on_none() -> None:
             "2025-01-02T00:04:05.000006Z",
         ),
         (
-            dl_pydantic.JsonableDatetimeWithTimeZone(2025, 1, 2, 3, 4, 5, tzinfo=datetime.timezone.utc),
+            dl_pydantic.JsonableDatetimeWithTimeZone(2025, 1, 2, 3, 4, 5, tzinfo=datetime.UTC),
             "2025-01-02T03:04:05.000000Z",
         ),
     ],
@@ -113,17 +112,17 @@ def test_pydantic_core_schema() -> None:
 
 
 def test_raises_value_error_if_tzinfo_is_none() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"tz-aware datetime is required"):
         dl_pydantic.JsonableDatetimeWithTimeZone.from_original(datetime.datetime(2025, 1, 2, 3, 4, 5, 6))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"tz-aware datetime is required"):
         dl_pydantic.JsonableDatetimeWithTimeZone(2025, 1, 2, 3, 4, 5, 6)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"tz-aware datetime is required"):
         dl_pydantic.JsonableDatetimeWithTimeZone(2025, 1, 2, 3, 4, 5, 6, tzinfo=None)
 
     class Model(dl_pydantic.BaseModel):
         value: dl_pydantic.JsonableDatetimeWithTimeZone
 
-    with pytest.raises(ValueError):
-        Model.model_validate_json('{{"value": "2025-01-02T03:04:05.000006"}}')
+    with pytest.raises(pydantic.ValidationError, match=r"tz-aware datetime is required"):
+        Model.model_validate_json('{"value": "2025-01-02T03:04:05.000006"}')

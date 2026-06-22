@@ -1,9 +1,8 @@
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DataSourceType,
     SourceBackendType,
 )
-
 
 BACKEND_TYPE_POSTGRES = SourceBackendType.declare("POSTGRES")
 CONNECTION_TYPE_POSTGRES = ConnectionType.declare("postgres")

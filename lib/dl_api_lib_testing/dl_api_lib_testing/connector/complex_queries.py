@@ -1,10 +1,8 @@
 from collections import defaultdict
+from collections.abc import Iterable
 import functools
 from http import HTTPStatus
-from typing import (
-    Any,
-    Iterable,
-)
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
@@ -25,7 +23,7 @@ from dl_api_lib_testing.data_api_base import DataApiTestBase
 from dl_api_lib_testing.dataset_base import DatasetTestBase
 from dl_api_lib_testing.helpers.data_source import data_source_settings_from_table
 from dl_api_lib_testing.helpers.lookup_checkers import check_ago_data
-from dl_constants.enums import (
+from dl_constants import (
     QueryProcessingMode,
     UserDataType,
     WhereClauseOperation,

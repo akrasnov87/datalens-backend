@@ -5,7 +5,6 @@ import dl_formula.definitions.functions_window as base
 
 from dl_connector_mysql.formula.constants import MySQLDialect as D
 
-
 V = TranslationVariant.make
 
 SUPPORTED_DIALECTS = D.and_above(D.MYSQL_8_0_12)
@@ -20,7 +19,7 @@ DEFINITIONS_WINDOW = [
             V(
                 SUPPORTED_DIALECTS,
                 translation=lambda x, condition: sa.func.AVG(sa.func.IF(condition, x, None)),
-                translation_rows=base._rows_full_window,  # noqa
+                translation_rows=base._rows_full_window,
                 as_winfunc=True,
             ),
         ]
@@ -34,7 +33,7 @@ DEFINITIONS_WINDOW = [
             V(
                 SUPPORTED_DIALECTS,
                 translation=lambda x, condition: sa.func.COUNT(sa.func.IF(condition, x, None)),
-                translation_rows=base._rows_full_window,  # noqa
+                translation_rows=base._rows_full_window,
                 as_winfunc=True,
             ),
         ]
@@ -101,7 +100,7 @@ DEFINITIONS_WINDOW = [
             V(
                 SUPPORTED_DIALECTS,
                 translation=lambda x, condition: sa.func.SUM(sa.func.IF(condition, x, None)),
-                translation_rows=base._rows_full_window,  # noqa
+                translation_rows=base._rows_full_window,
                 as_winfunc=True,
             ),
         ]

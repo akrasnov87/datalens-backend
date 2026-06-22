@@ -1,17 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from functools import lru_cache
 from itertools import chain
 import logging
-from typing import (
-    TYPE_CHECKING,
-    Collection,
-    Optional,
-)
+from typing import TYPE_CHECKING
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DataSourceRole,
     DataSourceType,
@@ -25,7 +22,6 @@ from dl_core.data_source.type_mapping import list_registered_source_types
 import dl_core.exc as exc
 from dl_core.us_connection import CONNECTION_TYPES
 from dl_core.us_dataset import Dataset
-
 
 if TYPE_CHECKING:
     from dl_core.data_source.collection import (
@@ -89,13 +85,12 @@ class DatasetCapabilities:
             dataset_parameter_values=self._ds_accessor.get_parameter_values(),
             dataset_template_enabled=self._ds_accessor.get_template_enabled(),
         )
-        dsrc = dsrc_coll.get_strict(role=role)
-        return dsrc
+        return dsrc_coll.get_strict(role=role)
 
     def _get_first_dsrc_collection(
         self,
-        ignore_source_ids: Optional[Collection[str]] = None,
-    ) -> Optional["data_source.DataSourceCollection"]:
+        ignore_source_ids: Collection[str] | None = None,
+    ) -> data_source.DataSourceCollection | None:
         source_id = self._dataset.get_single_data_source_id(ignore_source_ids=ignore_source_ids)
         if source_id is not None:
             dsrc_coll_spec = self._ds_accessor.get_data_source_coll_spec_opt(source_id)
@@ -108,21 +103,22 @@ class DatasetCapabilities:
 
         return None
 
-    def get_effective_connection_id(  # type: ignore  # TODO: fix
+    def get_effective_connection_id(
         self,
-        ignore_source_ids: Optional[Collection[str]] = None,
-    ) -> Optional[str]:
+        ignore_source_ids: Collection[str] | None = None,
+    ) -> str | None:
         dsrc_coll = self._get_first_dsrc_collection(ignore_source_ids=ignore_source_ids)
         if dsrc_coll is not None:
             return dsrc_coll.effective_connection_id
+        return None
 
     def get_supported_join_types(
         self,
-        ignore_source_ids: Optional[Collection[str]] = None,
+        ignore_source_ids: Collection[str] | None = None,
     ) -> set[JoinType]:
         ignore_source_ids = ignore_source_ids or ()
         role = self.resolve_source_role(ignore_source_ids=ignore_source_ids)
-        result = set(jt for jt in JoinType)
+        result = set(JoinType)
         for source_id in self._ds_accessor.get_data_source_id_list():
             if source_id in ignore_source_ids:
                 continue
@@ -131,9 +127,9 @@ class DatasetCapabilities:
 
     def source_can_be_added(
         self,
-        connection_id: Optional[str],
+        connection_id: str | None,
         created_from: DataSourceType,
-        ignore_source_ids: Optional[Collection[str]] = None,
+        ignore_source_ids: Collection[str] | None = None,
     ) -> bool:
         """
         Check whether a data source with given connection and type can be added to the dataset.
@@ -158,7 +154,7 @@ class DatasetCapabilities:
 
     def get_compatible_source_types(
         self,
-        ignore_source_ids: Optional[Collection[str]] = None,
+        ignore_source_ids: Collection[str] | None = None,
     ) -> frozenset[DataSourceType]:
         """Return a frozen set of source types compatible with dataset's current state"""
 
@@ -188,7 +184,7 @@ class DatasetCapabilities:
 
     def get_compatible_connection_types(
         self,
-        ignore_connection_ids: Optional[Collection[str]] = None,
+        ignore_connection_ids: Collection[str] | None = None,
     ) -> frozenset[ConnectionType]:
         """Return a frozen set of connection types compatible with dataset's current state"""
 
@@ -212,7 +208,7 @@ class DatasetCapabilities:
         return get_conn_types_compatible_with_src_types(frozenset(list_registered_source_types()))
 
     def supports_offset(self, role: DataSourceRole) -> bool:
-        for _source_id, dsrc_coll in self._get_data_source_collections().items():
+        for dsrc_coll in self._get_data_source_collections().values():
             dsrc = dsrc_coll.get_strict(role=role)
             if not dsrc.supports_offset:
                 return False
@@ -228,7 +224,7 @@ class DatasetCapabilities:
     def resolve_source_role(
         self,
         for_preview: bool = False,
-        ignore_source_ids: Optional[Collection[str]] = None,
+        ignore_source_ids: Collection[str] | None = None,
         log_reasons: bool = False,
     ) -> DataSourceRole:
         """
@@ -239,7 +235,7 @@ class DatasetCapabilities:
             return DataSourceRole.origin
 
         # dict: {role: sum_of_priority_values}
-        common_priorities = {role: 0 for role in DataSourceRole}
+        common_priorities = dict.fromkeys(DataSourceRole, 0)
         for coll in collections:
             if ignore_source_ids is not None and coll.id in ignore_source_ids:
                 continue
@@ -248,16 +244,17 @@ class DatasetCapabilities:
 
             if log_reasons:
                 LOGGER.info(
-                    f"Role resolution_info for data source {coll.id}",
-                    extra=dict(
-                        role_resolution_info=dict(
-                            source_id=coll.id,
-                            source_type=coll.source_type.name,
-                            origin=role_resolution_info.origin.name,
-                            sample=role_resolution_info.sample.name,
-                            materialization=role_resolution_info.materialization.name,
-                        )
-                    ),
+                    "Role resolution_info for data source %s",
+                    coll.id,
+                    extra={
+                        "role_resolution_info": {
+                            "source_id": coll.id,
+                            "source_type": coll.source_type.name,
+                            "origin": role_resolution_info.origin.name,
+                            "sample": role_resolution_info.sample.name,
+                            "materialization": role_resolution_info.materialization.name,
+                        }
+                    },
                 )
 
             for role in common_priorities.copy():
@@ -283,8 +280,4 @@ class DatasetCapabilities:
         Check whether dataset supports preview.
         Used in options to tell the UI (or some other client) whether preview should/could be shown.
         """
-        for _source_id, dsrc_coll in self._get_data_source_collections().items():
-            if not dsrc_coll.get_strict().preview_enabled:
-                return False
-
-        return True
+        return all(dsrc_coll.get_strict().preview_enabled for dsrc_coll in self._get_data_source_collections().values())

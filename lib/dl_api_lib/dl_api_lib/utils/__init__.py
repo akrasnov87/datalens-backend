@@ -11,16 +11,17 @@ from .base import (  # ...
     check_permission_on_entry,
     enrich_resp_dict_with_data_export_info,
     get_data_export_base_result,
+    need_delete_permission_on_entry,
     need_permission_on_entry,
     profile_stats,
     query_execution_context,
 )
 
-
 __all__ = (
     "check_permission_on_entry",
     "enrich_resp_dict_with_data_export_info",
     "get_data_export_base_result",
+    "need_delete_permission_on_entry",
     "need_permission_on_entry",
     "profile_stats",
     "query_execution_context",

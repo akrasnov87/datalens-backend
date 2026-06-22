@@ -4,7 +4,7 @@ from marshmallow import EXCLUDE
 from marshmallow import fields as ma_fields
 from marshmallow_oneofschema import OneOfSchema
 
-from dl_constants.enums import (
+from dl_constants import (
     FieldRole,
     FieldType,
     FieldVisibility,
@@ -56,7 +56,7 @@ class RoleSpecSchema(OneOfSchema):
         prefix = ma_fields.Raw()
         dimension_values = ma_fields.Nested(DimensionValueSpecSchema, many=True, allow_none=True)
 
-    type_schemas = {
+    type_schemas = {  # noqa: RUF012
         FieldRole.row.name: RowRoleSpecSchemaVariant,
         FieldRole.measure.name: RoleSpecSchemaVariant,
         FieldRole.info.name: RoleSpecSchemaVariant,

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Sequence,
-)
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import attr
 
@@ -27,7 +25,6 @@ from dl_formula_ref.texts import (
     SIGNATURE_TITLE_EXTENDED,
     SIGNATURE_TITLE_STANDARD,
 )
-
 
 if TYPE_CHECKING:
     import dl_formula_ref.registry.arg_base as _arg_base
@@ -78,8 +75,7 @@ class TemplatedSignatureGenerator(SignatureGeneratorBase):
             )
             for template in self._signature_templates
         ]
-        sig_collection = FunctionSignatureCollection(placement_mode=self._placement_mode, signatures=signatures)
-        return sig_collection
+        return FunctionSignatureCollection(placement_mode=self._placement_mode, signatures=signatures)
 
 
 @attr.s(frozen=True)
@@ -100,7 +96,7 @@ class DefaultSignatureGenerator(SignatureGeneratorBase):
         category_name: str,
     ) -> FunctionSignature:
         if not args:  # to avoid extra spaces with 0-argument functions
-            return FunctionSignature(body="{}()".format(func_name))
+            return FunctionSignature(body=f"{func_name}()")
 
         args_str = ""
         cur_opt_level = 0
@@ -192,8 +188,7 @@ class DefaultSignatureGenerator(SignatureGeneratorBase):
             )
             for is_extended_syntax in is_extended_syntax_values
         ]
-        sig_collection = FunctionSignatureCollection(
+        return FunctionSignatureCollection(
             placement_mode=self._placement_mode,
             signatures=signatures,
         )
-        return sig_collection

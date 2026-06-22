@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from itertools import chain
-from typing import (
-    AbstractSet,
-    Any,
+from collections.abc import (
     Generator,
-    Optional,
+    Set,
 )
+from itertools import chain
+from typing import Any
 
 import attr
 
@@ -23,7 +22,7 @@ from dl_api_client.dsmaker.data_abstraction.primitives import (
     DataItemMeta,
     DataItemTag,
 )
-from dl_constants.enums import (
+from dl_constants import (
     FieldRole,
     FieldType,
 )
@@ -46,8 +45,8 @@ class ResultRawDataRow:
 @attr.s(frozen=True)
 class ResultRowSplitter:
     _field_legend: FieldLegend = attr.ib(kw_only=True)
-    _dimension_liids: AbstractSet[int] = attr.ib(kw_only=True)
-    _measure_liids: AbstractSet[int] = attr.ib(kw_only=True)
+    _dimension_liids: Set[int] = attr.ib(kw_only=True)
+    _measure_liids: Set[int] = attr.ib(kw_only=True)
 
     @_measure_liids.default
     def _make_measure_liids(self) -> set[int]:
@@ -60,7 +59,7 @@ class ResultRowSplitter:
     def _make_and_filter_cells(
         self,
         raw_row: ResultRawDataRow,
-        legend_item_ids: AbstractSet[int],
+        legend_item_ids: Set[int],
     ) -> Generator[tuple[DataCell, int], None, None]:
         for liid, value in zip(raw_row.legend, raw_row.data, strict=True):
             if liid in legend_item_ids:
@@ -86,9 +85,7 @@ class ResultRowSplitter:
                 tags.add(DataItemTag.total)
 
             mname_cell = DataCell(value=measure_cell.title, title=MEASURE_NAME_TITLE)
-            dim_tuple = DataCellTuple(
-                tuple(sorted(chain(dimension_cells + (mname_cell,)), key=lambda cell: cell.title))
-            )
+            dim_tuple = DataCellTuple(tuple(sorted(chain((*dimension_cells, mname_cell)), key=lambda cell: cell.title)))
             yield dim_tuple, DataItem(cell=measure_cell, meta=DataItemMeta(tags=frozenset(tags)))  # type: ignore  # 2024-01-24 # TODO: Incompatible types in "yield" (actual type "tuple[DataCellTuple, DataItem]", expected type "tuple[DataCellTuple, DataCell]")  [misc]
 
 
@@ -114,8 +111,8 @@ class ResultDataAbstraction:
 
     def _iter_split_rows_by_measure(
         self,
-        dimension_liids: Optional[frozenset[int]] = None,
-        measure_liids: Optional[frozenset[int]] = None,
+        dimension_liids: frozenset[int] | None = None,
+        measure_liids: frozenset[int] | None = None,
     ) -> Generator[tuple[DataCellTuple, DataCell], None, None]:
         liid_sets = {}
         if dimension_liids is not None:
@@ -129,17 +126,16 @@ class ResultDataAbstraction:
 
     def get_1d_mapper(
         self,
-        dimension_liids: Optional[frozenset[int]] = None,
-        measure_liids: Optional[frozenset[int]] = None,
+        dimension_liids: frozenset[int] | None = None,
+        measure_liids: frozenset[int] | None = None,
     ) -> DataCellMapper1D:
         return SimpleDataCellMapper1D(
-            cells={
-                dim_tuple: cell  # type: ignore  # 2024-01-24 # TODO: Value expression in dictionary comprehension has incompatible type "DataCell"; expected type "DataItem"  [misc]
-                for dim_tuple, cell in self._iter_split_rows_by_measure(
+            cells=dict(
+                self._iter_split_rows_by_measure(  # type: ignore  # 2024-01-24 # TODO: Argument 1 to "dict" has incompatible type "Generator[tuple[DataCellTuple, DataCell], None, None]"; expected "Iterable[tuple[DataCellTuple, DataItem]]"  [arg-type]
                     dimension_liids=dimension_liids,
                     measure_liids=measure_liids,
                 )
-            },
+            ),
         )
 
     @classmethod

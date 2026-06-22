@@ -1,10 +1,10 @@
-import contextlib
-import ssl
-import threading
-from typing import (
+from collections.abc import (
     AsyncIterator,
     Iterator,
 )
+import contextlib
+import ssl
+import threading
 
 import pytest
 import pytest_mock
@@ -18,11 +18,11 @@ import dl_testing
 class AlwaysRateLimitLimiter:
     @contextlib.contextmanager
     def context(self) -> Iterator[None]:
-        raise dl_httpx.RateLimitHttpxClientException()
+        raise dl_httpx.RateLimitHttpxClientError()
 
     @contextlib.asynccontextmanager
     async def context_async(self) -> AsyncIterator[None]:
-        raise dl_httpx.RateLimitHttpxClientException()
+        raise dl_httpx.RateLimitHttpxClientError()
         yield  # pragma: no cover
 
 
@@ -37,7 +37,7 @@ class CountingRateLimitLimiter:
         with self._lock:
             if self._n < self._failures:
                 self._n += 1
-                raise dl_httpx.RateLimitHttpxClientException()
+                raise dl_httpx.RateLimitHttpxClientError()
         yield
 
     @contextlib.asynccontextmanager
@@ -45,7 +45,7 @@ class CountingRateLimitLimiter:
         with self._lock:
             if self._n < self._failures:
                 self._n += 1
-                raise dl_httpx.RateLimitHttpxClientException()
+                raise dl_httpx.RateLimitHttpxClientError()
         yield
 
 
@@ -90,8 +90,16 @@ def fixture_mock_retry_policy_factory(
 def fixture_mock_auth_provider(
     mocker: pytest_mock.MockerFixture,
 ) -> dl_auth.AuthProviderProtocol:
-    auth_provider = mocker.MagicMock(spec=dl_auth.AuthProviderProtocol)
-    return auth_provider
+    return mocker.MagicMock(spec=dl_auth.AuthProviderProtocol)
+
+
+@pytest.fixture(name="mock_error_transformer")
+def fixture_mock_error_transformer(
+    mocker: pytest_mock.MockerFixture,
+) -> dl_httpx.ErrorTransformerProtocol:
+    error_transformer = mocker.MagicMock(spec=dl_httpx.ErrorTransformerProtocol)
+    error_transformer.transform.return_value = None
+    return error_transformer
 
 
 @pytest.fixture(name="retry_policy_factory_settings")

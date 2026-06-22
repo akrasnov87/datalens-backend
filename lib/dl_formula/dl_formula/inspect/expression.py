@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import (
-    AbstractSet,
+from collections.abc import (
     Callable,
     Generator,
     Iterable,
-    Optional,
+    Set,
 )
 
 from dl_formula.collections import NodeSet
@@ -39,18 +38,18 @@ def validate_not_compiled_expressions(node: nodes.FormulaItem) -> None:
 
 def is_constant_expression(
     node: nodes.FormulaItem,
-    env: Optional[dl_formula.inspect.env.InspectionEnvironment] = None,
+    env: dl_formula.inspect.env.InspectionEnvironment | None = None,
 ) -> bool:
     """
     Check whether the given formula node (subtree) defines a constant expression.
     Return ``True`` is it does, otherwise ``False``.
     """
-    result: Optional[bool] = None
+    result: bool | None = None
     if env is not None:
         result = env.cache_is_const_expr.get(node)
     if result is None:
         validate_not_compiled_expressions(node)
-        if isinstance(node, nodes.BaseLiteral) or isinstance(node, nodes.Null):
+        if isinstance(node, (nodes.BaseLiteral, nodes.Null)):
             result = True
         elif isinstance(node, nodes.ParenthesizedExpr):
             result = is_constant_expression(node.expr, env=env)
@@ -84,16 +83,12 @@ def is_bound_only_to(node: nodes.FormulaItem, allow_nodes: NodeSet) -> bool:
     if isinstance(node, nodes.Field):
         return False
 
-    for child in autonomous_children(node):
-        if not is_bound_only_to(node=child, allow_nodes=allow_nodes):
-            return False
-
-    return True
+    return all(is_bound_only_to(node=child, allow_nodes=allow_nodes) for child in autonomous_children(node))
 
 
 def is_aggregate_expression(
     node: nodes.FormulaItem,
-    env: "dl_formula.inspect.env.InspectionEnvironment",
+    env: dl_formula.inspect.env.InspectionEnvironment,
 ) -> bool:
     """
     Check whether the given formula node (subtree) defines an aggregate expression.
@@ -118,8 +113,8 @@ def is_aggregate_expression(
 
 def is_aggregated_above_sub_node(
     node: nodes.FormulaItem,
-    index: Optional[NodeHierarchyIndex] = None,
-    sub_node: Optional[nodes.FormulaItem] = None,
+    index: NodeHierarchyIndex | None = None,
+    sub_node: nodes.FormulaItem | None = None,
 ) -> bool:
     """
     Check whether the given formula node (subtree) wraps
@@ -146,7 +141,7 @@ def is_aggregated_above_sub_node(
 
 def is_window_expression(
     node: nodes.FormulaItem,
-    env: "dl_formula.inspect.env.InspectionEnvironment",
+    env: dl_formula.inspect.env.InspectionEnvironment,
 ) -> bool:
     """
     Check whether the given formula node (subtree) defines a window function expression.
@@ -171,7 +166,7 @@ def is_window_expression(
 
 def is_query_fork_expression(
     node: nodes.FormulaItem,
-    env: "dl_formula.inspect.env.InspectionEnvironment",
+    env: dl_formula.inspect.env.InspectionEnvironment,
 ) -> bool:
     """
     Check whether the given formula node (subtree) contains any ``QueryFork`` nodes
@@ -197,7 +192,7 @@ def is_query_fork_expression(
 
 def get_query_fork_nesting_level(
     node: nodes.FormulaItem,
-    env: "dl_formula.inspect.env.InspectionEnvironment",
+    env: dl_formula.inspect.env.InspectionEnvironment,
 ) -> int:
     """
     TODO
@@ -227,7 +222,7 @@ def get_query_fork_nesting_level(
 def infer_data_type(
     node: nodes.FormulaItem,
     field_types: dict[str, DataType],
-    env: "dl_formula.inspect.env.InspectionEnvironment",
+    env: dl_formula.inspect.env.InspectionEnvironment,
 ) -> DataType:
     """Calculate the data type that should be returned by the given expression"""
 
@@ -305,7 +300,7 @@ def enumerate_autonomous_children(
     of larger constructs - ``CaseBlock`` and ``WindowFunction`` respectively)
     """
 
-    stack = parent_stack + (node,)
+    stack = (*parent_stack, node)
     for index, sub_node in node.enumerate(max_depth=1, prefix=prefix):
         if sub_node is node:
             # Don't need self - only children
@@ -342,7 +337,7 @@ def autonomous_children(
         yield child
 
 
-def collect_tags(node: nodes.FormulaItem) -> AbstractSet[LevelTag]:
+def collect_tags(node: nodes.FormulaItem) -> Set[LevelTag]:
     result: set[LevelTag] = set()
     for _, child in node.enumerate():
         level_tag = child.level_tag
@@ -354,8 +349,8 @@ def collect_tags(node: nodes.FormulaItem) -> AbstractSet[LevelTag]:
 def get_wrapping_level(
     node: nodes.FormulaItem,
     qualify_node_cb: Callable[[nodes.FormulaItem], bool],
-    stop_at_node_cb: Optional[Callable[[nodes.FormulaItem], bool]] = None,
-    stop_at_level: Optional[int] = None,
+    stop_at_node_cb: Callable[[nodes.FormulaItem], bool] | None = None,
+    stop_at_level: int | None = None,
 ) -> int:
     """
     Calculate wrapping level for node.
@@ -380,14 +375,14 @@ def get_wrapping_level(
     return _get_level_recursively(node, 0)
 
 
-def _match_bfb_names(node: nodes.FormulaItem, bfb_names: AbstractSet[str]) -> bool:
+def _match_bfb_names(node: nodes.FormulaItem, bfb_names: Set[str]) -> bool:
     if isinstance(node, (nodes.FuncCall, fork_nodes.QueryFork)):
         return node.before_filter_by.field_names == bfb_names
     # Assume True if BFB is not supported
     return True
 
 
-def get_window_function_wrapping_level(node: nodes.FormulaItem, bfb_names: AbstractSet[str]) -> int:
+def get_window_function_wrapping_level(node: nodes.FormulaItem, bfb_names: Set[str]) -> int:
     return get_wrapping_level(
         node,
         qualify_node_cb=lambda _node: isinstance(_node, nodes.WindowFuncCall),
@@ -404,7 +399,7 @@ def is_double_aggregated_expression(node: nodes.FormulaItem) -> bool:
     return level == 2
 
 
-def get_qfork_wrapping_level_until_winfunc(node: nodes.FormulaItem, bfb_names: AbstractSet[str]) -> int:
+def get_qfork_wrapping_level_until_winfunc(node: nodes.FormulaItem, bfb_names: Set[str]) -> int:
     return get_wrapping_level(
         node,
         qualify_node_cb=lambda _node: isinstance(_node, fork_nodes.QueryFork),
@@ -417,11 +412,7 @@ def get_qfork_wrapping_level_until_winfunc(node: nodes.FormulaItem, bfb_names: A
 def contains_non_default_lod_dimensions(node: nodes.FormulaItem) -> bool:
     if dl_formula.inspect.node.has_non_default_lod_dimensions(node):
         return True
-    for child in autonomous_children(node):
-        if contains_non_default_lod_dimensions(child):
-            return True
-
-    return False
+    return any(contains_non_default_lod_dimensions(child) for child in autonomous_children(node))
 
 
 def contains_extended_aggregations(node: nodes.FormulaItem, include_double_agg: bool = False) -> bool:
@@ -440,17 +431,13 @@ def contains_extended_aggregations(node: nodes.FormulaItem, include_double_agg: 
 def contains_lookup_functions(node: nodes.FormulaItem) -> bool:
     if dl_formula.inspect.node.is_lookup_function(node):
         return True
-    for child in autonomous_children(node):
-        if contains_lookup_functions(child):
-            return True
-
-    return False
+    return any(contains_lookup_functions(child) for child in autonomous_children(node))
 
 
 def resolve_dimensions(
     node_stack: Iterable[nodes.FormulaItem],
     dimensions: list[nodes.FormulaItem],  # TODO: rename to global_dimensions
-    env: "dl_formula.inspect.env.InspectionEnvironment",
+    env: dl_formula.inspect.env.InspectionEnvironment,
     exclude_constants: bool = True,
 ) -> tuple[list[nodes.FormulaItem], NodeSet, NodeSet]:
     """
@@ -463,8 +450,7 @@ def resolve_dimensions(
     # Generate dimension list recursively
     for node in node_stack:  # from top level to the node in question
         if not (
-            isinstance(node, nodes.FuncCall)
-            and dl_formula.inspect.node.is_aggregate_function(node)
+            (isinstance(node, nodes.FuncCall) and dl_formula.inspect.node.is_aggregate_function(node))
             or isinstance(node, fork_nodes.QueryFork)
         ):
             continue

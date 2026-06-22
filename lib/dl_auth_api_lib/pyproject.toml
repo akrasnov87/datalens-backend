@@ -18,8 +18,7 @@ dl-settings = {path = "../dl_settings"}
 marshmallow = "*"
 pydantic = "*"
 pydantic-settings = "*"
-python = ">=3.10, <3.13"
-typing-extensions = "*"
+python = ">=3.12, <3.13"
 
 [tool.poetry.group.tests.dependencies]
 dl-auth = {path = "../dl_auth"}
@@ -59,6 +58,5 @@ root_dir = "dl_auth_api_lib_tests/"
 target_path = "ext"
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_auth_api_lib_tests/"
 target_path = "unit"

@@ -10,7 +10,6 @@ import dl_formula.definitions.functions_string as base
 
 from dl_connector_ydb.formula.constants import YqlDialect as D
 
-
 V = TranslationVariant.make
 
 
@@ -53,7 +52,7 @@ DEFINITIONS_STRING = [
         ]
     ),
     # concat
-    base.Concat1.for_dialect((D.YQL)),
+    base.Concat1.for_dialect(D.YQL),
     base.ConcatMultiStrConst.for_dialect(D.YQL),
     base.ConcatMultiStr(
         variants=[

@@ -1,19 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Hashable
 from enum import (
     Enum,
     auto,
     unique,
 )
-from typing import (
-    Hashable,
-    NamedTuple,
-    Optional,
-)
+from typing import NamedTuple
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     OrderDirection,
     PivotHeaderRole,
 )
@@ -69,13 +66,13 @@ class PivotMeasureSortingSettings:
 
 @attr.s(frozen=True)
 class PivotMeasureSorting:
-    column: Optional[PivotMeasureSortingSettings] = attr.ib(kw_only=True, default=None)
-    row: Optional[PivotMeasureSortingSettings] = attr.ib(kw_only=True, default=None)
+    column: PivotMeasureSortingSettings | None = attr.ib(kw_only=True, default=None)
+    row: PivotMeasureSortingSettings | None = attr.ib(kw_only=True, default=None)
 
 
 @attr.s(slots=True)
 class PivotHeaderInfo:
-    sorting_direction: Optional[OrderDirection] = attr.ib(kw_only=True, default=None)
+    sorting_direction: OrderDirection | None = attr.ib(kw_only=True, default=None)
     role_spec: PivotHeaderRoleSpec = attr.ib(kw_only=True, factory=PivotHeaderRoleSpec)
 
 
@@ -115,7 +112,7 @@ class PivotHeader:
         return sorting_values == main_values
 
 
-MeasureValues = tuple[Optional[DataCellVector], ...]
+MeasureValues = tuple[DataCellVector | None, ...]
 
 
 class DataRow(NamedTuple):

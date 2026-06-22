@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import (
-    Callable,
-    Optional,
-)
+from collections.abc import Callable
 
 from aiohttp import web
 from aiohttp.test_utils import TestClient
@@ -24,7 +21,7 @@ class MockError(Exception):
     status: int
     level: ErrorLevel
 
-    def __init__(self, status: int, level: ErrorLevel, body: dict):
+    def __init__(self, status: int, level: ErrorLevel, body: dict) -> None:
         super().__init__(status, level)
         self.status = status
         self.level = level
@@ -38,7 +35,7 @@ class MockErrorHandlingMW(AIOHTTPErrorHandler):
         return ErrorData(500, {}, ErrorLevel.error)
 
 
-def get_view(the_endpoint_code: Optional[str], action: Callable[[], dict]) -> type[web.View]:
+def get_view(the_endpoint_code: str | None, action: Callable[[], dict]) -> type[web.View]:
     if the_endpoint_code is not None:
 
         class EPView(web.View):
@@ -48,17 +45,16 @@ def get_view(the_endpoint_code: Optional[str], action: Callable[[], dict]) -> ty
                 return web.json_response(action())
 
         return EPView
-    else:
 
-        class NonEPView(web.View):
-            async def get(self) -> web.Response:
-                return web.json_response(action())
+    class NonEPView(web.View):
+        async def get(self) -> web.Response:
+            return web.json_response(action())
 
-        return NonEPView
+    return NonEPView
 
 
 def register_view(
-    app: web.Application, path: str, ep_code: Optional[str]
+    app: web.Application, path: str, ep_code: str | None
 ) -> Callable[[Callable[[], dict]], Callable[[], dict]]:
     def deco(func: Callable[[], dict]) -> Callable[[], dict]:
         app.router.add_route("*", path, get_view(ep_code, func))
@@ -85,42 +81,47 @@ async def test_tracing_scenarios(aiohttp_client: TestClient) -> None:
 
     @register_view(app, "/ok", "ok")
     def ok() -> dict:
-        return dict(ok="ok")
+        return {"ok": "ok"}
 
     @register_view(app, "/err_err", "err")
     def err_err() -> dict:
-        raise MockError(200, ErrorLevel.error, dict(err_err=None))
+        raise MockError(200, ErrorLevel.error, {"err_err": None})
 
     @register_view(app, "/err_info", "err_info")
     def err_info() -> dict:
-        raise MockError(400, ErrorLevel.info, dict(err_info=None))
+        raise MockError(400, ErrorLevel.info, {"err_info": None})
 
     @register_view(app, "/no_ep_ok", None)
     def no_ep_ok() -> dict:
-        return dict(no_ep_ok=None)
+        return {"no_ep_ok": None}
 
     @register_view(app, "/no_ep_err", None)
     def no_ep_err() -> dict:
-        raise MockError(401, ErrorLevel.error, dict(no_ep_err=None))
+        raise MockError(401, ErrorLevel.error, {"no_ep_err": None})
 
     client = await aiohttp_client(app)  # type: ignore[operator]
 
     resp = await client.get("/ok")
     resp_json = await resp.json()
-    assert resp.status == 200 and resp_json == dict(ok="ok")
+    assert resp.status == 200
+    assert resp_json == {"ok": "ok"}
 
     resp = await client.get("/err_err")
     resp_json = await resp.json()
-    assert resp.status == 200 and resp_json == dict(err_err=None)
+    assert resp.status == 200
+    assert resp_json == {"err_err": None}
 
     resp = await client.get("/err_info")
     resp_json = await resp.json()
-    assert resp.status == 400 and resp_json == dict(err_info=None)
+    assert resp.status == 400
+    assert resp_json == {"err_info": None}
 
     resp = await client.get("/no_ep_ok")
     resp_json = await resp.json()
-    assert resp.status == 200 and resp_json == dict(no_ep_ok=None)
+    assert resp.status == 200
+    assert resp_json == {"no_ep_ok": None}
 
     resp = await client.get("/no_ep_err")
     resp_json = await resp.json()
-    assert resp.status == 401 and resp_json == dict(no_ep_err=None)
+    assert resp.status == 401
+    assert resp_json == {"no_ep_err": None}

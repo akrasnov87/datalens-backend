@@ -1,13 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 import shutil
 import tempfile
-from typing import (
-    Generator,
-    Optional,
-)
 import uuid
 
 import attr
@@ -113,7 +110,7 @@ class RepmanagerTestingBase:
         self,
         repo: Repo,
         package_type: str = DEFAULT_PACKAGE_TYPE,
-        package_name: Optional[str] = None,
+        package_name: str | None = None,
     ) -> PackageInfo:
         package_name = package_name or self.generate_package_name()
         assert package_name is not None

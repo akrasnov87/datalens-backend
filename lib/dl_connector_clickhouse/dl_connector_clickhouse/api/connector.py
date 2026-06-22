@@ -11,7 +11,7 @@ from dl_api_connector.connector import (
     ApiSourceDefinition,
     MQMFactorySettingItem,
 )
-from dl_constants.enums import QueryProcessingMode
+from dl_constants import QueryProcessingMode
 from dl_query_processing.multi_query.factory import NoCompengMultiQueryMutatorFactory
 
 from dl_connector_clickhouse.api.api_schema.connection import ClickHouseConnectionSchema
@@ -52,7 +52,8 @@ class ClickHouseApiConnectionDefinition(ApiConnectionDefinition):
 class ClickHouseApiBackendDefinition(ApiBackendDefinition):
     core_backend_definition = ClickHouseCoreBackendDefinition
     formula_dialect_name = DIALECT_NAME_CLICKHOUSE
-    multi_query_mutation_factories = ApiBackendDefinition.multi_query_mutation_factories + (
+    multi_query_mutation_factories = (
+        *ApiBackendDefinition.multi_query_mutation_factories,
         MQMFactorySettingItem(
             query_proc_mode=QueryProcessingMode.native_wf,
             dialects=ClickHouseDialect.and_above(ClickHouseDialect.CLICKHOUSE_22_10).to_list(),

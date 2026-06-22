@@ -4,14 +4,13 @@ import logging
 
 from marshmallow import fields
 
-from dl_constants.enums import ManagedBy
+from dl_constants import ManagedBy
 from dl_core.data_source_spec.collection import DataSourceCollectionSpec
 from dl_core.us_manager.storage_schemas.base import (
     BaseStorageSchema,
     CtxKey,
 )
 from dl_core.us_manager.storage_schemas.data_source_spec import GenericDataSourceSpecStorageSchema
-
 
 LOGGER = logging.getLogger(__name__)
 

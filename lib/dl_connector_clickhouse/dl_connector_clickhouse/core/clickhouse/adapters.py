@@ -12,12 +12,10 @@ from dl_connector_clickhouse.core.clickhouse_base.adapters import (
 from dl_connector_clickhouse.core.clickhouse_base.ch_commons import ClickHouseUtils
 from dl_connector_clickhouse.core.clickhouse_base.constants import CONNECTION_TYPE_CLICKHOUSE
 
-
 LOGGER = logging.getLogger(__name__)
 
 
-class DLClickHouseAdapter(ClickHouseAdapter):
-    ...
+class DLClickHouseAdapter(ClickHouseAdapter): ...
 
 
 class DLAsyncClickHouseAdapter(AsyncClickHouseAdapter):
@@ -31,4 +29,6 @@ class DLAsyncClickHouseAdapter(AsyncClickHouseAdapter):
             return None
         if self._target_dto.readonly == 1:
             return 1
+        if dba_q.allow_write and self._target_dto.readonly == 0:
+            return 0
         return 2

@@ -5,16 +5,12 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
-    Generic,
-    Optional,
-    Type,
-    TypeVar,
 )
 
 import attr
 from marshmallow import fields
 
-from dl_constants.enums import DashSQLQueryType
+from dl_constants import DashSQLQueryType
 from dl_core.connection_executors.adapters.common_base import CommonBaseDirectAdapter
 from dl_core.connection_executors.models.db_adapter_data import (
     DBAdapterQuery,
@@ -35,7 +31,6 @@ from dl_core.connection_models import (
     TableIdent,
 )
 
-
 if TYPE_CHECKING:
     from dl_core.connection_executors.models.connection_target_dto_base import ConnTargetDTO
 
@@ -52,16 +47,13 @@ class ActionExecuteQuery(RemoteDBAdapterAction):
     db_adapter_query: DBAdapterQuery = attr.ib()
 
 
-_RES_SCHEMA_TV = TypeVar("_RES_SCHEMA_TV")
+class NonStreamAction[RES_SCHEMA_TV](RemoteDBAdapterAction, metaclass=abc.ABCMeta):
+    ResultSchema = ClassVar[type[BaseQEAPISchema]]
 
-
-class NonStreamAction(Generic[_RES_SCHEMA_TV], RemoteDBAdapterAction, metaclass=abc.ABCMeta):
-    ResultSchema = ClassVar[Type[BaseQEAPISchema]]  # noqa: UP006
-
-    def serialize_response(self, val: _RES_SCHEMA_TV) -> dict:
+    def serialize_response(self, val: RES_SCHEMA_TV) -> dict:
         return self.ResultSchema().dump(val)  # type: ignore  # TODO: fix
 
-    def deserialize_response(self, data: dict) -> _RES_SCHEMA_TV:
+    def deserialize_response(self, data: dict) -> RES_SCHEMA_TV:
         return self.ResultSchema().load(data)  # type: ignore  # TODO: fix
 
 
@@ -78,7 +70,7 @@ class ActionTest(NonStreamAction[None]):
 
 
 @attr.s(frozen=True)
-class ActionGetDBVersion(NonStreamAction[Optional[str]]):
+class ActionGetDBVersion(NonStreamAction[str | None]):
     db_ident: DBIdent = attr.ib()
 
     class ResultSchema(PrimitivesResponseSchema):
@@ -107,7 +99,7 @@ class ActionGetTableInfo(NonStreamAction[RawSchemaInfo]):
     table_def: TableDefinition = attr.ib()
     fetch_idx_info: bool = attr.ib()
 
-    ResultSchema = RawSchemaInfoSchema
+    ResultSchema = RawSchemaInfoSchema  # type: ignore[assignment]  # 26.05.2026 mypy bump 1.20.2
 
 
 @attr.s(frozen=True)

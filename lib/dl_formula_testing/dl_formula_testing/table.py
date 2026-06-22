@@ -10,7 +10,6 @@ from dl_formula.connectors.base.type_constructor import get_type_constructor
 from dl_formula.core.datatype import DataType
 from dl_formula.core.dialect import DialectCombo
 
-
 DAY = datetime.timedelta(days=1)
 START_DATE = datetime.date(2014, 10, 5)
 START_DATETIME = datetime.datetime(2014, 10, 5)
@@ -64,14 +63,14 @@ def generate_sample_data(
 ) -> list[dict[str, Any]]:
     data = []
     for num, idx in enumerate([*range(10), *range(10)]):
-        row = dict(
-            id=num + 1,
-            int_value=idx * 10,
-            date_value=start_date + DAY * idx,
-            datetime_value=start_datetime + datetime_delta * idx,
-            str_value="q" * (idx + 1),
-            str_null_value=None,
-        )
+        row = {
+            "id": num + 1,
+            "int_value": idx * 10,
+            "date_value": start_date + DAY * idx,
+            "datetime_value": start_datetime + datetime_delta * idx,
+            "str_value": "q" * (idx + 1),
+            "str_null_value": None,
+        }
         if add_arrays:
             row.update(
                 arr_int_value=[1 * idx, 23 + idx, 456, None],

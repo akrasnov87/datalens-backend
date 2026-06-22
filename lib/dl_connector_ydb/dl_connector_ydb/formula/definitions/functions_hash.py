@@ -6,7 +6,6 @@ from dl_formula.shortcuts import n
 
 from dl_connector_ydb.formula.constants import YqlDialect as D
 
-
 V = TranslationVariant.make
 
 
@@ -35,7 +34,7 @@ DEFINITIONS_HASH = [
             ),
         ]
     ),
-    base.MurmurHash2_64(
+    base.MurmurHash2x64(
         variants=[
             V(
                 D.YQL,

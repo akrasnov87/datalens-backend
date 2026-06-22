@@ -1,14 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import contextlib
 import typing
-from typing import (
-    Any,
-    Callable,
-    Optional,
-)
+from typing import Any
 
 import attr
+from frozendict import frozendict
 
 from dl_core.connection_executors.adapters.adapters_base_sa_classic import BaseClassicAdapter
 from dl_core.connection_executors.models.db_adapter_data import ExecutionStepCursorInfo
@@ -30,9 +28,11 @@ from dl_connector_postgresql.core.postgresql_base.target_dto import PostgresConn
 class PostgresAdapter(BasePostgresAdapter, BaseClassicAdapter[PostgresConnTargetDTO]):
     _error_transformer = sync_pg_db_error_transformer
 
-    execution_options = {
-        "stream_results": True,
-    }
+    execution_options = frozendict(
+        {
+            "stream_results": True,
+        }
+    )
 
     def get_connect_args(self) -> dict:
         return dict(
@@ -101,18 +101,18 @@ class PostgresAdapter(BasePostgresAdapter, BaseClassicAdapter[PostgresConnTarget
             super()._make_cursor_info(cursor, db_session=db_session),
             # Deprecating:
             columns=[
-                dict(
-                    name=str(column[0]),
-                    postgresql_oid=column[1],
-                    postgresql_typname=OID_KNOWLEDGE.get(column[1]),
-                )
+                {
+                    "name": str(column[0]),
+                    "postgresql_oid": column[1],
+                    "postgresql_typname": OID_KNOWLEDGE.get(column[1]),
+                }
                 for column in cursor.description
             ],
             # dashsql convenience:
             postgresql_typnames=[OID_KNOWLEDGE.get(column[1]) for column in cursor.description],
         )
 
-    def _get_row_converters(self, cursor_info: ExecutionStepCursorInfo) -> tuple[Optional[Callable[[Any], Any]], ...]:
+    def _get_row_converters(self, cursor_info: ExecutionStepCursorInfo) -> tuple[Callable[[Any], Any] | None, ...]:
         return tuple(
             self._convert_bytea if col.type_code == 17 else None  # `bytea`
             for col in cursor_info.raw_cursor_description

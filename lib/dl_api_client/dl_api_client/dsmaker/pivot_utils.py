@@ -1,10 +1,7 @@
 from collections import defaultdict
+from collections.abc import Set
 from http import HTTPStatus
 from itertools import chain
-from typing import (
-    AbstractSet,
-    Optional,
-)
 
 from dl_api_client.dsmaker.api.data_api import (
     HttpDataApiResponse,
@@ -29,7 +26,7 @@ from dl_api_client.dsmaker.primitives import (
     RequestPivotItem,
     WhereClause,
 )
-from dl_constants.enums import (
+from dl_constants import (
     FieldRole,
     FieldType,
     NotificationType,
@@ -42,7 +39,6 @@ from dl_constants.internal_constants import (
     MEASURE_NAME_TITLE,
 )
 
-
 SPECIAL_TITLES = {
     MEASURE_NAME_TITLE,
     DIMENSION_NAME_TITLE,
@@ -54,8 +50,8 @@ def _get_regular_legend_for_pivot(
     columns: list[str],
     rows: list[str],
     measures: list[str],
-    annotations: Optional[list[str]] = None,
-    totals: Optional[list[tuple[str, ...]]] = None,
+    annotations: list[str] | None = None,
+    totals: list[tuple[str, ...]] | None = None,
 ) -> tuple[list[RequestLegendItem], dict[str, list[int]]]:
     totals = totals or []
     assert totals is not None
@@ -117,15 +113,15 @@ def get_pivot_response(
     columns: list[str],
     rows: list[str],
     measures: list[str],
-    measures_sorting_settings: Optional[list[Optional[PivotMeasureSorting]]] = None,
-    annotations: Optional[list[str]] = None,
-    title_mapping: Optional[dict[str, str]] = None,
-    totals: Optional[list[tuple[str, ...]]] = None,
-    simple_totals: Optional[PivotTotals] = None,
-    with_totals: Optional[bool] = None,
-    order_fields: Optional[dict[str, Optional[OrderDirection]]] = None,
-    filters: Optional[list[WhereClause]] = None,
-    pivot_pagination: Optional[PivotPagination] = None,
+    measures_sorting_settings: list[PivotMeasureSorting | None] | None = None,
+    annotations: list[str] | None = None,
+    title_mapping: dict[str, str] | None = None,
+    totals: list[tuple[str, ...]] | None = None,
+    simple_totals: PivotTotals | None = None,
+    with_totals: bool | None = None,
+    order_fields: dict[str, OrderDirection | None] | None = None,
+    filters: list[WhereClause] | None = None,
+    pivot_pagination: PivotPagination | None = None,
     autofill_legend: bool = False,
 ) -> HttpDataApiResponse:
     title_mapping = title_mapping or {}
@@ -152,7 +148,7 @@ def get_pivot_response(
     )
 
     def make_pivot_item(
-        title: str, role: PivotRole, measure_sorting_settings: Optional[PivotMeasureSorting] = None
+        title: str, role: PivotRole, measure_sorting_settings: PivotMeasureSorting | None = None
     ) -> RequestPivotItem:
         legend_item_ids = liid_map[title]
         remapped_title = title_mapping.get(title, title)
@@ -184,7 +180,7 @@ def get_pivot_response(
             return field.desc
         return field.asc
 
-    pivot_resp = data_api.get_pivot(
+    return data_api.get_pivot(
         dataset=dataset,
         fields=legend,  # type: ignore  # 2024-01-24 # TODO: Argument "fields" to "get_pivot" of "SyncHttpDataApiV2" has incompatible type "list[RequestLegendItem]"; expected "list[ResultField | RequestLegendItem] | None"  [arg-type]
         pivot_structure=[
@@ -206,7 +202,6 @@ def get_pivot_response(
         autofill_legend=autofill_legend,
         fail_ok=True,
     )
-    return pivot_resp
 
 
 def check_pivot_response(
@@ -215,24 +210,24 @@ def check_pivot_response(
     columns: list[str],
     rows: list[str],
     measures: list[str],
-    measures_sorting_settings: Optional[list[Optional[PivotMeasureSorting]]] = None,
-    annotations: Optional[list[str]] = None,
-    title_mapping: Optional[dict[str, str]] = None,
-    totals: Optional[list[tuple[str, ...]]] = None,
-    simple_totals: Optional[PivotTotals] = None,
-    with_totals: Optional[bool] = None,
-    order_fields: Optional[dict[str, Optional[OrderDirection]]] = None,
-    check_totals: Optional[list[tuple[str, ...]]] = None,
-    filters: Optional[list[WhereClause]] = None,
+    measures_sorting_settings: list[PivotMeasureSorting | None] | None = None,
+    annotations: list[str] | None = None,
+    title_mapping: dict[str, str] | None = None,
+    totals: list[tuple[str, ...]] | None = None,
+    simple_totals: PivotTotals | None = None,
+    with_totals: bool | None = None,
+    order_fields: dict[str, OrderDirection | None] | None = None,
+    check_totals: list[tuple[str, ...]] | None = None,
+    filters: list[WhereClause] | None = None,
     autofill_legend: bool = False,
-    custom_pivot_legend_check: Optional[list[tuple[str, PivotRole]]] = None,
-    min_col_cnt: Optional[int] = None,
-    max_col_cnt: Optional[int] = None,
-    min_row_cnt: Optional[int] = None,
-    max_row_cnt: Optional[int] = None,
-    min_value_cnt: Optional[int] = None,
-    max_value_cnt: Optional[int] = None,
-    expected_notifications: Optional[list[NotificationType]] = None,
+    custom_pivot_legend_check: list[tuple[str, PivotRole]] | None = None,
+    min_col_cnt: int | None = None,
+    max_col_cnt: int | None = None,
+    min_row_cnt: int | None = None,
+    max_row_cnt: int | None = None,
+    min_value_cnt: int | None = None,
+    max_value_cnt: int | None = None,
+    expected_notifications: list[NotificationType] | None = None,
 ) -> PivotDataAbstraction:
     title_mapping = title_mapping or {}
     assert title_mapping is not None
@@ -298,7 +293,7 @@ def check_pivot_response(
     expected_pivot_legend_tuples: list[tuple[str, PivotRole]]
     if custom_pivot_legend_check is not None:
         # make a copy that can be appended to
-        expected_pivot_legend_tuples = [item for item in custom_pivot_legend_check]
+        expected_pivot_legend_tuples = list(custom_pivot_legend_check)
     else:
         expected_pivot_legend_tuples = [
             *[(norm_title(title), PivotRole.pivot_column) for title in columns],
@@ -334,7 +329,7 @@ def check_pivot_response(
     pivot_data_abstraction = PivotDataAbstraction.from_response(pivot_resp)
     pivot_data_mapper: DataCellMapper1D = pivot_data_abstraction.get_1d_mapper()
 
-    def _is_total(dimension: Optional[list], totals_liids: set[int]):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def _is_total(dimension: list | None, totals_liids: set[int]):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
         return dimension is not None and any(value[0][1] in totals_liids for value in dimension)
 
     totals_liids = {
@@ -353,7 +348,7 @@ def check_pivot_response(
     # remove them from the result mapper
     if annotations:
 
-        def apply_anno_tag(dims: DataCellTuple, data_item: DataItem) -> AbstractSet[DataItemTag]:
+        def apply_anno_tag(dims: DataCellTuple, data_item: DataItem) -> Set[DataItemTag]:
             if data_item.cell.title in anno_only:
                 return data_item.meta.tags | {DataItemTag.annotation}
             return data_item.meta.tags

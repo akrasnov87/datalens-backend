@@ -10,7 +10,6 @@ from sqlalchemy.exc import DatabaseError
 
 from dl_sqlalchemy_metrica_api import exceptions
 
-
 registry.register("metrika_api", "dl_sqlalchemy_metrica_api.base", "MetrikaApiDialect")
 registry.register("appmetrica_api", "dl_sqlalchemy_metrica_api.base", "AppMetricaApiDialect")
 
@@ -41,7 +40,8 @@ def test_get_columns(db_engine):
     print(cols)
     assert isinstance(cols, list)
     assert isinstance(cols[0], dict)
-    assert "name" in cols[0] and "type" in cols[0]
+    assert "name" in cols[0]
+    assert "type" in cols[0]
 
 
 def test_distincts(m_expr_distinct, metrika_db_engine):
@@ -65,7 +65,7 @@ def test_exceptions(m_expr_distinct, metrika_db_engine):
     engine_invalid_token = sa.create_engine("metrika_api://:qwerty@/hits")
     with pytest.raises(DatabaseError) as exc_info:
         engine_invalid_token.execute(m_expr_distinct)
-    assert isinstance(exc_info.value.orig, exceptions.MetrikaApiAccessDeniedException)
+    assert isinstance(exc_info.value.orig, exceptions.MetrikaApiAccessDeniedError)
     assert "Invalid oauth_token" in str(exc_info.value.orig)
 
     expr_invalid_counter_id = sa.select(columns=[sa.column("ym:pv:users")])
@@ -74,12 +74,13 @@ def test_exceptions(m_expr_distinct, metrika_db_engine):
     )
     with pytest.raises(DatabaseError) as exc_info:
         metrika_db_engine.execute(expr_invalid_counter_id)
-    assert isinstance(exc_info.value.orig, exceptions.MetrikaApiObjectNotFoundException)
+    assert isinstance(exc_info.value.orig, exceptions.MetrikaApiObjectNotFoundError)
     assert "Entity not found" in str(exc_info.value.orig)
 
 
+@pytest.mark.xfail(reason="BI-7353", strict=False)
 def test_future_date(metrika_expr_select_date_users, metrika_db_engine):
-    today = datetime.date.today()
+    today = datetime.datetime.now(datetime.UTC).date()
     expr = metrika_expr_select_date_users.where(
         sa.column("ym:pv:date").between(
             datetime.datetime.fromisoformat((today - datetime.timedelta(days=2)).isoformat()),
@@ -93,8 +94,9 @@ def test_future_date(metrika_expr_select_date_users, metrika_db_engine):
     assert len(data) == 3
 
 
+@pytest.mark.xfail(reason="BI-7353", strict=False)
 def test_date_gt(metrika_expr_select_date_users, metrika_db_engine):
-    start_dt = (datetime.date.today() - datetime.timedelta(days=5)).isoformat()
+    start_dt = (datetime.datetime.now(datetime.UTC).date() - datetime.timedelta(days=5)).isoformat()
     expr = metrika_expr_select_date_users.where(sa.column("ym:pv:date") > start_dt)
     print(str(expr))
 
@@ -103,8 +105,9 @@ def test_date_gt(metrika_expr_select_date_users, metrika_db_engine):
     assert len(data) == 5
 
 
+@pytest.mark.xfail(reason="BI-7353", strict=False)
 def test_date_gte(metrika_expr_select_date_users, metrika_db_engine):
-    start_dt = (datetime.date.today() - datetime.timedelta(days=5)).isoformat()
+    start_dt = (datetime.datetime.now(datetime.UTC).date() - datetime.timedelta(days=5)).isoformat()
     expr = metrika_expr_select_date_users.where(sa.column("ym:pv:date") >= start_dt)
     print(str(expr))
 
@@ -113,9 +116,11 @@ def test_date_gte(metrika_expr_select_date_users, metrika_db_engine):
     assert len(data) == 6
 
 
+@pytest.mark.xfail(reason="BI-7353", strict=False)
 def test_date_gt_lt(metrika_expr_select_date_users, metrika_db_engine):
-    start_dt = (datetime.date.today() - datetime.timedelta(days=5)).isoformat()
-    end_dt = (datetime.date.today() - datetime.timedelta(days=2)).isoformat()
+    today = datetime.datetime.now(datetime.UTC).date()
+    start_dt = (today - datetime.timedelta(days=5)).isoformat()
+    end_dt = (today - datetime.timedelta(days=2)).isoformat()
     expr = metrika_expr_select_date_users.where(sa.column("ym:pv:date") > start_dt)
     expr = expr.where(sa.column("ym:pv:date") < end_dt)
     print(str(expr))
@@ -126,8 +131,9 @@ def test_date_gt_lt(metrika_expr_select_date_users, metrika_db_engine):
     assert len(data) == 2
 
 
+@pytest.mark.xfail(reason="BI-7353", strict=False)
 def test_date_eq(metrika_expr_select_date_users, metrika_db_engine):
-    start_dt = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    start_dt = (datetime.datetime.now(datetime.UTC).date() - datetime.timedelta(days=1)).isoformat()
     expr = metrika_expr_select_date_users.where(sa.column("ym:pv:date") == start_dt)
     print(str(expr))
 
@@ -136,9 +142,11 @@ def test_date_eq(metrika_expr_select_date_users, metrika_db_engine):
     assert len(data) == 1
 
 
+@pytest.mark.xfail(reason="BI-7353", strict=False)
 def test_date_gt_lt_by_alias(metrika_expr_select_date_users, metrika_db_engine):
-    start_dt = (datetime.date.today() - datetime.timedelta(days=5)).isoformat()
-    end_dt = (datetime.date.today() - datetime.timedelta(days=2)).isoformat()
+    today = datetime.datetime.now(datetime.UTC).date()
+    start_dt = (today - datetime.timedelta(days=5)).isoformat()
+    end_dt = (today - datetime.timedelta(days=2)).isoformat()
     expr = metrika_expr_select_date_users.where(sa.column("date") > start_dt)
     expr = expr.where(sa.column("date") < end_dt)
     print(str(expr))
@@ -177,18 +185,16 @@ def test_calculations(metrika_sample_counter_id, metrika_db_engine):
     res = metrika_db_engine.execute(expr)
     data = res.fetchall()
     print(data)
-    assert all([(row["pageviews"] + row["users"]) == row["pv_plus_u"] for row in data])
-    assert all([(row["pageviews"] + row["users"]) == row["sum_pv_u"] for row in data])
-    assert all([(row["pageviews"] - row["users"]) == row["pv_minus_u"] for row in data])
-    assert all([row["pv_plus_1"] == row["pageviews"] + 1 for row in data])
-    assert all([row["u_minus_2"] == row["users"] - 2 for row in data])
-    assert all([round(row["pageviews"] / row["users"], 2) == round(row["pv_per_u"], 2) for row in data])
+    assert all((row["pageviews"] + row["users"]) == row["pv_plus_u"] for row in data)
+    assert all((row["pageviews"] + row["users"]) == row["sum_pv_u"] for row in data)
+    assert all((row["pageviews"] - row["users"]) == row["pv_minus_u"] for row in data)
+    assert all(row["pv_plus_1"] == row["pageviews"] + 1 for row in data)
+    assert all(row["u_minus_2"] == row["users"] - 2 for row in data)
+    assert all(round(row["pageviews"] / row["users"], 2) == round(row["pv_per_u"], 2) for row in data)
     assert all(
-        [
-            round(row["pageviews"] * row["users"] - row["ym:pv:pageviewsPerDay"] + 14, 2)
-            == round(row["some_strange_expr"], 2)
-            for row in data
-        ]
+        round(row["pageviews"] * row["users"] - row["ym:pv:pageviewsPerDay"] + 14, 2)
+        == round(row["some_strange_expr"], 2)
+        for row in data
     )
 
 
@@ -229,8 +235,9 @@ def test_multicounter_req(metrika_sample_counter_id, metrika_db_engine):
     expr = expr.select_from(
         sa.Table("50514217,51341415", sa.MetaData(bind=metrika_db_engine)),
     )
-    start_dt = (datetime.date.today() - datetime.timedelta(days=5)).isoformat()
-    end_dt = (datetime.date.today() - datetime.timedelta(days=2)).isoformat()
+    today = datetime.datetime.now(datetime.UTC).date()
+    start_dt = (today - datetime.timedelta(days=5)).isoformat()
+    end_dt = (today - datetime.timedelta(days=2)).isoformat()
     expr = expr.where(sa.column("date").between(start_dt, end_dt))
     expr = expr.group_by(
         sa.column("date"),

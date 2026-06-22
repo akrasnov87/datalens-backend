@@ -24,22 +24,21 @@ def read_pkg(path: Path) -> TOMLDocument:
 
 
 def pkg_to_targets_ref(pkg_dir: Path, doc: TOMLDocument, sections: list[str] | None = None) -> list[Target]:
-    result = list()
+    result: list[Target] = []
     for k, v in doc.get("datalens", {}).get("pytest", {}).items():
-        if sections:
-            if k not in sections:
-                continue
+        if sections and k not in sections:
+            continue
 
         target_path = v.get("target_path", None)
         if target_path:
-            for tp in target_path.split(" "):
-                result.append(
-                    Target(
-                        name=k,
-                        root_dir=pkg_dir / v.get("root_dir", None),
-                        target_path=tp,
-                    )
+            result.extend(
+                Target(
+                    name=k,
+                    root_dir=pkg_dir / v.get("root_dir", None),
+                    target_path=tp,
                 )
+                for tp in target_path.split(" ")
+            )
         else:
             result.append(
                 Target(
@@ -53,8 +52,8 @@ def pkg_to_targets_ref(pkg_dir: Path, doc: TOMLDocument, sections: list[str] | N
 
 
 def run_pytest_one(t: Target) -> int:
-    print(f"Running pytest for {t.name} in {str(t.root_dir)} for {t.target_path or '.'}")
-    report_name = f"{str(t.root_dir)}-{t.target_path or '.'}-{uuid.uuid4().hex}.xml".replace("/", "_")
+    print(f"Running pytest for {t.name} in {t.root_dir!s} for {t.target_path or '.'}")
+    report_name = f"{t.root_dir!s}-{t.target_path or '.'}-{uuid.uuid4().hex}.xml".replace("/", "_")
     run_args: list[str] = [
         "/venv/bin/python",
         "-m",
@@ -66,15 +65,15 @@ def run_pytest_one(t: Target) -> int:
     if t.target_path:
         run_args.append(t.target_path)
 
-    subprocess_kwargs: dict[str, str | bool] = dict(
-        universal_newlines=True,
-    )
+    subprocess_kwargs: dict[str, str | bool] = {
+        "universal_newlines": True,
+    }
     if t.root_dir:
         subprocess_kwargs["cwd"] = str(t.root_dir.expanduser().resolve())
     print(f"{run_args=}")
     print(f"{subprocess_kwargs=}")
 
-    process = subprocess.run(run_args, **subprocess_kwargs)  # type: ignore  # 2024-01-30 # TODO: No overload variant of "run" matches argument types "list[str]", "dict[str, str | bool]"  [call-overload]
+    process = subprocess.run(run_args, **subprocess_kwargs)  # type: ignore  # 2024-01-30 # TODO: No overload variant of "run" matches argument types "list[str]", "dict[str, str | bool]"  [call-overload]  # noqa: S603
     return process.returncode
 
 

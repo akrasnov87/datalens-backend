@@ -17,17 +17,15 @@ from dl_cache_engine.cache_invalidation.primitives import (
     CacheInvalidationKey,
     CacheInvalidationStatus,
 )
-from dl_constants.enums import CacheInvalidationLastResultStatus
+from dl_constants import CacheInvalidationLastResultStatus
 from dl_constants.exc import (
-    DEFAULT_ERR_CODE_API_PREFIX,
-    GLOBAL_ERR_PREFIX,
-    DLBaseException,
+    DEFAULT_GLOBAL_ERR_CODE_API_PREFIX,
+    DLBaseError,
 )
 from dl_core.base_models import ConnCacheableDataModelMixin
 from dl_core.components.accessor import DatasetComponentAccessor
 from dl_core.data_source.collection import DataSourceCollectionFactory
 from dl_core.us_connection_base import ConnectionBase
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,10 +52,10 @@ class DatasetCacheInvalidationLastResultView(DatasetDataBaseView):
 
     @staticmethod
     def _format_timestamp(executed_at: float) -> str:
-        return datetime.datetime.fromtimestamp(executed_at, tz=datetime.timezone.utc).isoformat()
+        return datetime.datetime.fromtimestamp(executed_at, tz=datetime.UTC).isoformat()
 
-    def _exc_to_last_result_error(self, dl_exc: DLBaseException) -> dict[str, Any]:
-        error_code = ".".join([GLOBAL_ERR_PREFIX, DEFAULT_ERR_CODE_API_PREFIX] + dl_exc.err_code)
+    def _exc_to_last_result_error(self, dl_exc: DLBaseError) -> dict[str, Any]:
+        error_code = ".".join((*DEFAULT_GLOBAL_ERR_CODE_API_PREFIX, *dl_exc.err_code))
         return {
             "code": error_code,
             "message": dl_exc.message,
@@ -93,7 +91,7 @@ class DatasetCacheInvalidationLastResultView(DatasetDataBaseView):
 
     def _make_error_response(
         self,
-        dl_exc: DLBaseException,
+        dl_exc: DLBaseError,
         timestamp: str | None = None,
     ) -> Response:
         data = _response_schema.dump(

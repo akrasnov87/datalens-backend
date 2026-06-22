@@ -1,5 +1,6 @@
 import typing
 
+from frozendict import frozendict
 import pydantic
 import pytest
 
@@ -8,14 +9,11 @@ import dl_settings_tests.utils.tmp_configs as tmp_configs_utils
 
 
 def test_default_settings() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
-    class Child2(Base):
-        ...
+    class Child2(Base): ...
 
     Base.register("child", Child)
     Base.register("child2", Child2)
@@ -28,8 +26,7 @@ def test_type_field_name_alias() -> None:
     class Base(dl_settings.TypedBaseSettings):
         type: str = pydantic.Field(alias="test_type_field_name")
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
     Base.register("child", Child)
 
@@ -37,11 +34,9 @@ def test_type_field_name_alias() -> None:
 
 
 def test_already_deserialized() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
     Base.register("child", Child)
     child = Child.model_validate({"TYPE": "child"})
@@ -50,72 +45,59 @@ def test_already_deserialized() -> None:
 
 
 def test_not_a_dict_data() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
     Base.register("child", Child)
 
     class Root(dl_settings.BaseSettings):
         child: Child
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Input should be a valid dictionary"):
         Root.model_validate({"child": ""})
 
 
 def test_already_registered() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
-    class AnotherChild(Base):
-        ...
+    class AnotherChild(Base): ...
 
     Base.register("child", Child)
     Base.register("child", Child)  # it's ok, just warning
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"already registered"):
         Base.register("child", AnotherChild)
 
 
 def test_not_subclass() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
-    class Base2(dl_settings.TypedBaseSettings):
-        ...
+    class Base2(dl_settings.TypedBaseSettings): ...
 
-    class Child(Base2):
-        ...
+    class Child(Base2): ...
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"must be subclass of"):
         Base.register("child", Child)
 
 
 def test_unknown_type() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Unknown type:"):
         Base.factory({"type": "child"})
 
 
 def test_multiple_bases() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
-    class Base2(dl_settings.TypedBaseSettings):
-        ...
+    class Base2(dl_settings.TypedBaseSettings): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
-    class Child2(Base2):
-        ...
+    class Child2(Base2): ...
 
     Base.register("child", Child)
     Base2.register("child", Child2)
@@ -125,11 +107,9 @@ def test_multiple_bases() -> None:
 
 
 def test_list_factory_default() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
     Base.register("child", Child)
 
@@ -139,24 +119,20 @@ def test_list_factory_default() -> None:
 
 
 def test_list_factory_not_sequence() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
     Base.register("child", Child)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Data must be sequence for list factory"):
         Base.list_factory(typing.cast(list, "test"))
 
 
 def test_dict_factory_default() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
     Base.register("child", Child)
 
@@ -166,23 +142,20 @@ def test_dict_factory_default() -> None:
 
 
 def test_dict_factory_not_dict() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
     Base.register("child", Child)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Data must be mapping for dict factory"):
         Base.dict_factory(typing.cast(dict, "test"))
 
 
 def test_factory_ignores_case(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
     class Child(Base):
         INNER_FIELD: str
@@ -212,11 +185,9 @@ def test_factory_ignores_case(
 def test_factory_ignores_case_in_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
-    class Child(Base):
-        ...
+    class Child(Base): ...
 
     Base.register("child", Child)
 
@@ -241,8 +212,7 @@ def test_factory_ignores_case_in_config(
 
 
 def test_annotation() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
     class Child(Base):
         VALUE: str
@@ -262,8 +232,7 @@ def test_annotation() -> None:
 
 
 def test_optional_annotation() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
     class Child(Base):
         VALUE: str
@@ -271,7 +240,7 @@ def test_optional_annotation() -> None:
     Base.register("child", Child)
 
     class Root(dl_settings.BaseSettings):
-        CHILD: typing.Optional[dl_settings.TypedAnnotation[Base]] = None
+        CHILD: dl_settings.TypedAnnotation[Base] | None = None
 
     root = Root.model_validate({"CHILD": {"TYPE": "child", "VALUE": "test"}})
     assert isinstance(root.CHILD, Child)
@@ -299,8 +268,7 @@ def test_optional_annotation() -> None:
 
 
 def test_list_annotation() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
     class Child(Base):
         VALUE: str
@@ -320,8 +288,7 @@ def test_list_annotation() -> None:
 
 
 def test_dict_annotation() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
     class Child(Base):
         VALUE: str
@@ -344,8 +311,7 @@ def test_dict_annotation() -> None:
 def test_dict_annotation_with_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
     class Child(Base):
         SECRET: str
@@ -365,8 +331,7 @@ def test_dict_annotation_with_env(
 def test_dict_factory_with_type_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
     class Child(Base):
         VALUE: str
@@ -395,8 +360,7 @@ def test_dict_factory_with_type_key(
 def test_dict_factory_with_type_key_with_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
     class Child(Base):
         VALUE: str
@@ -415,8 +379,7 @@ def test_dict_factory_with_type_key_with_env(
 
 
 def test_dict_factory_with_type_key_ignores_type_case() -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
     class Child(Base):
         value: str
@@ -432,8 +395,7 @@ def test_dict_factory_with_type_key_ignores_type_case() -> None:
 def test_typed_dict_settings_with_env_and_upper_and_lower_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
     class Child(Base):
         VALUE: str
@@ -444,7 +406,7 @@ def test_typed_dict_settings_with_env_and_upper_and_lower_key(
     class Root(dl_settings.WithFallbackEnvSource, dl_settings.BaseRootSettings):
         CHILDREN: dl_settings.TypedDictWithTypeKeyAnnotation[Base] = pydantic.Field(default_factory=dict)
 
-        fallback_env_keys = {"CHILDREN__CHILD__VALUE": "CHILDREN_CHILD_VALUE"}
+        fallback_env_keys = frozendict({"CHILDREN__CHILD__VALUE": "CHILDREN_CHILD_VALUE"})
 
     with tmp_configs_utils.TmpConfigs() as tmp_configs:
         # without env
@@ -479,8 +441,7 @@ def test_typed_dict_settings_with_env_and_upper_and_lower_key(
 def test_typed_dict_settings_with_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
     class Child(Base):
         VALUE: str
@@ -515,7 +476,7 @@ def test_typed_dict_settings_with_fallback(
         monkeypatch.setenv("CHILDREN_CHILD_SECRET", "secret_test_2")
         config_path = tmp_configs.add({"CHILDREN": {"child": {"VALUE": "test_2", "SECRET": "test_secret"}}})
         monkeypatch.setenv("CONFIG_PATH", str(config_path))
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"Can't merge duplicated keys"):
             root = Root(extra_fallback_env_keys=fallback_env_keys)
 
     with tmp_configs_utils.TmpConfigs() as tmp_configs:
@@ -529,8 +490,7 @@ def test_typed_dict_settings_with_fallback(
 
 
 def test_dict_with_type_key_factory_skips_unknown_types(caplog: pytest.LogCaptureFixture) -> None:
-    class Base(dl_settings.TypedBaseSettings):
-        ...
+    class Base(dl_settings.TypedBaseSettings): ...
 
     class Child(Base):
         value: str
@@ -560,3 +520,23 @@ def test_dict_with_type_key_factory_skips_unknown_types(caplog: pytest.LogCaptur
     )
 
     assert result == {}
+
+
+def test_typed_settings_not_implemented_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Base(dl_settings.TypedBaseSettings): ...
+
+    class Child(Base):
+        FIELD_2: str = NotImplemented
+
+    Base.register("child", Child)
+
+    class Root(dl_settings.BaseRootSettings):
+        CHILD: dl_settings.TypedAnnotation[Base] = NotImplemented
+
+    with tmp_configs_utils.TmpConfigs() as tmp_configs:
+        config_path = tmp_configs.add({"CHILD": {"TYPE": "child"}})
+        monkeypatch.setenv("CONFIG_PATH", str(config_path))
+        with pytest.raises(pydantic.ValidationError):
+            Root()

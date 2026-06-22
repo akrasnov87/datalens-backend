@@ -1,10 +1,5 @@
 import abc
-from typing import (
-    ClassVar,
-    Generic,
-    Optional,
-    TypeVar,
-)
+from typing import ClassVar
 
 import pytest
 import pytest_asyncio
@@ -19,10 +14,9 @@ from dl_core.connection_executors.models.scoped_rci import DBAdapterScopedRCI
 from dl_core_testing.testcases.connection_executor import BaseConnectionExecutorTestClass
 
 
-_TARGET_DTO_TV = TypeVar("_TARGET_DTO_TV", bound=BaseSQLConnTargetDTO)
-
-
-class BaseAsyncAdapterTestClass(BaseConnectionExecutorTestClass, Generic[_TARGET_DTO_TV], metaclass=abc.ABCMeta):
+class BaseAsyncAdapterTestClass[TARGET_DTO_TV: BaseSQLConnTargetDTO](
+    BaseConnectionExecutorTestClass, metaclass=abc.ABCMeta
+):
     """
     Most of the testable adapter behaviour is covered by conn executor tests
     Here are the tests, that are just easier to implement at the adapter level
@@ -31,11 +25,11 @@ class BaseAsyncAdapterTestClass(BaseConnectionExecutorTestClass, Generic[_TARGET
     ASYNC_ADAPTER_CLS: ClassVar[type[AsyncDirectDBAdapter]]  # TODO add tests for other adapters
 
     @pytest_asyncio.fixture
-    async def target_conn_dto(self, async_connection_executor: AsyncConnExecutorBase) -> _TARGET_DTO_TV:
+    async def target_conn_dto(self, async_connection_executor: AsyncConnExecutorBase) -> TARGET_DTO_TV:
         target_conn_dto_pool = await async_connection_executor._make_target_conn_dto_pool()  # type: ignore  # 2024-01-29 # TODO: "AsyncConnExecutorBase" has no attribute "_make_target_conn_dto_pool"  [attr-defined]
         return next(iter(target_conn_dto_pool))
 
-    def _make_dba(self, target_dto: _TARGET_DTO_TV, rci: RequestContextInfo) -> AsyncDirectDBAdapter:
+    def _make_dba(self, target_dto: TARGET_DTO_TV, rci: RequestContextInfo) -> AsyncDirectDBAdapter:
         return self.ASYNC_ADAPTER_CLS.create(
             req_ctx_info=DBAdapterScopedRCI.from_full_rci(rci),
             target_dto=target_dto,
@@ -44,11 +38,11 @@ class BaseAsyncAdapterTestClass(BaseConnectionExecutorTestClass, Generic[_TARGET
 
     async def _test_pass_db_query_to_user(
         self,
-        pass_db_query_to_user: Optional[bool],
+        pass_db_query_to_user: bool | None,
         query_to_send: str,
-        expected_query: Optional[str],
+        expected_query: str | None,
         conn_bi_context: RequestContextInfo,
-        target_conn_dto: _TARGET_DTO_TV,
+        target_conn_dto: TARGET_DTO_TV,
     ) -> None:
         debug_query = expected_query
 
@@ -66,11 +60,11 @@ class BaseAsyncAdapterTestClass(BaseConnectionExecutorTestClass, Generic[_TARGET
         assert exception_info.value.query == expected_query, exception_info.value.query
 
     @pytest.mark.parametrize(
-        "pass_db_query_to_user, expected_query",
-        (
+        ("pass_db_query_to_user", "expected_query"),
+        [
             (False, None),
             (True, "select 1 from <hidden>"),
-        ),
+        ],
     )
     @pytest.mark.asyncio
     async def test_pass_db_query_to_user(
@@ -78,7 +72,7 @@ class BaseAsyncAdapterTestClass(BaseConnectionExecutorTestClass, Generic[_TARGET
         pass_db_query_to_user: bool,
         expected_query: str,
         conn_bi_context: RequestContextInfo,
-        target_conn_dto: _TARGET_DTO_TV,
+        target_conn_dto: TARGET_DTO_TV,
     ) -> None:
         query_to_send = "select 1 from very_secret_table"
         await self._test_pass_db_query_to_user(
@@ -89,7 +83,7 @@ class BaseAsyncAdapterTestClass(BaseConnectionExecutorTestClass, Generic[_TARGET
     async def test_default_pass_db_query_to_user(
         self,
         conn_bi_context: RequestContextInfo,
-        target_conn_dto: _TARGET_DTO_TV,
+        target_conn_dto: TARGET_DTO_TV,
     ) -> None:
         await self._test_pass_db_query_to_user(
             pass_db_query_to_user=None,
@@ -103,7 +97,7 @@ class BaseAsyncAdapterTestClass(BaseConnectionExecutorTestClass, Generic[_TARGET
     async def test_timeout(
         self,
         conn_bi_context: RequestContextInfo,
-        target_conn_dto: _TARGET_DTO_TV,
+        target_conn_dto: TARGET_DTO_TV,
     ) -> None:
         target_conn_dto = target_conn_dto.clone(port="65535")
         dba = self._make_dba(target_conn_dto, conn_bi_context)

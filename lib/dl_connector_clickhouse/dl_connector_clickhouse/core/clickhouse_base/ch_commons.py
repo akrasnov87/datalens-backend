@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import logging
 import re
+from re import Pattern
 from typing import (
     TYPE_CHECKING,
     ClassVar,
-    Optional,
-    Pattern,
 )
 
 import attr
@@ -23,14 +22,13 @@ from dl_type_transformer.sa_types import make_sa_type
 from dl_connector_clickhouse.core.clickhouse_base.constants import BACKEND_TYPE_CLICKHOUSE
 from dl_connector_clickhouse.core.clickhouse_base.exc import (
     CannotInsertNullInOrdinaryColumn,
-    CHIncorrectData,
-    CHReadonlyUser,
+    CHIncorrectDataError,
+    CHReadonlyUserError,
     ClickHouseSourceDoesNotExistError,
     EstimatedExecutionTooLong,
     InvalidSplitSeparator,
     TooManyColumns,
 )
-
 
 if TYPE_CHECKING:
     from dl_type_transformer.type_transformer import TypeTransformer
@@ -39,8 +37,8 @@ LOGGER = logging.getLogger(__name__)
 
 
 def get_ch_settings(
-    read_only_level: Optional[int] = None,
-    output_format_json_quote_denormals: Optional[int] = None,
+    read_only_level: int | None = None,
+    output_format_json_quote_denormals: int | None = None,
 ) -> dict:
     settings = {
         # https://clickhouse.com/docs/en/operations/settings/settings#settings-join_use_nulls
@@ -74,33 +72,33 @@ class ClickHouseBaseUtils:
     # ClickHouse error codes list: https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ErrorCodes.cpp
     # TODO: verify codes meaning and pick some other useful codes from CH list.
     map_err_code_exc_cls: ClassVar[dict[int, type[exc.DatabaseQueryError]]] = {
-        10: exc.ColumnDoesNotExist,
+        10: exc.ColumnDoesNotExistError,
         36: InvalidSplitSeparator,
-        41: exc.CannotParseDateTime,
-        43: exc.InvalidArgumentType,
-        46: exc.UnknownFunction,
-        47: exc.ColumnDoesNotExist,
-        53: exc.JoinColumnTypeMismatch,
+        41: exc.CannotParseDateTimeError,
+        43: exc.InvalidArgumentTypeError,
+        46: exc.UnknownFunctionError,
+        47: exc.ColumnDoesNotExistError,
+        53: exc.JoinColumnTypeMismatchError,
         60: ClickHouseSourceDoesNotExistError,
-        62: exc.InvalidQuery,
-        70: exc.UnexpectedInfOrNan,
-        72: exc.CannotParseNumber,
-        81: exc.DatabaseDoesNotExist,
-        117: CHIncorrectData,
-        153: exc.DivisionByZero,
-        159: exc.SourceTimeout,
+        62: exc.InvalidQueryError,
+        70: exc.UnexpectedInfOrNanError,
+        72: exc.CannotParseNumberError,
+        81: exc.DatabaseDoesNotExistError,
+        117: CHIncorrectDataError,
+        153: exc.DivisionByZeroError,
+        159: exc.SourceTimeoutError,
         160: EstimatedExecutionTooLong,
         161: TooManyColumns,
-        164: CHReadonlyUser,
-        241: exc.DbMemoryLimitExceeded,
-        277: exc.DBIndexNotUsed,
+        164: CHReadonlyUserError,
+        241: exc.DbMemoryLimitExceededError,
+        277: exc.DBIndexNotUsedError,
         349: CannotInsertNullInOrdinaryColumn,
-        516: exc.DbAuthenticationFailed,
-        1000: exc.NoSpaceLeft,
+        516: exc.DbAuthenticationFailedError,
+        1000: exc.NoSpaceLeftError,
     }
 
     @classmethod
-    def parse_message(cls, err_msg: str) -> Optional[ParsedErrorMsg]:
+    def parse_message(cls, err_msg: str) -> ParsedErrorMsg | None:
         match = cls.ch_err_msg_re.match(err_msg)
 
         if match is None:
@@ -117,13 +115,13 @@ class ClickHouseBaseUtils:
     @classmethod
     def get_exc_class_by_parsed_message(
         cls, msg: ParsedErrorMsg
-    ) -> Optional[tuple[type[exc.DatabaseQueryError], dict[str, str]]]:
+    ) -> tuple[type[exc.DatabaseQueryError], dict[str, str]] | None:
         if msg.code in cls.map_err_code_exc_cls:
             return cls.map_err_code_exc_cls[msg.code], {}
         return None
 
     @classmethod
-    def get_exc_class(cls, err_msg: str) -> Optional[tuple[type[exc.DatabaseQueryError], dict[str, str]]]:
+    def get_exc_class(cls, err_msg: str) -> tuple[type[exc.DatabaseQueryError], dict[str, str]] | None:
         parse_msg = cls.parse_message(err_msg)
         if parse_msg:
             return cls.get_exc_class_by_parsed_message(parse_msg)
@@ -148,7 +146,7 @@ class ClickHouseBaseUtils:
         return headers
 
     @classmethod
-    def get_tracing_sample_flag_override(cls, rci: DBAdapterScopedRCI) -> Optional[bool]:
+    def get_tracing_sample_flag_override(cls, rci: DBAdapterScopedRCI) -> bool | None:
         """
         Return overridden sample flag value. If value should not be overridden `None` will be returned.
         """
@@ -163,11 +161,11 @@ def create_column_sql(
     sa_dialect: DefaultDialect,
     col: SchemaColumn,
     tt: TypeTransformer,
-    partition_fields: Optional[list[str]] = None,
+    partition_fields: list[str] | None = None,
 ) -> str:
     native_type = tt.type_user_to_native(user_t=col.user_type, native_t=col.native_type)
 
-    nullable: Optional[bool]
+    nullable: bool | None
     if partition_fields and col.name in partition_fields:
         # Partition column cannot be nullable. Enforcing it in here.
         nullable = False

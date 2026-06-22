@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import (
+    Callable,
+    Sequence,
+)
 from typing import (
     TYPE_CHECKING,
-    Callable,
     ClassVar,
-    Generic,
-    Sequence,
     TypeVar,
 )
 import uuid
@@ -14,7 +15,7 @@ import uuid
 import pytest
 import shortuuid
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_core.connection_models import TableIdent
 from dl_core.connectors.base.data_source_migration import (
     DataSourceMigrationInterface,
@@ -37,35 +38,31 @@ from dl_core.us_manager.us_manager_sync import SyncUSManager
 from dl_core_testing.database import Db
 from dl_core_testing.testcases.connection import BaseConnectionTestClass
 
-
 if TYPE_CHECKING:
     from dl_core.connection_executors.sync_base import SyncConnExecutorBase
 
 
-_CONN_TV = TypeVar("_CONN_TV", bound=ConnectionBase)
-_DSRC_SPEC_TV = TypeVar("_DSRC_SPEC_TV", bound=DataSourceSpec)
-_DSRC_TV = TypeVar("_DSRC_TV", bound=DataSource)
+SUBSELECT_DSRC_TV = TypeVar("SUBSELECT_DSRC_TV", bound=SubselectDataSource)
 
 
-class BaseDataSourceTestClass(
-    BaseConnectionTestClass[_CONN_TV],
-    Generic[_CONN_TV, _DSRC_SPEC_TV, _DSRC_TV],
+class BaseDataSourceTestClass[CONN_TV: ConnectionBase, DSRC_SPEC_TV: DataSourceSpec, DSRC_TV: DataSource](
+    BaseConnectionTestClass[CONN_TV],
 ):
-    DSRC_CLS: ClassVar[type[_DSRC_TV]]  # type: ignore  # 2024-01-29 # TODO: ClassVar cannot contain type variables  [misc]
+    DSRC_CLS: ClassVar[type[DSRC_TV]]
 
     @abc.abstractmethod
     @pytest.fixture(scope="class")
-    def initial_data_source_spec(self) -> _DSRC_SPEC_TV:
+    def initial_data_source_spec(self) -> DSRC_SPEC_TV:
         raise NotImplementedError
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def data_source(
         self,
         sync_us_manager: SyncUSManager,
-        saved_connection: _CONN_TV,
-        initial_data_source_spec: _DSRC_SPEC_TV,
-    ) -> _DSRC_TV:
-        dsrc = self.DSRC_CLS(
+        saved_connection: CONN_TV,
+        initial_data_source_spec: DSRC_SPEC_TV,
+    ) -> DSRC_TV:
+        return self.DSRC_CLS(
             id=uuid.uuid4().hex,
             us_entry_buffer=sync_us_manager.get_entry_buffer(),
             connection=saved_connection,
@@ -73,16 +70,14 @@ class BaseDataSourceTestClass(
             dataset_parameter_values={},
             dataset_template_enabled=False,
         )
-        return dsrc
 
 
-class DefaultDataSourceTestClass(
-    BaseDataSourceTestClass[_CONN_TV, _DSRC_SPEC_TV, _DSRC_TV],
-    Generic[_CONN_TV, _DSRC_SPEC_TV, _DSRC_TV],
+class DefaultDataSourceTestClass[CONN_TV: ConnectionBase, DSRC_SPEC_TV: DataSourceSpec, DSRC_TV: DataSource](
+    BaseDataSourceTestClass[CONN_TV, DSRC_SPEC_TV, DSRC_TV],
 ):
     def test_data_source_exists(
         self,
-        data_source: _DSRC_TV,
+        data_source: DSRC_TV,
         sync_conn_executor_factory: Callable[[], SyncConnExecutorBase],
     ) -> None:
         dsrc = data_source
@@ -95,7 +90,7 @@ class DefaultDataSourceTestClass(
 
     def test_get_raw_schema(
         self,
-        data_source: _DSRC_TV,
+        data_source: DSRC_TV,
         sync_conn_executor_factory: Callable[[], SyncConnExecutorBase],
     ) -> None:
         raw_schema = data_source.get_schema_info(conn_executor_factory=sync_conn_executor_factory).schema
@@ -107,21 +102,21 @@ class DefaultDataSourceTestClass(
 
         # TODO: This is a workaround for YDB because raw schema is sorted different. Remove it when the issue is fixed.
         if data_source.conn_type.name == "ydb":
-            simplified_schema = list(sorted(simplified_schema, key=lambda v: v[0]))
-            expected_schema = list(sorted(expected_schema, key=lambda v: v[0]))
+            simplified_schema = sorted(simplified_schema, key=lambda v: v[0])
+            expected_schema = sorted(expected_schema, key=lambda v: v[0])
 
         assert simplified_schema == expected_schema
 
     def _check_migration_dtos(
         self,
-        data_source: _DSRC_TV,
+        data_source: DSRC_TV,
         migration_dtos: Sequence[DataSourceMigrationInterface],
     ) -> None:
         pass
 
     def _check_migration_dtos_table(  # TODO: Plug it in
         self,
-        data_source: _DSRC_TV,
+        data_source: DSRC_TV,
         migration_dtos: Sequence[DataSourceMigrationInterface],
     ) -> None:
         assert isinstance(data_source, TableSQLDataSourceMixin)
@@ -133,7 +128,7 @@ class DefaultDataSourceTestClass(
 
     def _check_migration_dtos_subselect(  # TODO: Plug it in
         self,
-        data_source: _DSRC_TV,
+        data_source: DSRC_TV,
         migration_dtos: Sequence[DataSourceMigrationInterface],
     ) -> None:
         assert isinstance(data_source, SubselectDataSource)
@@ -143,7 +138,7 @@ class DefaultDataSourceTestClass(
 
     def test_export_dsrc_migration_dtos(
         self,
-        data_source: _DSRC_TV,
+        data_source: DSRC_TV,
         sync_us_manager: SyncUSManager,
     ) -> None:
         migrator = get_data_source_migrator(self.conn_type)
@@ -151,7 +146,7 @@ class DefaultDataSourceTestClass(
         migration_dtos = migrator.export_migration_dtos(data_source_spec=source_spec)
         self._check_migration_dtos(data_source=data_source, migration_dtos=migration_dtos)
 
-    def test_get_cache_key_part(self, data_source: _SUBSELECT_DSRC_TV) -> None:
+    def test_get_cache_key_part(self, data_source: SUBSELECT_DSRC_TV) -> None:
         cache_key_part = data_source.get_cache_key_part()
 
         data_source_sql_key_part = None
@@ -165,13 +160,10 @@ class DefaultDataSourceTestClass(
         assert data_source_sql_key_part.part_content != ""
 
 
-_SUBSELECT_DSRC_SPEC_TV = TypeVar("_SUBSELECT_DSRC_SPEC_TV", bound=SubselectDataSourceSpec)
-_SUBSELECT_DSRC_TV = TypeVar("_SUBSELECT_DSRC_TV", bound=SubselectDataSource)
-
-
-class DataSourceTestByViewClass(
-    BaseDataSourceTestClass[_CONN_TV, _SUBSELECT_DSRC_SPEC_TV, _SUBSELECT_DSRC_TV],
-    Generic[_CONN_TV, _SUBSELECT_DSRC_SPEC_TV, _SUBSELECT_DSRC_TV],
+class DataSourceTestByViewClass[
+    CONN_TV: ConnectionBase, SUBSELECT_DSRC_SPEC_TV: SubselectDataSourceSpec, SUBSELECT_DSRC_TV: SubselectDataSource
+](
+    BaseDataSourceTestClass[CONN_TV, SUBSELECT_DSRC_SPEC_TV, SUBSELECT_DSRC_TV],
 ):
     def postprocess_view_schema_column(self, schema_col: SchemaColumn) -> SchemaColumn:
         """
@@ -185,15 +177,15 @@ class DataSourceTestByViewClass(
     ) -> list[SchemaColumn]:
         return [self.postprocess_view_schema_column(schema_col) for schema_col in view_schema]
 
-    @pytest.fixture(scope="function")
-    def subselect_view(self, initial_data_source_spec: _SUBSELECT_DSRC_SPEC_TV, db: Db) -> str:
+    @pytest.fixture
+    def subselect_view(self, initial_data_source_spec: SUBSELECT_DSRC_SPEC_TV, db: Db) -> str:
         name = f"test_view_from_subselect_{shortuuid.uuid().lower()}"
         db.execute(f"create view {name} as select * from ({initial_data_source_spec.subsql}) source")
         return name
 
     def test_view_from_subselect(
         self,
-        data_source: _SUBSELECT_DSRC_TV,
+        data_source: SUBSELECT_DSRC_TV,
         db: Db,
         sync_conn_executor_factory: Callable[[], SyncConnExecutorBase],
         subselect_view: str,
@@ -221,13 +213,12 @@ class DataSourceTestByViewClass(
         assert schema == tuple(view_schema)
 
 
-class SQLDataSourceTestClass(
-    BaseDataSourceTestClass[_CONN_TV, _DSRC_SPEC_TV, _DSRC_TV],
-    Generic[_CONN_TV, _DSRC_SPEC_TV, _DSRC_TV],
+class SQLDataSourceTestClass[CONN_TV: ConnectionBase, DSRC_SPEC_TV: DataSourceSpec, DSRC_TV: DataSource](
+    BaseDataSourceTestClass[CONN_TV, DSRC_SPEC_TV, DSRC_TV],
 ):
     QUERY_PATTERN: ClassVar[str]
 
-    def test_data_source_query(self, data_source: _DSRC_TV) -> None:
+    def test_data_source_query(self, data_source: DSRC_TV) -> None:
         dsrc = data_source
         sql_query = str(dsrc.get_sql_source())
         assert self.QUERY_PATTERN in sql_query

@@ -1,11 +1,5 @@
 from __future__ import annotations
 
-import abc
-from typing import (
-    Optional,
-    TypeVar,
-)
-
 import attr
 
 from dl_api_commons.reporting.registry import ReportingRegistry
@@ -17,7 +11,7 @@ from dl_api_lib.query.formalization.raw_specs import (
     RawQuerySpecUnion,
     RawRootBlockPlacement,
 )
-from dl_constants.enums import (
+from dl_constants import (
     FieldRole,
     FieldType,
     NotificationType,
@@ -46,19 +40,16 @@ from dl_query_processing.legend.field_legend import (
 )
 
 
-_VAL_TV = TypeVar("_VAL_TV")
-
-
-def ifnull(value: _VAL_TV, null_value: _VAL_TV) -> _VAL_TV:
+def ifnull[VAL_TV](value: VAL_TV, null_value: VAL_TV) -> VAL_TV:
     if value is not None:
         return value
     return null_value
 
 
 @attr.s
-class BlockFormalizer(abc.ABC):
+class BlockFormalizer:
     _dataset: Dataset = attr.ib(kw_only=True)
-    _reporting_registry: Optional[ReportingRegistry] = attr.ib(kw_only=True, default=None)
+    _reporting_registry: ReportingRegistry | None = attr.ib(kw_only=True, default=None)
     _field_resolver: FieldResolver = attr.ib(init=False)
 
     def __attrs_post_init__(self) -> None:
@@ -75,7 +66,7 @@ class BlockFormalizer(abc.ABC):
         if isinstance(raw_block_spec.placement, RawRootBlockPlacement):
             placement = RootBlockPlacement()
         elif isinstance(raw_block_spec.placement, RawAfterBlockPlacement):
-            dimension_values: Optional[list[DimensionValueSpec]] = None
+            dimension_values: list[DimensionValueSpec] | None = None
             if raw_block_spec.placement.dimension_values is not None:
                 dimension_values = [
                     DimensionValueSpec(
@@ -95,8 +86,8 @@ class BlockFormalizer(abc.ABC):
         block_id: int,
         legend: Legend,
         raw_query_spec_union: RawQuerySpecUnion,
-        raw_block_spec: Optional[RawBlockSpec] = None,
-        main_block: Optional[BlockSpec] = None,
+        raw_block_spec: RawBlockSpec | None = None,
+        main_block: BlockSpec | None = None,
     ) -> BlockSpec:
         legend_for_block, legend_item_ids = self._gen_legend_and_ids_for_block(legend=legend, block_id=block_id)
 
@@ -111,10 +102,10 @@ class BlockFormalizer(abc.ABC):
         if any(item.role_spec.role in (FieldRole.total, FieldRole.template) for item in streamable_items):
             query_type = QueryType.totals
 
-        parent_block_id: Optional[int]
-        limit: Optional[int]
-        offset: Optional[int]
-        row_count_hard_limit: Optional[int]
+        parent_block_id: int | None
+        limit: int | None
+        offset: int | None
+        row_count_hard_limit: int | None
         placement: BlockPlacement
 
         if raw_block_spec is not None:
@@ -158,7 +149,7 @@ class BlockFormalizer(abc.ABC):
     def _resolve_block_placement_from_legend(
         self,
         legend_for_block: Legend,
-        main_block: Optional[BlockSpec],
+        main_block: BlockSpec | None,
         query_type: QueryType,
     ) -> BlockPlacement:
         streamable_items = legend_for_block.list_streamable_items()

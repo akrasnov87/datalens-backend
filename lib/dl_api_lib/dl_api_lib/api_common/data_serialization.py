@@ -1,12 +1,6 @@
-from __future__ import annotations
-
+from collections.abc import Sequence
 import logging
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Optional,
-    Sequence,
-)
+from typing import Any
 
 from dl_api_commons.reporting.models import NotificationReportingRecord
 from dl_api_commons.reporting.registry import ReportingRegistry
@@ -30,19 +24,16 @@ from dl_api_lib.utils.base import (
     enrich_resp_dict_with_data_export_info,
     get_data_export_base_result,
 )
-from dl_constants.enums import ManagedBy
+from dl_constants import ManagedBy
+from dl_constants.types import TJSONLike
+from dl_core.fields import FormulaCalculationSpec
 from dl_core.us_dataset import Dataset
+from dl_pivot.primitives import DataCellVector
+from dl_pivot.table import PivotTable
 from dl_query_processing.enums import QueryType
 from dl_query_processing.legend.field_legend import LegendItem
 from dl_query_processing.merging.primitives import MergedQueryDataStream
 from dl_utils.utils import enum_not_none
-
-
-if TYPE_CHECKING:
-    from dl_constants.types import TJSONLike
-    from dl_pivot.primitives import DataCellVector
-    from dl_pivot.table import PivotTable
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -96,9 +87,9 @@ class DataRequestResponseSerializer(DataRequestResponseSerializerV2Mixin):
         cls,
         data_export_info: DataExportInfo,
         merged_stream: MergedQueryDataStream,
-        totals: Optional[Sequence] = None,
-        totals_query: Optional[str] = None,
-        fields_data: Optional[list[dict[str, Any]]] = None,
+        totals: Sequence | None = None,
+        totals_query: str | None = None,
+        fields_data: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         legend_item_ids = merged_stream.legend_item_ids
         assert legend_item_ids is not None  # in v1 there is only one stream
@@ -139,13 +130,13 @@ class DataRequestResponseSerializer(DataRequestResponseSerializerV2Mixin):
         cls,
         data_export_info: DataExportInfo,
         merged_stream: MergedQueryDataStream,
-        reporting_registry: Optional[ReportingRegistry] = None,
+        reporting_registry: ReportingRegistry | None = None,
     ) -> dict[str, Any]:
         data: dict[str, Any] = {}
 
-        data[
-            "data_export_forbidden"
-        ] = not data_export_info.enabled_in_conn  # TODO: BI-6539 remove after switch to new schema
+        data["data_export_forbidden"] = (
+            not data_export_info.enabled_in_conn
+        )  # TODO: BI-6539 remove after switch to new schema
 
         data_export_result = get_data_export_base_result(data_export_info)
         enrich_resp_dict_with_data_export_info(data, data_export_result)
@@ -159,16 +150,20 @@ class DataRequestResponseSerializer(DataRequestResponseSerializerV2Mixin):
         if reporting_registry is not None:
             data["notifications"] = reporting_registry.get_records_of_type(NotificationReportingRecord)
 
-        data = DataApiV2ResponseSchema().dump(data)
-        return data
+        return DataApiV2ResponseSchema().dump(data)
 
 
-def get_fields_data_raw(dataset: Dataset, for_result: bool = False) -> list[dict[str, Any]]:
+def get_fields_data_raw(
+    dataset: Dataset,
+    for_result: bool = False,
+    include_details: bool = False,
+) -> list[dict[str, Any]]:
     return [
         {
             "title": fld.title,
             "guid": fld.guid,
             "data_type": fld.data_type,
+            "cast": fld.cast,
             "calc_mode": fld.calc_mode,
             **(
                 {
@@ -179,15 +174,28 @@ def get_fields_data_raw(dataset: Dataset, for_result: bool = False) -> list[dict
                 if not for_result
                 else {}
             ),
+            **(
+                {
+                    "description": fld.description,
+                    "formula": fld.calc_spec.formula if isinstance(fld.calc_spec, FormulaCalculationSpec) else "",
+                    "aggregation": fld.aggregation,
+                }
+                if include_details
+                else {}
+            ),
         }
         for fld in dataset.result_schema
         if fld.managed_by == ManagedBy.user
     ]
 
 
-def get_fields_data_serializable(dataset: Dataset, for_result: bool = False) -> list[dict[str, TJSONLike]]:
-    fields = get_fields_data_raw(dataset, for_result=for_result)
-    return DatasetFieldsResponseSchema().dump(dict(fields=fields))["fields"]
+def get_fields_data_serializable(
+    dataset: Dataset,
+    for_result: bool = False,
+    include_details: bool = False,
+) -> list[dict[str, TJSONLike]]:
+    fields = get_fields_data_raw(dataset, for_result=for_result, include_details=include_details)
+    return DatasetFieldsResponseSchema().dump({"fields": fields})["fields"]
 
 
 class PivotDataRequestResponseSerializer(DataRequestResponseSerializerV2Mixin):
@@ -197,7 +205,7 @@ class PivotDataRequestResponseSerializer(DataRequestResponseSerializerV2Mixin):
         data_export_info: DataExportInfo,
         merged_stream: MergedQueryDataStream,
         pivot_table: PivotTable,
-        reporting_registry: Optional[ReportingRegistry] = None,
+        reporting_registry: ReportingRegistry | None = None,
     ) -> dict:
         legend_data = LegendSchema().dump(merged_stream.legend)
         pivot_spec_data = {
@@ -206,7 +214,7 @@ class PivotDataRequestResponseSerializer(DataRequestResponseSerializerV2Mixin):
         # TODO: Dump pivot_table.pivot_legend
         block_meta_list = cls.make_data_response_v2_block_meta(merged_stream=merged_stream)
 
-        def _serialize_cell_vector(value_vector: Optional[DataCellVector]) -> Optional[list[list[Any]]]:
+        def _serialize_cell_vector(value_vector: DataCellVector | None) -> list[list[Any]] | None:
             if value_vector is None:
                 return None
 

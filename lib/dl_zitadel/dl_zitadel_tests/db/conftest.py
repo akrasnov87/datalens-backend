@@ -7,19 +7,19 @@ import pytest
 
 import dl_zitadel
 
+LOGGER = logging.getLogger(__name__)
+
 
 @pytest.fixture(name="zitadel_secrets_folder")
 def fixture_zitadel_secrets_folder() -> str:
     current_file_path = os.path.abspath(__file__)
     current_dir_path = os.path.dirname(current_file_path)
-    secrets_dir_path = os.path.join(current_dir_path, "../../docker-compose/zitadel/secrets")
-
-    return secrets_dir_path
+    return os.path.join(current_dir_path, "../../docker-compose/zitadel/secrets")
 
 
 def wait_for_path(path: str) -> None:
     while not os.path.exists(path):
-        logging.warning(f"Waiting for {path} to exist")
+        LOGGER.warning("Waiting for %s to exist", path)
         time.sleep(1)
 
 

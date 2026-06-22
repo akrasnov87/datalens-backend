@@ -18,7 +18,6 @@ from dl_formula.shortcuts import n
 from dl_connector_postgresql.formula.constants import PostgreSQLDialect as D
 from dl_connector_postgresql.formula.definitions.common import PG_INT_64_TO_CHAR_FMT
 
-
 V = TranslationVariant.make
 
 
@@ -63,25 +62,23 @@ def _array_index_of(array: ClauseElement, value: ClauseElement) -> ClauseElement
 def _array_contains(array: ClauseElement, value: ClauseElement) -> ClauseElement:
     if isinstance(value, Null):
         return array != sa.func.array_remove(array, None)
-    elif is_literal(value):
+    if is_literal(value):
         return value == sa.func.ANY(array)
-    else:
-        return n.func.IF(
-            n.func.ISNULL(value.self_group()), array != sa.func.array_remove(array, None), value == sa.func.ANY(array)
-        )
+    return n.func.IF(
+        n.func.ISNULL(value.self_group()), array != sa.func.array_remove(array, None), value == sa.func.ANY(array)
+    )
 
 
 def _array_notcontains(array: ClauseElement, value: ClauseElement) -> ClauseElement:
     if isinstance(value, Null):
         return array == sa.func.array_remove(array, None)
-    elif is_literal(value):
+    if is_literal(value):
         return value != sa.func.ALL(sa.func.array_remove(array, None))
-    else:
-        return n.func.IF(
-            n.func.ISNULL(value.self_group()),
-            array == sa.func.array_remove(array, None),
-            value != sa.func.ALL(sa.func.array_remove(array, None)),
-        )
+    return n.func.IF(
+        n.func.ISNULL(value.self_group()),
+        array == sa.func.array_remove(array, None),
+        value != sa.func.ALL(sa.func.array_remove(array, None)),
+    )
 
 
 DEFINITIONS_ARRAY = [
@@ -354,7 +351,7 @@ DEFINITIONS_ARRAY = [
             V(
                 D.POSTGRESQL,
                 lambda array, offset, length: Grouping(sa.type_coerce(array, sa_postgresql.ARRAY(TypeEngine)))[  # type: ignore  # 2024-01-24 # TODO: Argument 2 has incompatible type "Callable[[Any, Any, Any], ColumnOperators[Any]]"; expected "Callable[..., ClauseElement | FormulaItem]"  [arg-type]
-                    offset : offset + length - 1
+                    offset : offset + length - 1  # type: ignore[index]  # 26.05.2026 mypy bump 1.20.2
                 ],
             ),
         ]
@@ -373,8 +370,8 @@ DEFINITIONS_ARRAY = [
         variants=[
             V(
                 D.POSTGRESQL,
-                lambda x, y, _env: Grouping(sa.type_coerce(x, sa_postgresql.ARRAY(TypeEngine)))[  # type: ignore  # 2024-01-24 # TODO: Invalid index type "slice" for "Grouping"; expected type "int"  [index]
-                    1 : sa.func.array_length(y, 1)
+                lambda x, y, _env: Grouping(sa.type_coerce(x, sa_postgresql.ARRAY(TypeEngine)))[
+                    1 : sa.func.array_length(y, 1)  # type: ignore[index]  # 26.05.2026 mypy bump 1.20.2
                 ]
                 == y,
             ),

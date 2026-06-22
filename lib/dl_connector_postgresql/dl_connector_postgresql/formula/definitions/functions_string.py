@@ -15,7 +15,6 @@ from dl_formula.shortcuts import n
 
 from dl_connector_postgresql.formula.constants import PostgreSQLDialect as D
 
-
 V = TranslationVariant.make
 VW = TranslationVariantWrapped.make
 
@@ -27,7 +26,7 @@ class RegexpMatchesInBrackets(sqlalchemy.sql.functions.GenericFunction):
 @compiles(RegexpMatchesInBrackets)
 def compile_regexp_matches_in_brackets(element: Any, compiler: sa.sql.compiler.SQLCompiler, **kw: Any) -> str:
     # Need this to perform get_item (array[i]) after
-    return "(REGEXP_MATCHES(%s))" % compiler.process(element.clauses, **kw)
+    return f"(REGEXP_MATCHES({compiler.process(element.clauses, **kw)}))"
 
 
 def regexp_matches_in_brackets(text: str, pattern: str) -> sa.sql.expression.TypeCoerce:
@@ -57,7 +56,7 @@ DEFINITIONS_STRING = [
         ]
     ),
     # concat
-    base.Concat1.for_dialect((D.POSTGRESQL)),
+    base.Concat1.for_dialect(D.POSTGRESQL),
     base.ConcatMultiStrConst.for_dialect(D.POSTGRESQL),
     base.ConcatMultiStr(
         variants=[

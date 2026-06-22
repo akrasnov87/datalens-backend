@@ -1,14 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 import datetime
-from typing import (
-    Iterable,
-    Optional,
-)
 
 import antlr4
 from antlr4.Token import Token
 from antlr4.tree.Tree import TerminalNodeImpl
+from frozendict import frozendict
 
 import dl_formula.core.exc as exc
 import dl_formula.core.nodes as nodes
@@ -18,7 +16,6 @@ from dl_formula.core.position import (
 )
 from dl_formula.parser.base import resolve_function_capabilities
 from dl_formula.utils.datetime import make_datetime_value
-
 
 try:
     from dl_formula.parser.antlr.gen.DataLensParser import DataLensParser
@@ -33,13 +30,13 @@ COMPARISON_OP_RAW_NAMES = ("=", "!=", "<>", ">", ">=", "<", "<=")
 
 
 class CustomDataLensVisitor(DataLensVisitor):
-    _BOOL = {"true": True, "false": False}
+    _BOOL = frozendict({"true": True, "false": False})
 
-    def __init__(self, text: str):
+    def __init__(self, text: str) -> None:
         self._text = text
         self._pos_conv = PositionConverter(text=text)
 
-    def _make_node_meta(self, *ctxes: antlr4.ParserRuleContext) -> Optional[nodes.NodeMeta]:
+    def _make_node_meta(self, *ctxes: antlr4.ParserRuleContext) -> nodes.NodeMeta | None:
         first_ctx = ctxes[0]
         last_ctx = ctxes[-1]
         return nodes.NodeMeta(
@@ -47,7 +44,7 @@ class CustomDataLensVisitor(DataLensVisitor):
             original_text=self._text[first_ctx.start.start : last_ctx.stop.stop + 1],
         )
 
-    def _make_position(self, *ctxes: antlr4.ParserRuleContext) -> Optional[Position]:
+    def _make_position(self, *ctxes: antlr4.ParserRuleContext) -> Position | None:
         first_ctx = ctxes[0]
         last_ctx = ctxes[-1]
         return self._pos_conv.merge_positions(
@@ -75,30 +72,30 @@ class CustomDataLensVisitor(DataLensVisitor):
 
         return str_children, node_children
 
-    def visitIntegerLiteral(self, ctx: DataLensParser.IntegerLiteralContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitIntegerLiteral(self, ctx: DataLensParser.IntegerLiteralContext) -> nodes.FormulaItem:  # noqa: N802
         return nodes.LiteralInteger.make(value=int(str(ctx.children[0])), meta=self._make_node_meta(ctx))
 
-    def visitFloatLiteral(self, ctx: DataLensParser.FloatLiteralContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitFloatLiteral(self, ctx: DataLensParser.FloatLiteralContext) -> nodes.FormulaItem:  # noqa: N802
         return nodes.LiteralFloat.make(value=float(str(ctx.children[0])), meta=self._make_node_meta(ctx))
 
-    def visitStringLiteral(self, ctx: DataLensParser.StringLiteralContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitStringLiteral(self, ctx: DataLensParser.StringLiteralContext) -> nodes.FormulaItem:  # noqa: N802
         s = str(ctx.children[0])[1:-1]  # strip off the quotes
         s = s.replace("\\'", "'").replace('\\"', '"')
         s = s.replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t")
         s = s.replace("\\\\", "\\")
         return nodes.LiteralString.make(value=s, meta=self._make_node_meta(ctx))
 
-    def visitDateLiteral(self, ctx: DataLensParser.DateLiteralContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitDateLiteral(self, ctx: DataLensParser.DateLiteralContext) -> nodes.FormulaItem:  # noqa: N802
         date_str = str(ctx.children[1])
         try:
-            value = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+            value = datetime.date.fromisoformat(date_str)
         except ValueError as e:
             raise exc.ParseDateValueError(
                 f"Invalid date value: {date_str}", token=date_str, position=self._make_position(ctx)
             ) from e
         return nodes.LiteralDate.make(value=value, meta=self._make_node_meta(ctx))
 
-    def visitDatetimeLiteral(self, ctx: DataLensParser.DatetimeLiteralContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitDatetimeLiteral(self, ctx: DataLensParser.DatetimeLiteralContext) -> nodes.FormulaItem:  # noqa: N802
         date_str = str(ctx.children[1])
         try:
             value = make_datetime_value(date_str)
@@ -110,17 +107,19 @@ class CustomDataLensVisitor(DataLensVisitor):
         node_cls = nodes.LiteralGenericDatetime
         return node_cls.make(value=value, meta=self._make_node_meta(ctx))
 
-    def visitGenericDateLiteral(self, ctx: DataLensParser.GenericDateLiteralContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitGenericDateLiteral(self, ctx: DataLensParser.GenericDateLiteralContext) -> nodes.FormulaItem:  # noqa: N802
         date_str = str(ctx.children[1])
         try:
-            value = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+            value = datetime.date.fromisoformat(date_str)
         except ValueError as e:
             raise exc.ParseDateValueError(
                 f"Invalid date value: {date_str}", token=date_str, position=self._make_position(ctx)
             ) from e
         return nodes.LiteralDate.make(value=value, meta=self._make_node_meta(ctx))
 
-    def visitGenericDatetimeLiteral(self, ctx: DataLensParser.GenericDatetimeLiteralContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitGenericDatetimeLiteral(  # noqa: N802
+        self, ctx: DataLensParser.GenericDatetimeLiteralContext
+    ) -> nodes.FormulaItem:
         date_str = str(ctx.children[1])
         try:
             value = make_datetime_value(date_str)
@@ -132,16 +131,16 @@ class CustomDataLensVisitor(DataLensVisitor):
         node_cls = nodes.LiteralGenericDatetime
         return node_cls.make(value=value, meta=self._make_node_meta(ctx))
 
-    def visitBoolLiteral(self, ctx: DataLensParser.BoolLiteralContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitBoolLiteral(self, ctx: DataLensParser.BoolLiteralContext) -> nodes.FormulaItem:  # noqa: N802
         return nodes.LiteralBoolean.make(value=self._BOOL[str(ctx.children[0]).lower()], meta=self._make_node_meta(ctx))
 
-    def visitNullLiteral(self, ctx: DataLensParser.NullLiteralContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitNullLiteral(self, ctx: DataLensParser.NullLiteralContext) -> nodes.FormulaItem:  # noqa: N802
         return nodes.Null(meta=self._make_node_meta(ctx))
 
-    def visitFieldName(self, ctx: DataLensParser.FieldNameContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitFieldName(self, ctx: DataLensParser.FieldNameContext) -> nodes.FormulaItem:  # noqa: N802
         return nodes.Field.make(name=str(ctx.children[0])[1:-1], meta=self._make_node_meta(ctx))
 
-    def visitOrderingItem(self, ctx: DataLensParser.OrderingItemContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitOrderingItem(self, ctx: DataLensParser.OrderingItemContext) -> nodes.FormulaItem:  # noqa: N802
         str_children, node_children = self._separate_children(ctx)
         expr = node_children[0]
 
@@ -156,11 +155,11 @@ class CustomDataLensVisitor(DataLensVisitor):
 
         return expr
 
-    def visitOrdering(self, ctx: DataLensParser.OrderingContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitOrdering(self, ctx: DataLensParser.OrderingContext) -> nodes.FormulaItem:  # noqa: N802
         _, node_children = self._separate_children(ctx)
         return nodes.Ordering.make(expr_list=node_children, meta=self._make_node_meta(ctx))
 
-    def visitLodSpecifier(self, ctx: DataLensParser.LodSpecifierContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitLodSpecifier(self, ctx: DataLensParser.LodSpecifierContext) -> nodes.FormulaItem:  # noqa: N802
         str_nodes, node_children = self._separate_children(ctx)
         kind = str_nodes[0].lower()
 
@@ -172,7 +171,7 @@ class CustomDataLensVisitor(DataLensVisitor):
 
         return lod_cls.make(dim_list=node_children, meta=self._make_node_meta(ctx))
 
-    def visitWinGrouping(self, ctx: DataLensParser.WinGroupingContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitWinGrouping(self, ctx: DataLensParser.WinGroupingContext) -> nodes.FormulaItem:  # noqa: N802
         str_nodes, node_children = self._separate_children(ctx)
         kind = str_nodes[0].lower()
 
@@ -186,7 +185,7 @@ class CustomDataLensVisitor(DataLensVisitor):
 
         return grouping_cls.make(dim_list=node_children, meta=self._make_node_meta(ctx))
 
-    def visitBeforeFilterBy(self, ctx: DataLensParser.BeforeFilterByContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitBeforeFilterBy(self, ctx: DataLensParser.BeforeFilterByContext) -> nodes.FormulaItem:  # noqa: N802
         _, node_children = self._separate_children(ctx)
         field_names: list[str] = []
         for field in node_children:
@@ -194,11 +193,11 @@ class CustomDataLensVisitor(DataLensVisitor):
             field_names.append(field.name)
         return nodes.BeforeFilterBy.make(field_names=frozenset(field_names), meta=self._make_node_meta(ctx))
 
-    def visitIgnoreDimensions(self, ctx: DataLensParser.IgnoreDimensionsContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitIgnoreDimensions(self, ctx: DataLensParser.IgnoreDimensionsContext) -> nodes.FormulaItem:  # noqa: N802
         _, node_children = self._separate_children(ctx)
         return nodes.IgnoreDimensions.make(dim_list=node_children, meta=self._make_node_meta(ctx))
 
-    def visitFunction(self, ctx: DataLensParser.FunctionContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitFunction(self, ctx: DataLensParser.FunctionContext) -> nodes.FormulaItem:  # noqa: N802
         str_nodes, node_children = self._separate_children(ctx)
         name = str_nodes[0].lower()
 
@@ -253,24 +252,24 @@ class CustomDataLensVisitor(DataLensVisitor):
             meta=self._make_node_meta(ctx),
         )
 
-    def visitElsePart(self, ctx: DataLensParser.ElsePartContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitElsePart(self, ctx: DataLensParser.ElsePartContext) -> nodes.FormulaItem:  # noqa: N802
         return self.visit(ctx.children[1])
 
-    def visitIfPart(self, ctx: DataLensParser.IfPartContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitIfPart(self, ctx: DataLensParser.IfPartContext) -> nodes.FormulaItem:  # noqa: N802
         return nodes.IfPart.make(
             cond=self.visit(ctx.children[1]),
             expr=self.visit(ctx.children[3]),
             meta=self._make_node_meta(ctx),
         )
 
-    def visitElseifPart(self, ctx: DataLensParser.ElseifPartContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitElseifPart(self, ctx: DataLensParser.ElseifPartContext) -> nodes.FormulaItem:  # noqa: N802
         return nodes.IfPart.make(
             cond=self.visit(ctx.children[1]),
             expr=self.visit(ctx.children[3]),
             meta=self._make_node_meta(ctx),
         )
 
-    def visitIfBlock(self, ctx: DataLensParser.IfBlockContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitIfBlock(self, ctx: DataLensParser.IfBlockContext) -> nodes.FormulaItem:  # noqa: N802
         # args: [*if_parts, ?else_part, "END"]
         assert len(ctx.children) >= 2
 
@@ -292,16 +291,16 @@ class CustomDataLensVisitor(DataLensVisitor):
             meta=self._make_node_meta(ctx),
         )
 
-    def visitWhenPart(self, ctx: DataLensParser.WhenPartContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitWhenPart(self, ctx: DataLensParser.WhenPartContext) -> nodes.FormulaItem:  # noqa: N802
         # args: ["WHEN", val, "THEN", expr]
         assert len(ctx.children) == 4
         return nodes.WhenPart.make(
             val=self.visit(ctx.children[1]),
-            expr=self.visit(ctx.children[3]) if len(ctx.children) > 2 else None,
+            expr=self.visit(ctx.children[3]) if len(ctx.children) > 2 else None,  # type: ignore[arg-type]  # 26.05.2026 mypy bump 1.20.2
             meta=self._make_node_meta(ctx),
         )
 
-    def visitCaseBlock(self, ctx: DataLensParser.CaseBlockContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitCaseBlock(self, ctx: DataLensParser.CaseBlockContext) -> nodes.FormulaItem:  # noqa: N802
         # args: ["CASE", case_expr, *when_parts, ?else_expr, "END"]
         assert len(ctx.children) >= 4
 
@@ -325,13 +324,13 @@ class CustomDataLensVisitor(DataLensVisitor):
             meta=self._make_node_meta(ctx),
         )
 
-    def visitParenthesizedExpr(self, ctx: DataLensParser.ParenthesizedExprContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitParenthesizedExpr(self, ctx: DataLensParser.ParenthesizedExprContext) -> nodes.FormulaItem:  # noqa: N802
         return nodes.ParenthesizedExpr.make(
             expr=self.visit(ctx.children[1]),
             meta=self._make_node_meta(ctx),
         )
 
-    def visitUnaryPrefix(self, ctx: DataLensParser.UnaryPrefixContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitUnaryPrefix(self, ctx: DataLensParser.UnaryPrefixContext) -> nodes.FormulaItem:  # noqa: N802
         str_children, node_children = self._separate_children(ctx, lower_str=True)
         op_name = "".join(str_children)
         expr = node_children[0]
@@ -344,7 +343,7 @@ class CustomDataLensVisitor(DataLensVisitor):
             op_name = "neg"  # to tell apart from minus
         return nodes.Unary.make(name=op_name, expr=expr, meta=self._make_node_meta(ctx))
 
-    def visitBinaryExpr(self, ctx: DataLensParser.BinaryExprContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitBinaryExpr(self, ctx: DataLensParser.BinaryExprContext) -> nodes.FormulaItem:  # noqa: N802
         str_children, node_children = self._separate_children(ctx)
         op_name = "".join(str_children).lower()
         return nodes.Binary.make(
@@ -354,14 +353,14 @@ class CustomDataLensVisitor(DataLensVisitor):
             meta=self._make_node_meta(ctx),
         )
 
-    def visitBinaryExprSec(self, ctx: DataLensParser.BinaryExprContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitBinaryExprSec(self, ctx: DataLensParser.BinaryExprContext) -> nodes.FormulaItem:  # noqa: N802
         return self.visitBinaryExpr(ctx)
 
-    def visitInExpr(self, ctx: DataLensParser.InExprContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitInExpr(self, ctx: DataLensParser.InExprContext) -> nodes.FormulaItem:  # noqa: N802
         str_children, node_children = self._separate_children(ctx, exclude=",()")
         raw_exlist_nodes = [child for child in ctx.children if not isinstance(child, TerminalNodeImpl)][1:]
         op_name = "".join(str_children).lower()
-        child_meta: Optional[nodes.NodeMeta] = None
+        child_meta: nodes.NodeMeta | None = None
         if raw_exlist_nodes:
             child_meta = self._make_node_meta(*raw_exlist_nodes)
         return nodes.Binary.make(
@@ -371,10 +370,10 @@ class CustomDataLensVisitor(DataLensVisitor):
             meta=self._make_node_meta(ctx),
         )
 
-    def visitComparisonChain(self, ctx: DataLensParser.ComparisonChainContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitComparisonChain(self, ctx: DataLensParser.ComparisonChainContext) -> nodes.FormulaItem:  # noqa: N802
         # First flatten comparison binary calls that get nested by the parser
 
-        def is_cmp(_ctx) -> bool:  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+        def is_cmp(_ctx: antlr4.ParserRuleContext) -> bool:
             return (
                 len(_ctx.children) == 3
                 and isinstance(_ctx.children[1], TerminalNodeImpl)
@@ -399,7 +398,7 @@ class CustomDataLensVisitor(DataLensVisitor):
             middle_list = [
                 [middle_list[i], middle_list[i + 1]] for i in range(0, len(middle_list), 2)
             ]  # repartition list into <operator, operand> pairs
-            parts = middle_list + [(last_op, right)]
+            parts = [*middle_list, (last_op, right)]
         elif len(args) == 3:
             left, last_op, right = args
             parts = [(last_op, right)]
@@ -434,7 +433,7 @@ class CustomDataLensVisitor(DataLensVisitor):
         assert latest_pair is not None, "At least two operands are required in comparison chain"
         return latest_pair
 
-    def visitUnaryPostfix(self, ctx: DataLensParser.UnaryPostfixContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitUnaryPostfix(self, ctx: DataLensParser.UnaryPostfixContext) -> nodes.FormulaItem:  # noqa: N802
         str_children, node_children = self._separate_children(ctx, lower_str=True)
         op_name = "".join([ch for ch in str_children if ch != "not"])
         expr = nodes.Unary.make(name=op_name, expr=node_children[0], meta=self._make_node_meta(ctx))
@@ -442,7 +441,7 @@ class CustomDataLensVisitor(DataLensVisitor):
             expr = nodes.Unary.make(name="not", expr=expr, meta=self._make_node_meta(ctx))
         return expr
 
-    def visitBetweenExpr(self, ctx: DataLensParser.BetweenExprContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitBetweenExpr(self, ctx: DataLensParser.BetweenExprContext) -> nodes.FormulaItem:  # noqa: N802
         str_children, node_children = self._separate_children(ctx, lower_str=True, exclude=("and",))
         op_name = "".join(str_children)
         return nodes.Ternary.make(
@@ -453,7 +452,7 @@ class CustomDataLensVisitor(DataLensVisitor):
             meta=self._make_node_meta(ctx),
         )
 
-    def visitParse(self, ctx: DataLensParser.ParseContext):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+    def visitParse(self, ctx: DataLensParser.ParseContext) -> nodes.Formula:  # noqa: N802
         if (
             len(ctx.children) > 0
             and isinstance(ctx.children[0], TerminalNodeImpl)

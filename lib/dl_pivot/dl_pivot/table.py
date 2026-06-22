@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Generator,
+    Hashable,
+)
 from typing import (
     TYPE_CHECKING,
     Any,
-    Generator,
-    Hashable,
 )
 
 import attr
@@ -15,7 +17,6 @@ from dl_pivot.primitives import (
     MeasureNameValue,
 )
 from dl_query_processing.postprocessing.primitives import PostprocessedValue
-
 
 if TYPE_CHECKING:
     from dl_pivot.base.facade import TableDataFacade
@@ -41,10 +42,10 @@ class PivotTable:
         return self._facade
 
     def get_columns(self) -> list[PivotHeader]:
-        return [header for header in self.facade.iter_column_headers()]
+        return list(self.facade.iter_column_headers())
 
     def get_row_dim_headers(self) -> list[DataCellVector]:
-        return [header for header in self.facade.iter_row_dim_headers()]
+        return list(self.facade.iter_row_dim_headers())
 
     def get_rows(self) -> Generator[DataRow, None, None]:
         for header, values in self.facade.iter_rows():

@@ -1,9 +1,6 @@
+from collections.abc import Sequence
 import re
-from typing import (
-    Any,
-    Optional,
-    Sequence,
-)
+from typing import Any
 
 import sqlalchemy as sa
 
@@ -33,13 +30,13 @@ class OracleEngineWrapper(EngineWrapperBase):
         match = re.search(
             r"HOST=(?P<host>[^)]+)\).*PORT=(?P<port>\d+)\).*(SERVICE_NAME|SID)=(?P<db_name>[^)]+)\)", oracle_dsn
         )
-        return dict(
-            host=match.group("host"),  # type: ignore  # TODO: fix
-            port=int(match.group("port")),  # type: ignore  # TODO: fix
-            username=username,
-            password=password,
-            db_name=match.group("db_name"),  # type: ignore  # TODO: fix
-        )
+        return {
+            "host": match.group("host"),  # type: ignore  # TODO: fix
+            "port": int(match.group("port")),  # type: ignore  # TODO: fix
+            "username": username,
+            "password": password,
+            "db_name": match.group("db_name"),  # type: ignore  # TODO: fix
+        }
 
     def insert_into_table(self, table: sa.Table, data: Sequence[dict]) -> None:
         # Multi-row insert doesn't work correctly
@@ -50,5 +47,5 @@ class OracleEngineWrapper(EngineWrapperBase):
         self.execute(f"CREATE USER {self.quote(schema_name)} IDENTIFIED BY qwerty")
         self.execute(f"GRANT ALL PRIVILEGES TO {self.quote(schema_name)}")
 
-    def get_version(self) -> Optional[str]:
+    def get_version(self) -> str | None:
         return self.execute("SELECT * FROM V$VERSION").scalar()

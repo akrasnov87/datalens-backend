@@ -1,5 +1,5 @@
 import asyncio
-from typing import Generator
+from collections.abc import Generator
 
 import pytest
 
@@ -34,7 +34,7 @@ class BaseMSSQLTestClass(BaseConnectionTestClass[ConnectionMSSQL]):
     def db_url(self) -> str:
         return test_config.DB_CORE_URL
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def connection_creation_params(self) -> dict:
         return dict(
             db_name=test_config.CoreConnectionSettings.DB_NAME,
@@ -42,5 +42,5 @@ class BaseMSSQLTestClass(BaseConnectionTestClass[ConnectionMSSQL]):
             port=test_config.CoreConnectionSettings.PORT,
             username=test_config.CoreConnectionSettings.USERNAME,
             password=test_config.CoreConnectionSettings.PASSWORD,
-            **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level} if self.raw_sql_level is not None else {}),
         )

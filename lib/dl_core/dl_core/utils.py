@@ -1,12 +1,8 @@
+from collections.abc import Iterable
 import ipaddress
 import logging
 import re
-from typing import (
-    Any,
-    Generic,
-    Iterable,
-    TypeVar,
-)
+from typing import Any
 from urllib.parse import urlparse
 import uuid
 
@@ -28,7 +24,6 @@ import sqlalchemy as sa
 import dl_api_commons
 import dl_auth
 import dl_constants
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -86,7 +81,7 @@ def make_user_auth_cookies(
 
 def parse_comma_separated_hosts(host: str | None) -> tuple[str, ...]:
     if not host:
-        return tuple()
+        return ()
     return tuple(h.strip() for h in host.split(","))
 
 
@@ -116,7 +111,7 @@ def validate_hostname_or_ip_address(hostname: str) -> None:
         raise ValueError("Not a valid domain name")
 
     # Ensure valid netloc (from previous hostname validation mechanism)
-    parsed_url = urlparse("//{}".format(hostname))
+    parsed_url = urlparse(f"//{hostname}")
     if parsed_url.netloc != hostname:
         raise ValueError("Not a valid netloc")
 
@@ -125,26 +120,23 @@ def shorten_uuid(some_uuid: str) -> str:
     return shortuuid.encode(uuid.UUID(some_uuid))
 
 
-_FUTURE_REF_TV = TypeVar("_FUTURE_REF_TV")
-
-
 @attr.s(eq=False, hash=False, order=False)
-class FutureRef(Generic[_FUTURE_REF_TV]):
-    __ref: _FUTURE_REF_TV | None = attr.ib(init=False, default=None)
+class FutureRef[FUTURE_REF_TV]:
+    __ref: FUTURE_REF_TV | None = attr.ib(init=False, default=None)
 
     @property
-    def ref(self) -> "_FUTURE_REF_TV":
+    def ref(self) -> FUTURE_REF_TV:
         if self.__ref is None:
             raise ValueError("FutureRef was not fulfilled")
         return self.__ref
 
-    def fulfill(self, obj: _FUTURE_REF_TV) -> None:
+    def fulfill(self, obj: FUTURE_REF_TV) -> None:
         if self.__ref is not None:
             raise ValueError("FutureRef already fulfilled")
         self.__ref = obj
 
     @classmethod
-    def fulfilled(cls, obj: _FUTURE_REF_TV) -> "FutureRef[_FUTURE_REF_TV]":
+    def fulfilled(cls, obj: FUTURE_REF_TV) -> "FutureRef[FUTURE_REF_TV]":
         fr = cls()
         fr.fulfill(obj)
         return fr
@@ -154,10 +146,11 @@ def make_id() -> str:
     return shortuuid.uuid()
 
 
-_MODEL_TYPE_TV = TypeVar("_MODEL_TYPE_TV", bound=attr.AttrsInstance)
-
-
-def attrs_evolve_to_subclass(cls: type[_MODEL_TYPE_TV], inst: Any, **kwargs) -> _MODEL_TYPE_TV:  # type: ignore  # TODO: fix
+def attrs_evolve_to_subclass[MODEL_TYPE_TV: attr.AttrsInstance](
+    cls: type[MODEL_TYPE_TV],
+    inst: Any,
+    **kwargs: Any,
+) -> MODEL_TYPE_TV:
     """
     Evolve an attr.s instance to a subclass instance with additional attributes.
     Note that this works correctly only for attributes with ``init=True``.
@@ -167,15 +160,18 @@ def attrs_evolve_to_subclass(cls: type[_MODEL_TYPE_TV], inst: Any, **kwargs) -> 
     if super_cls is cls:
         if kwargs:
             return attr.evolve(inst, **kwargs)
-        else:
-            return inst
+        return inst
     assert issubclass(cls, super_cls), f"Expected subclass of {super_cls.__name__}, got {cls.__name__}"
     all_attrs = {f.name: getattr(inst, f.name.lstrip("_")) for f in attr.fields(super_cls) if f.init}
     all_attrs.update(kwargs)
     return cls(**all_attrs)
 
 
-def attrs_evolve_to_superclass(cls: type[_MODEL_TYPE_TV], inst: Any, **kwargs) -> _MODEL_TYPE_TV:  # type: ignore  # TODO: fix
+def attrs_evolve_to_superclass[MODEL_TYPE_TV: attr.AttrsInstance](
+    cls: type[MODEL_TYPE_TV],
+    inst: Any,
+    **kwargs: Any,
+) -> MODEL_TYPE_TV:
     """
     Evolve an attr.s instance to a superclass instance with additional attributes.
     Note that this works correctly only for attributes with ``init=True``.
@@ -185,8 +181,7 @@ def attrs_evolve_to_superclass(cls: type[_MODEL_TYPE_TV], inst: Any, **kwargs) -
     if sub_cls is cls:
         if kwargs:
             return attr.evolve(inst, **kwargs)
-        else:
-            return inst
+        return inst
     assert issubclass(sub_cls, cls), f"Expected superclass of {sub_cls.__name__}, got {cls.__name__}"
     all_attrs = {f.name: getattr(inst, f.name.lstrip("_")) for f in attr.fields(cls) if f.init}
     all_attrs.update(kwargs)
@@ -245,7 +240,7 @@ def secrepr(value: str | None) -> str:
     if not value:
         return repr(value)
     if not isinstance(value, str):
-        # Really shouldn't raise in a `repr`
+        LOGGER.warning("secrepr_db_url received a non-str value of type %r", type(value))
         return f"???{type(value)!r}???"
 
     side_size = SECREPR_SIDE_SIZE  # not a kwarg just to keep mypy happier
@@ -258,6 +253,31 @@ def secrepr_dict(d: dict[str, str | None]) -> str:
     if not d:
         return repr(d)
     return repr({key: secrepr(value) for key, value in d.items()})
+
+
+SECREPR_DB_URL_USER_MASK = "{user}"
+SECREPR_DB_URL_PASSWORD_MASK = "{password}"
+
+SECREPR_DB_URL_CREDENTIALS_RE = re.compile(r"(?<=://)[^:@/?#\s]+(:[^@/?#\s]*)?(?=@)")
+
+
+def _secrepr_db_url_mask(match: re.Match[str]) -> str:
+    if match.group(1) is None:  # no password
+        return SECREPR_DB_URL_USER_MASK
+    return f"{SECREPR_DB_URL_USER_MASK}:{SECREPR_DB_URL_PASSWORD_MASK}"
+
+
+def secrepr_db_url(value: str | None) -> str:  # TODO: add regex to obfuscator after BI-7483
+    """
+    ``postgresql://user:pass@host:5432/db`` -> ``'postgresql://{user}:{password}@host:5432/db'``
+    """
+    if not value:
+        return repr(value)
+    if not isinstance(value, str):
+        LOGGER.warning("secrepr_db_url received a non-str value of type %r", type(value))
+        return f"???{type(value)!r}???"
+
+    return repr(SECREPR_DB_URL_CREDENTIALS_RE.sub(_secrepr_db_url_mask, value))
 
 
 def _multidict_to_list(md: CIMultiDictProxy[str]) -> Iterable[tuple[str, str]]:

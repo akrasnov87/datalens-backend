@@ -6,7 +6,6 @@ import logging
 import dl_formula.core.nodes as nodes
 from dl_formula.mutation.mutation import FormulaMutation
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -44,7 +43,7 @@ class ConvertBlocksToFunctionsMutation(FormulaMutation):
         node: nodes.FormulaItem,
         parent_stack: tuple[nodes.FormulaItem, ...],
     ) -> bool:
-        return isinstance(node, nodes.IfBlock) or isinstance(node, nodes.CaseBlock)
+        return isinstance(node, (nodes.IfBlock, nodes.CaseBlock))
 
     def _make_replacement_for_if_block(self, node: nodes.IfBlock) -> nodes.FuncCall:
         args: list[nodes.FormulaItem] = [
@@ -69,7 +68,7 @@ class ConvertBlocksToFunctionsMutation(FormulaMutation):
     ) -> nodes.FormulaItem:
         if isinstance(old, nodes.IfBlock):
             return self._make_replacement_for_if_block(old)
-        elif isinstance(old, nodes.CaseBlock):
+        if isinstance(old, nodes.CaseBlock):
             return self._make_replacement_for_case_block(old)
 
         raise TypeError(type(old))

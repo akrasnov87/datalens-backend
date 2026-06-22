@@ -1,3 +1,5 @@
+from typing import Any
+
 import sqlalchemy as sa
 from sqlalchemy.dialects.mysql.base import (
     MySQLDDLCompiler,
@@ -8,10 +10,10 @@ from dl_sqlalchemy_mysql.base import DLMYSQLDialect
 
 
 class StarRocksTypeCompiler(MySQLTypeCompiler):
-    def visit_DATETIME(self, type_, **kw):
+    def visit_DATETIME(self, type_, **kw: Any):  # noqa: N802
         return "DATETIME"
 
-    def visit_BOOLEAN(self, type_, **kw):
+    def visit_BOOLEAN(self, type_, **kw: Any):  # noqa: N802
         return "BOOLEAN"
 
 
@@ -23,7 +25,7 @@ class StarRocksDDLCompiler(MySQLDDLCompiler):
             raise sa.exc.CompileError(
                 "StarRocksDDLCompiler.post_create_table() "
                 "cannot generate DUPLICATE KEY clause for a table with no columns"
-            )
+            ) from None
         quoted_col_name = self.preparer.format_column(first_col)
         return f"\nDUPLICATE KEY({quoted_col_name})"
 

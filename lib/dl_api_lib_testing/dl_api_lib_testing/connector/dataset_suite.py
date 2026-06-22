@@ -1,5 +1,4 @@
 import abc
-from typing import Optional
 import uuid
 
 import pytest
@@ -96,7 +95,7 @@ class DefaultConnectorDatasetTestSuite(DatasetTestBase, RegulatedTestCase, metac
         saved_connection_id: str,
         control_api_sync_client: SyncHttpClientBase,
         enriched_connection_params: dict,
-        bi_headers: Optional[dict[str, str]],
+        bi_headers: dict[str, str] | None,
         control_api: SyncHttpDatasetApiV1,
     ) -> None:
         with self.create_connection(
@@ -116,7 +115,7 @@ class DefaultConnectorDatasetTestSuite(DatasetTestBase, RegulatedTestCase, metac
             assert dataset.sources
             assert all(source.connection_id == new_connection_id for source in dataset.sources)
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def export_import_headers(self, control_api_app_settings: ControlApiAppSettings) -> dict[str, str]:
         assert control_api_app_settings.US_MASTER_TOKEN is not None
         return {
@@ -129,11 +128,11 @@ class DefaultConnectorDatasetTestSuite(DatasetTestBase, RegulatedTestCase, metac
         saved_dataset: Dataset,
         export_import_headers: dict[str, str],
     ) -> None:
-        export_data: dict = dict()
+        export_data: dict = {}
         export_resp = control_api.export_dataset(dataset=saved_dataset, data=export_data, headers=export_import_headers)
         assert export_resp.status_code == 400, export_resp.json
 
-        import_data: dict = dict()
+        import_data: dict = {}
         import_resp = control_api.import_dataset(data=import_data, headers=export_import_headers)
         assert import_resp.status_code == 400, import_resp.json
 
@@ -211,7 +210,7 @@ class DefaultConnectorDatasetTestSuite(DatasetTestBase, RegulatedTestCase, metac
         assert import_resp.json["notifications"][0]["code"] == "ERR.DS_API.WB_IMPORT.DS", import_resp.json
         assert "without a connection" in import_resp.json["notifications"][0]["message"], import_resp.json
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def source_listing_values(self) -> dict[str, bool | str | None]:
         return {
             "supports_source_search": False,
@@ -240,6 +239,7 @@ class DefaultConnectorDatasetTestSuite(DatasetTestBase, RegulatedTestCase, metac
         expected_fields = {
             "supports_source_search",
             "supports_source_pagination",
+            "supports_query_pagination",
             "supports_db_name_listing",
             "db_name_required_for_search",
             "db_name_label",

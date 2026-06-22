@@ -1,17 +1,17 @@
 import abc
 from typing import (
-    Generic,
     TypeVar,
+    override,
 )
 
 import attr
 import temporalio.worker
-from typing_extensions import override
 
 import dl_app_base
 import dl_settings
 import dl_temporal.base as base
 import dl_temporal.client as client
+import dl_temporal.middlewares as middlewares
 import dl_temporal.worker as worker
 
 
@@ -25,17 +25,15 @@ class TemporalWorkerAppSettingsMixin(dl_app_base.BaseAppSettings):
 
 
 @attr.define(frozen=True, kw_only=True)
-class TemporalWorkerAppMixin(dl_app_base.BaseApp):
-    ...
+class TemporalWorkerAppMixin(dl_app_base.BaseApp): ...
 
 
 AppType = TypeVar("AppType", bound=TemporalWorkerAppMixin)
 
 
 @attr.define(kw_only=True, slots=False)
-class TemporalWorkerAppFactoryMixin(
+class TemporalWorkerAppFactoryMixin[AppType: TemporalWorkerAppMixin](
     dl_app_base.BaseAppFactory[AppType],
-    Generic[AppType],
 ):
     settings: TemporalWorkerAppSettingsMixin
 
@@ -88,6 +86,8 @@ class TemporalWorkerAppFactoryMixin(
             client=await self._get_temporal_client(),
             workflows=await self._get_temporal_workflows(),
             activities=await self._get_temporal_activities(),
+            workflow_middlewares=tuple(await self._get_temporal_workflow_middlewares()),
+            activity_middlewares=tuple(await self._get_temporal_activity_middlewares()),
         )
 
     @dl_app_base.singleton_class_method_result
@@ -102,9 +102,24 @@ class TemporalWorkerAppFactoryMixin(
     ) -> list[base.ActivityProtocol]:
         return []
 
+    @dl_app_base.singleton_class_method_result
+    async def _get_temporal_workflow_middlewares(
+        self,
+    ) -> list[middlewares.WorkflowMiddleware]:
+        return [
+            middlewares.ParentContextWorkflowMiddleware(),
+            middlewares.SearchAttributesWorkflowMiddleware(),
+            middlewares.LoggingWorkflowMiddleware(),
+        ]
+
+    @dl_app_base.singleton_class_method_result
+    async def _get_temporal_activity_middlewares(
+        self,
+    ) -> list[middlewares.ActivityMiddleware]:
+        return [middlewares.LoggingActivityMiddleware()]
+
     @abc.abstractmethod
     @dl_app_base.singleton_class_method_result
     async def _get_temporal_client_metadata_provider(
         self,
-    ) -> client.MetadataProvider:
-        ...
+    ) -> client.MetadataProvider: ...

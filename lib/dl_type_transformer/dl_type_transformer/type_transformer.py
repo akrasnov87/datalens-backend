@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Callable,
+    Generator,
+    Iterable,
+    Mapping,
+)
 from contextlib import contextmanager
 import datetime
 from functools import (
@@ -9,18 +15,14 @@ from functools import (
 import math
 from typing import (
     Any,
-    Callable,
     ClassVar,
-    Generator,
-    Iterable,
-    Optional,
-    TypeVar,
     final,
 )
 
+from frozendict import frozendict
 import pytz
 
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     UserDataType,
 )
@@ -33,23 +35,19 @@ from dl_type_transformer.native_type import (
     GenericNativeType,
 )
 
-
 make_native_type = GenericNativeType.normalize_name_and_create
 
 
-_INN_TV = TypeVar("_INN_TV")
-
-
-def _if_not_none(value: _INN_TV, func: Callable[[_INN_TV], Any]) -> Any:
+def _if_not_none[INN_TV](value: INN_TV, func: Callable[[INN_TV], Any]) -> Any:
     if value is not None:
         try:
             return func(value)
         except ValueError as e:
-            raise exc.TypeCastFailed(f"Cannot convert {value!r} to {func.__name__}") from e
+            raise exc.TypeCastFailedError(f"Cannot convert {value!r} to {func.__name__}") from e
     return None
 
 
-def make_date(value: Any) -> Optional[datetime.date]:
+def make_date(value: Any) -> datetime.date | None:
     if isinstance(value, datetime.datetime):
         return value.date()
     if isinstance(value, datetime.date):
@@ -59,7 +57,7 @@ def make_date(value: Any) -> Optional[datetime.date]:
     return None
 
 
-def make_datetime(value: Any) -> Optional[datetime.datetime]:
+def make_datetime(value: Any) -> datetime.datetime | None:
     if isinstance(value, datetime.datetime):
         return value
     if isinstance(value, datetime.date):
@@ -69,7 +67,7 @@ def make_datetime(value: Any) -> Optional[datetime.datetime]:
     return None
 
 
-def make_int(value: Any) -> Optional[int]:
+def make_int(value: Any) -> int | None:
     if value is None:
         return None
     if isinstance(value, float) and (math.isinf(value) or math.isnan(value)):
@@ -82,7 +80,7 @@ def _handle_type_cast_errors() -> Generator[None, None, None]:
     try:
         yield
     except (TypeError, ValueError) as e:
-        raise exc.TypeCastFailed("Type casting failed for value") from e
+        raise exc.TypeCastFailedError("Type casting failed for value") from e
 
 
 class TypeCaster:
@@ -90,15 +88,13 @@ class TypeCaster:
     custom_null_value: Any = None
 
     def _cast_for_input(self, value: Any) -> Any:
-        if self.custom_null_value is not None:
-            if value is None or value == self.custom_null_value:
-                return self.custom_null_value
+        if self.custom_null_value is not None and (value is None or value == self.custom_null_value):
+            return self.custom_null_value
         return self.__class__.cast_func(value)
 
     def _cast_for_output(self, value: Any) -> Any:
-        if self.custom_null_value is not None:
-            if value is None or value == self.custom_null_value:
-                return None
+        if self.custom_null_value is not None and (value is None or value == self.custom_null_value):
+            return None
         return self.__class__.cast_func(value)
 
     @final
@@ -113,57 +109,56 @@ class TypeCaster:
 
 
 class IntegerTypeCaster(TypeCaster):
-    cast_func = make_int
+    cast_func = make_int  # type: ignore[assignment]  # 26.05.2026 mypy bump 1.20.2
 
 
 class FloatTypeCaster(TypeCaster):
-    cast_func = lambda value: _if_not_none(value, float)  # noqa
+    cast_func = lambda value: _if_not_none(value, float)  # type: ignore[assignment]  # fmt: skip  # 26.05.2026 mypy bump 1.20.2
 
 
 class BooleanTypeCaster(TypeCaster):
-    cast_func = lambda value: _if_not_none(value, bool)  # noqa
+    cast_func = lambda value: _if_not_none(value, bool)  # type: ignore[assignment]  # fmt: skip  # 26.05.2026 mypy bump 1.20.2
 
 
 class YTBooleanTypeCaster(BooleanTypeCaster):
-    def _cast_for_output(self, value: Any) -> Optional[bool]:
+    def _cast_for_output(self, value: Any) -> bool | None:
         if value == "0":
             return False
-        elif value == "1":
+        if value == "1":
             return True
-        else:
-            return super()._cast_for_output(value)
+        return super()._cast_for_output(value)
 
 
 class StringTypeCaster(TypeCaster):
-    cast_func = lambda value: _if_not_none(value, str)  # noqa
+    cast_func = lambda value: _if_not_none(value, str)  # type: ignore[assignment]  # fmt: skip  # 26.05.2026 mypy bump 1.20.2
 
 
 class DateTypeCaster(TypeCaster):
-    cast_func = make_date
+    cast_func = make_date  # type: ignore[assignment]  # 26.05.2026 mypy bump 1.20.2
 
 
 class DatetimeTypeCaster(TypeCaster):
-    cast_func = make_datetime
+    cast_func = make_datetime  # type: ignore[assignment]  # 26.05.2026 mypy bump 1.20.2
 
 
 class DatetimeTZTypeCaster(TypeCaster):
-    cast_func = make_datetime  # TODO: re-check edgy cases
+    cast_func = make_datetime  # type: ignore[assignment]  # TODO: re-check edgy cases  # 26.05.2026 mypy bump 1.20.2
 
 
 class GenericDatetimeTypeCaster(TypeCaster):
-    cast_func = make_datetime
+    cast_func = make_datetime  # type: ignore[assignment]  # 26.05.2026 mypy bump 1.20.2
 
 
 class UTCDatetimeTypeCaster(TypeCaster):
-    def _cast_for_input(self, value: Any) -> Optional[datetime.datetime]:
+    def _cast_for_input(self, value: Any) -> datetime.datetime | None:
         result = super()._cast_for_output(value)
         if isinstance(result, datetime.datetime) and result.tzinfo is not None:
-            result = result.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+            result = result.astimezone(datetime.UTC).replace(tzinfo=None)
         return result
 
 
 class UTCTimezoneDatetimeTypeCaster(TypeCaster):
-    def _cast_for_input(self, value: Any) -> Optional[datetime.datetime]:
+    def _cast_for_input(self, value: Any) -> datetime.datetime | None:
         result = super()._cast_for_output(value)
         if isinstance(result, datetime.datetime) and result.tzinfo is None:
             result = result.replace(tzinfo=pytz.UTC)
@@ -178,16 +173,16 @@ class UnsupportedCaster(TypeCaster):
 
     def _cast_for_input(self, value: Any) -> None:
         if value is None:
-            return None
-        raise exc.TypeCastUnsupported("Asked `cast_for_input` for an Unsupported type for a non-null")
+            return
+        raise exc.TypeCastUnsupportedError("Asked `cast_for_input` for an Unsupported type for a non-null")
 
     def _cast_for_output(self, value: Any) -> None:
         if value is None:
-            return None
-        raise exc.TypeCastUnsupported("Asked `cast_for_output` for an Unsupported type for a non-null")
+            return
+        raise exc.TypeCastUnsupportedError("Asked `cast_for_output` for an Unsupported type for a non-null")
 
 
-def _cast_array(value: Optional[Iterable[_INN_TV]], f: Callable[[_INN_TV], Any]) -> Optional[tuple]:
+def _cast_array[INN_TV](value: Iterable[INN_TV] | None, f: Callable[[INN_TV], Any]) -> tuple | None:
     if value is None:
         return None
     return tuple(map(f, value))
@@ -205,20 +200,20 @@ class ArrayStrTypeCaster(TypeCaster):
     cast_func = partial(_cast_array, f=StringTypeCaster.cast_func)
 
 
-def _make_lowercase(value: Optional[str]) -> Optional[str]:
+def _make_lowercase(value: str | None) -> str | None:
     if not value:
         return value
     return value.lower()
 
 
 class LowercaseTypeCaster(TypeCaster):
-    cast_func = _make_lowercase
+    cast_func = _make_lowercase  # type: ignore[assignment]  # 26.05.2026 mypy bump 1.20.2
 
 
 class TypeTransformer:
-    native_to_user_map: ClassVar[dict[GenericNativeType, UserDataType]] = {}
-    user_to_native_map: ClassVar[dict[UserDataType, GenericNativeType]] = {}
-    casters: ClassVar[dict[UserDataType, TypeCaster]] = {
+    native_to_user_map: ClassVar[Mapping[GenericNativeType, UserDataType]] = frozendict({})
+    user_to_native_map: ClassVar[Mapping[UserDataType, GenericNativeType]] = frozendict({})
+    casters: ClassVar[Mapping[UserDataType, TypeCaster]] = {
         UserDataType.integer: IntegerTypeCaster(),
         UserDataType.float: FloatTypeCaster(),
         UserDataType.boolean: BooleanTypeCaster(),
@@ -241,29 +236,26 @@ class TypeTransformer:
     def type_native_to_user(
         self,
         native_t: GenericNativeType,
-        user_t: Optional[UserDataType] = None,
+        user_t: UserDataType | None = None,
     ) -> UserDataType:
-        if user_t is not None:
-            # original UT is given, try to validate against NT.
-            # read as 'native type might have been made from the provided user type'.
-            # Sample case: native 'uint8' might be a 'boolean' user type.
-            if native_t.as_generic == self.user_to_native_map[user_t].as_generic:
-                return user_t
+        # original UT is given, try to validate against NT.
+        # read as 'native type might have been made from the provided user type'.
+        # Sample case: native 'uint8' might be a 'boolean' user type.
+        if user_t is not None and native_t.as_generic == self.user_to_native_map[user_t].as_generic:
+            return user_t
 
         try:
             return self.native_to_user_map.get(native_t) or self.native_to_user_map[native_t.as_generic]
         except KeyError as e:
             raise exc.UnsupportedNativeTypeError(native_t) from e
 
-    def type_user_to_native(
-        self, user_t: UserDataType, native_t: Optional[GenericNativeType] = None
-    ) -> GenericNativeType:
-        if native_t is not None:
-            # original NT is given, try to do a direct conversion
-            if user_t == self.native_to_user_map.get(native_t) or user_t == self.native_to_user_map.get(
-                native_t.as_generic
-            ):
-                return native_t
+    def type_user_to_native(self, user_t: UserDataType, native_t: GenericNativeType | None = None) -> GenericNativeType:
+        # original NT is given, try to do a direct conversion
+        if native_t is not None and (
+            user_t == self.native_to_user_map.get(native_t)
+            or user_t == self.native_to_user_map.get(native_t.as_generic)
+        ):
+            return native_t
 
         try:
             result = self.user_to_native_map[user_t]
@@ -283,7 +275,7 @@ class TypeTransformer:
         return cls.casters[user_t].cast_for_input(value=value)
 
     @classmethod
-    def cast_for_output(cls, value: Any, user_t: Optional[UserDataType] = None) -> Any:
+    def cast_for_output(cls, value: Any, user_t: UserDataType | None = None) -> Any:
         """Convert value from DB to Python value conforming to given ``user_t``"""
         if user_t is None:
             return value
@@ -302,4 +294,4 @@ def get_type_transformer(conn_type: ConnectionType) -> TypeTransformer:
     try:
         return TYPE_TRANSFORMER_MAP[conn_type]
     except KeyError as e:
-        raise exc.TypeTransformerNotFound(conn_type) from e
+        raise exc.TypeTransformerNotFoundError(conn_type) from e

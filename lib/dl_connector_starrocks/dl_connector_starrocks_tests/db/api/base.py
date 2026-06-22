@@ -9,7 +9,7 @@ from dl_api_lib_testing.connector import (
 from dl_api_lib_testing.data_api_base import StandardizedDataApiTestBase
 from dl_api_lib_testing.dataset_base import DatasetTestBase
 from dl_api_lib_testing.helpers import data_source
-from dl_constants.enums import RawSQLLevel
+from dl_constants import RawSQLLevel
 from dl_core_testing.database import DbTable
 
 from dl_connector_starrocks.core.constants import (
@@ -39,7 +39,7 @@ class StarRocksConnectionTestBase(BaseStarRocksTestClass, ConnectionTestBase):
             username=CoreConnectionSettings.USERNAME,
             password=CoreConnectionSettings.PASSWORD,
             listing_sources=CoreConnectionSettings.LISTING_SOURCES.name,
-            **(dict(raw_sql_level=self.raw_sql_level.value) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level.value} if self.raw_sql_level is not None else {}),
         )
 
 
@@ -48,7 +48,7 @@ class StarRocksDashSQLConnectionTest(StarRocksConnectionTestBase):
 
 
 class StarRocksDatasetTestBase(StarRocksConnectionTestBase, DatasetTestBase):
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def source_listing_values(self) -> dict[str, bool | str | None]:
         return {
             "supports_source_search": True,
@@ -60,14 +60,14 @@ class StarRocksDatasetTestBase(StarRocksConnectionTestBase, DatasetTestBase):
 
     @pytest.fixture(scope="class")
     def dataset_params(self, sample_table: DbTable) -> dict:
-        return dict(
-            source_type=SOURCE_TYPE_STARROCKS_TABLE.name,
-            parameters=dict(
-                db_name=CoreConnectionSettings.CATALOG,
-                schema_name=sample_table.db.name,
-                table_name=sample_table.name,
-            ),
-        )
+        return {
+            "source_type": SOURCE_TYPE_STARROCKS_TABLE.name,
+            "parameters": {
+                "db_name": CoreConnectionSettings.CATALOG,
+                "schema_name": sample_table.db.name,
+                "table_name": sample_table.name,
+            },
+        }
 
 
 class StarRocksDataApiTestBase(StarRocksDatasetTestBase, StandardizedDataApiTestBase):

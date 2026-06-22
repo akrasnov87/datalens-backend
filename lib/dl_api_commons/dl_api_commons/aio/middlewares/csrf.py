@@ -1,10 +1,7 @@
 import hmac
 import logging
 import time
-from typing import (
-    ClassVar,
-    Optional,
-)
+from typing import ClassVar
 
 from aiohttp import web
 from aiohttp.typedefs import Handler
@@ -12,12 +9,11 @@ import attr
 
 from dl_api_commons.aiohttp import aiohttp_wrappers
 
-
 LOGGER = logging.getLogger(__name__)
 
 
 def generate_csrf_token(user_id: str, timestamp: int, csrf_secret: str) -> str:
-    msg = bytes("{}:{}".format(user_id, timestamp), encoding="utf-8")
+    msg = bytes(f"{user_id}:{timestamp}", encoding="utf-8")
     secret = bytes(csrf_secret, encoding="utf-8")
     h = hmac.new(key=secret, msg=msg, digestmod="sha1")
     return h.hexdigest()
@@ -32,7 +28,7 @@ class CSRFMiddleware:
     csrf_secrets: tuple[str, ...] = attr.ib()
     csrf_methods: tuple[str, ...] = attr.ib(default=("POST", "PUT", "DELETE"))
 
-    def validate_csrf_token(self, token_header_value: Optional[str], user_token: str) -> bool:
+    def validate_csrf_token(self, token_header_value: str | None, user_token: str) -> bool:
         if not token_header_value:
             return False
 

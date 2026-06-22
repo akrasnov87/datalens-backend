@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Sequence
 import ipaddress
 import logging
 import pickle
@@ -11,8 +12,6 @@ import sys
 from typing import (
     TYPE_CHECKING,
     Any,
-    Sequence,
-    Union,
 )
 
 import aiodns
@@ -57,7 +56,7 @@ from dl_core.connection_executors.remote_query_executor.settings import (
     RQESettings,
 )
 from dl_core.enums import RQEEventType
-from dl_core.exc import SourceTimeout
+from dl_core.exc import SourceTimeoutError
 from dl_core.loader import (
     CoreLibraryConfig,
     load_core_lib,
@@ -71,10 +70,11 @@ import dl_logging
 from dl_model_tools.msgpack import DLSafeMessagePackSerializer
 from dl_obfuscator import (
     OBFUSCATION_BASE_OBFUSCATORS_KEY,
+    SecretKeeper,
     create_base_obfuscators,
+    get_secret_strings,
 )
 from dl_utils.aio import ContextVarExecutor
-
 
 if TYPE_CHECKING:
     from dl_core.connection_executors.models.connection_target_dto_base import ConnTargetDTO
@@ -111,21 +111,20 @@ def adapter_factory(
             sync_adapter=sync_dba,
         )
 
-    elif issubclass(dba_cls, AsyncDirectDBAdapter):
+    if issubclass(dba_cls, AsyncDirectDBAdapter):
         return dba_cls.create(
             target_dto=target_conn_dto, req_ctx_info=req_ctx_info, default_chunk_size=default_chunk_size
         )
 
-    else:
-        raise ValueError(f"DBA class {dba_cls} is not supported in EQQ")
+    raise ValueError(f"DBA class {dba_cls} is not supported in EQQ")
 
 
 class PingView(BaseView):
     async def get(self) -> web.Response:
         return web.json_response(
-            dict(
-                result="PONG",
-            )
+            {
+                "result": "PONG",
+            }
         )
 
 
@@ -149,7 +148,7 @@ class ActionHandlingView(BaseView):
         self,
         dba: AsyncDBAdapter,
         dba_query: DBAdapterQuery,
-    ) -> Union[web.StreamResponse, web.Response]:
+    ) -> web.StreamResponse | web.Response:
         try:
             result = await dba.execute(dba_query)
         except Exception:
@@ -189,10 +188,11 @@ class ActionHandlingView(BaseView):
             LOGGER.exception("Exception during execution")
             raise
 
-        events: list[tuple[str, Any]] = [(RQEEventType.raw_cursor_info.value, result.raw_cursor_info)]
-        async for raw_chunk in result.raw_chunk_generator:
-            events.append((RQEEventType.raw_chunk.value, raw_chunk))
-        events.append((RQEEventType.finished.value, None))
+        events: list[tuple[str, Any]] = [
+            (RQEEventType.raw_cursor_info.value, result.raw_cursor_info),
+            *[(RQEEventType.raw_chunk.value, raw_chunk) async for raw_chunk in result.raw_chunk_generator],
+            (RQEEventType.finished.value, None),
+        ]
 
         response_body: bytes
         with GenericProfiler("async_qe_serialization"):
@@ -213,29 +213,28 @@ class ActionHandlingView(BaseView):
             await dba.test()
             return None
 
-        elif isinstance(action, act.ActionGetDBVersion):
+        if isinstance(action, act.ActionGetDBVersion):
             return await dba.get_db_version(db_ident=action.db_ident)
 
-        elif isinstance(action, act.ActionGetSchemaNames):
+        if isinstance(action, act.ActionGetSchemaNames):
             return await dba.get_schema_names(db_ident=action.db_ident)
 
-        elif isinstance(action, act.ActionGetTables):
+        if isinstance(action, act.ActionGetTables):
             return await dba.get_tables(schema_ident=action.schema_ident, page_ident=action.page_ident)  # type: ignore  # 2024-01-30 # TODO: Incompatible return value type (got "list[TableIdent]", expected "RawSchemaInfo | list[str] | str | bool | int | None")  [return-value]
 
-        elif isinstance(action, act.ActionGetTableInfo):
+        if isinstance(action, act.ActionGetTableInfo):
             return await dba.get_table_info(table_def=action.table_def, fetch_idx_info=action.fetch_idx_info)
 
-        elif isinstance(action, act.ActionIsTableExists):
+        if isinstance(action, act.ActionIsTableExists):
             return await dba.is_table_exists(table_ident=action.table_ident)
 
-        elif isinstance(action, act.ActionExecuteTypedQuery):
+        if isinstance(action, act.ActionExecuteTypedQuery):
             return await self._handle_execute_typed_query_action(dba=dba, action=action)
 
-        elif isinstance(action, act.ActionExecuteTypedQueryRaw):
+        if isinstance(action, act.ActionExecuteTypedQueryRaw):
             return await self._handle_execute_typed_query_raw_action(dba=dba, action=action)
 
-        else:
-            raise NotImplementedError(f"Action {action} is not implemented in QE")
+        raise NotImplementedError(f"Action {action} is not implemented in QE")
 
     async def _handle_execute_typed_query_action(
         self,
@@ -246,8 +245,7 @@ class ActionHandlingView(BaseView):
         typed_query = tq_serializer.deserialize(action.typed_query_str)
         tq_result = await dba.execute_typed_query(typed_query=typed_query)
         tq_result_serializer = get_typed_query_result_serializer(query_type=action.query_type)
-        tq_result_str = tq_result_serializer.serialize(tq_result)
-        return tq_result_str
+        return tq_result_serializer.serialize(tq_result)
 
     async def _handle_execute_typed_query_raw_action(
         self,
@@ -258,10 +256,9 @@ class ActionHandlingView(BaseView):
         typed_query_raw = tq_serializer.deserialize(action.typed_query_str)
         tq_result = await dba.execute_typed_query_raw(typed_query_raw=typed_query_raw)
         tq_result_serializer = DefaultTypedQueryRawResultSerializer()
-        tq_result_str = tq_result_serializer.serialize(tq_result)
-        return tq_result_str
+        return tq_result_serializer.serialize(tq_result)
 
-    async def post(self) -> Union[web.Response, web.StreamResponse]:
+    async def post(self) -> web.Response | web.StreamResponse:
         action = await self.get_action()
         LOGGER.info("Got QE action request: %s", action)
 
@@ -297,7 +294,9 @@ class ActionHandlingView(BaseView):
                         if isinstance(action, (act.ActionExecuteQuery, act.ActionNonStreamExecuteQuery)):
                             query = action.db_adapter_query.debug_compiled_query
                             inspector_query = action.db_adapter_query.inspector_query
-                        raise SourceTimeout(db_message="Source timed out", query=query, inspector_query=inspector_query)
+                        raise SourceTimeoutError(
+                            db_message="Source timed out", query=query, inspector_query=inspector_query
+                        )
 
             if isinstance(action, act.ActionExecuteQuery):
                 return await self.handle_query_action(adapter, action.db_adapter_query)
@@ -318,6 +317,7 @@ def create_async_qe_app(
     forbid_private_addr: bool = False,
     obfuscation_enabled: bool = False,
     obfuscation_extra_patterns: tuple[str, ...] = (),
+    secret_keeper: SecretKeeper | None = None,
 ) -> web.Application:
     req_id_service = aio_middlewares.RequestId(
         header_name=HEADER_REQUEST_ID,
@@ -344,6 +344,7 @@ def create_async_qe_app(
 
     if obfuscation_enabled:
         app[OBFUSCATION_BASE_OBFUSCATORS_KEY] = create_base_obfuscators(
+            global_keeper=secret_keeper,
             extra_regex_patterns=obfuscation_extra_patterns,
         )
 
@@ -378,11 +379,17 @@ def get_configured_qe_app(
     if hmac_keys is None:
         raise Exception("No `hmac_keys` set.")
 
+    secret_keeper: SecretKeeper | None = None
+    if settings.OBFUSCATION_ENABLED:
+        secret_keeper = SecretKeeper()
+        secret_keeper.add_secrets(get_secret_strings(settings))
+
     return create_async_qe_app(
         hmac_keys=tuple(hmac_key.encode() for hmac_key in hmac_keys),
         forbid_private_addr=settings.FORBID_PRIVATE_ADDRESSES,
         obfuscation_enabled=settings.OBFUSCATION_ENABLED,
         obfuscation_extra_patterns=obfuscation_extra_patterns,
+        secret_keeper=secret_keeper,
     )
 
 

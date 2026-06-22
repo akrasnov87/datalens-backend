@@ -3,12 +3,11 @@ import itertools
 import logging
 from typing import Any
 
-
 LOGGER = logging.getLogger(__name__)
 
 import attr
 
-from dl_constants.enums import JoinType
+from dl_constants import JoinType
 from dl_formula.core.extract import NodeExtract
 import dl_formula.core.fork_nodes as formula_fork_nodes
 from dl_formula.core.index import NodeHierarchyIndex
@@ -22,7 +21,7 @@ from dl_formula.mutation.mutation import (
 )
 from dl_query_processing.compilation.primitives import CompiledQuery
 from dl_query_processing.enums import QueryPart
-from dl_query_processing.exc import InconsistentSelectAggregation
+from dl_query_processing.exc import InconsistentSelectAggregationError
 from dl_query_processing.multi_query.splitters.mask_based import (
     AddFormulaInfo,
     AliasedFormulaSplitMask,
@@ -32,7 +31,6 @@ from dl_query_processing.multi_query.splitters.mask_based import (
     SubqueryType,
 )
 from dl_query_processing.utils.name_gen import PrefixedIdGen
-
 
 _JOIN_TYPE_MAP = {
     formula_fork_nodes.JoinType.inner: JoinType.inner,
@@ -123,7 +121,7 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
                         query_part=query_part,
                         formula_list_idx=formula_idx,
                         outer_node_idx=index_prefix,
-                        inner_node_idx=index_prefix + (1,),  # QueryFork.result_expr = Child(1)
+                        inner_node_idx=index_prefix + 1,  # QueryFork.result_expr = Child(1)
                     ),
                     node,
                 )
@@ -135,7 +133,7 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
                         query_part=query_part,
                         formula_list_idx=formula_idx,
                         outer_node_idx=index_prefix,
-                        inner_node_idx=index_prefix + (0,),  # SubQueryFork.result_expr = Child(0)
+                        inner_node_idx=index_prefix + 0,  # SubQueryFork.result_expr = Child(0)
                     ),
                     node,
                 )
@@ -245,8 +243,7 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
                 if add_formula.expr.extract not in add_formula_extracts:
                     add_formulas.append(add_formula)
                     add_formula_extracts.add(add_formula.expr.extract_not_none)
-            for formula_mask in mask.formula_split_masks:
-                formula_masks.append(formula_mask)
+            formula_masks.extend(mask.formula_split_masks)
 
         base_mask = base_mask.clone(
             add_formulas=add_formulas,
@@ -255,8 +252,7 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
             filter_indices=other_mask.filter_indices,
         )
 
-        split_masks = [base_mask]
-        return split_masks
+        return [base_mask]
 
     def _collect_query_forks(
         self,
@@ -368,16 +364,15 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
             )
 
             if qfork_signature not in qforks_by_signature:
-                dim_add_formulas: list[AddFormulaInfo] = []
-                for dim in dim_list:
-                    dim_add_formulas.append(
-                        AddFormulaInfo(
-                            alias=expr_id_gen.get_id(),
-                            expr=dim,
-                            from_ids=frozenset(query.joined_from.iter_ids()),
-                            is_group_by=not inspect_expression.is_constant_expression(dim),
-                        )
+                dim_add_formulas: list[AddFormulaInfo] = [
+                    AddFormulaInfo(
+                        alias=expr_id_gen.get_id(),
+                        expr=dim,
+                        from_ids=frozenset(query.joined_from.iter_ids()),
+                        is_group_by=not inspect_expression.is_constant_expression(dim),
                     )
+                    for dim in dim_list
+                ]
 
                 # Collect non-dimension expressions from the `joining` node.
                 # They will be needed to construct JOIN ON conditions correctly
@@ -393,16 +388,16 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
                     else:
                         raise TypeError(type(condition))
 
-                    for expr in expressions:
-                        if inspect_expression.is_aggregate_expression(expr, env=inspect_env):
-                            non_dim_add_formulas.append(
-                                AddFormulaInfo(
-                                    alias=expr_id_gen.get_id(),
-                                    expr=expr,
-                                    from_ids=frozenset(query.joined_from.iter_ids()),
-                                    is_group_by=False,
-                                )
-                            )
+                    non_dim_add_formulas.extend(
+                        AddFormulaInfo(
+                            alias=expr_id_gen.get_id(),
+                            expr=expr,
+                            from_ids=frozenset(query.joined_from.iter_ids()),
+                            is_group_by=False,
+                        )
+                        for expr in expressions
+                        if inspect_expression.is_aggregate_expression(expr, env=inspect_env)
+                    )
 
                 add_formulas = tuple(dim_add_formulas + non_dim_add_formulas)
                 if isinstance(qfork_node, formula_fork_nodes.QueryFork):
@@ -414,7 +409,7 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
                         for mutation in qfork_node.bfb_filter_mutations.mutations
                     )
                 else:
-                    bfb_filter_mutations = tuple()
+                    bfb_filter_mutations = ()
 
                 qfork_info = QueryForkInfo(
                     subquery_type=subquery_type,
@@ -469,8 +464,7 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
 
     def optimize_query_split_masks(self, split_masks: list[QuerySplitMask]) -> list[QuerySplitMask]:
         """Optimize for window function sub-queries"""
-        split_masks = self._unify_masks_for_window_functions(split_masks=split_masks)
-        return split_masks
+        return self._unify_masks_for_window_functions(split_masks=split_masks)
 
     def get_split_masks(
         self,
@@ -572,7 +566,7 @@ class QueryForkQuerySplitter(MultiQuerySplitter):
 
         if len(agg_statuses) != 1:
             LOGGER.warning("Inconsistent aggregation status among SELECT items. Got: %s", agg_statuses)
-            raise InconsistentSelectAggregation("Inconsistent aggregation status among SELECT items.")
+            raise InconsistentSelectAggregationError("Inconsistent aggregation status among SELECT items.")
         agg_status = next(iter(agg_statuses))
         if not agg_status:
             # SELECT items are not aggregated

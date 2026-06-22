@@ -1,17 +1,14 @@
-from typing import (
-    AbstractSet,
-    Any,
-    Union,
-)
+from collections.abc import Set
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.engine import Dialect
 
 
 def compile_pg_query(
-    query: Union[str, sa.sql.ClauseElement],
+    query: str | sa.sql.ClauseElement,
     dialect: Dialect,
-    exclude_types: AbstractSet[Any] = frozenset(),
+    exclude_types: Set[Any] = frozenset(),
     add_types: bool = True,
 ) -> tuple[str, list]:
     """
@@ -39,7 +36,7 @@ def compile_pg_query(
             input_sizes = {}
         items = sorted([(key, input_sizes.get(bindparam)) for bindparam, key in compiled.bind_names.items()])
         mapping = {
-            key: "$%d::%s" % (idx, typ) if typ else "$%d" % idx
+            key: f"${idx}::{typ}" if typ else f"${idx}"
             for idx, (key, typ) in enumerate(
                 ((key, pg_types.get(typ)) for key, typ in items),
                 1,

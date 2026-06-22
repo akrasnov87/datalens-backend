@@ -10,14 +10,13 @@ from dl_core.us_connection_base import ConnectionBase
 from dl_core.utils import FutureRef
 from dl_dashsql.typed_query.processor.base import TypedQueryRawProcessorBase
 
-
 if TYPE_CHECKING:
-    from dl_core.services_registry.top_level import ServicesRegistry  # noqa
+    from dl_core.services_registry.top_level import ServicesRegistry
 
 
 @attr.s
 class TypedQueryRawProcessorFactory(abc.ABC):
-    _service_registry_ref: FutureRef["ServicesRegistry"] = attr.ib(kw_only=True)
+    _service_registry_ref: FutureRef[ServicesRegistry] = attr.ib(kw_only=True)
 
     @property
     def service_registry(self) -> ServicesRegistry:

@@ -1,8 +1,9 @@
 import abc
+from collections.abc import Callable
 from functools import wraps
 import logging
 from typing import (
-    Callable,
+    Any,
     ClassVar,
 )
 
@@ -10,7 +11,7 @@ import attr
 import sqlalchemy as sa
 from sqlalchemy.engine.default import DefaultDialect
 
-from dl_constants.enums import JoinType
+from dl_constants import JoinType
 from dl_core import exc
 from dl_core.connection_executors.async_base import AsyncConnExecutorBase
 from dl_core.connection_executors.sync_base import SyncConnExecutorBase
@@ -43,13 +44,12 @@ from dl_core.db import (
 from dl_core.query.bi_query import SqlSourceType
 from dl_core.utils import sa_plain_text
 
-
 LOGGER = logging.getLogger(__name__)
 
 
 def require_table_name(func):  # type: ignore  # TODO: fix
     @wraps(func)
-    def wrapper(self, *args, **kwargs):  # type: ignore  # TODO: fix
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         if not self.table_name:
             raise exc.TableNameNotConfiguredError
 
@@ -97,7 +97,7 @@ class BaseSQLDataSource(DataSource):
         columns = tuple(col._replace(source_id=self.id) for col in schema_info.schema)
 
         if not columns:
-            raise exc.FailedToLoadSchema()
+            raise exc.FailedToLoadSchemaError()
 
         return schema_info.clone(schema=columns)
 
@@ -191,22 +191,22 @@ class SubselectDataSource(BaseSQLDataSource):
 
     def get_sql_source(self, alias: str | None = None) -> SqlSourceType:
         if not self.connection.is_subselect_allowed:
-            raise exc.SubselectNotAllowed()
+            raise exc.SubselectNotAllowedError()
 
         subsql = self.subsql
         if not subsql:
             raise exc.TableNameNotConfiguredError
 
-        subsql = self._render_dataset_parameter_values(subsql)
+        subsql = self.render_dataset_parameter_values(subsql)
 
-        from_sql = "(\n{}\n)".format(subsql)
+        from_sql = f"(\n{subsql}\n)"
 
         # e.g. PG doesn't allow unaliased subqueries at all.
         if alias is None:
             alias = self._subquery_auto_alias
 
         if alias is not None:
-            from_sql = "{}{}{}".format(from_sql, self._subquery_alias_joiner, self.quote(alias))
+            from_sql = f"{from_sql}{self._subquery_alias_joiner}{self.quote(alias)}"
         return sa_plain_text(from_sql)
 
     def is_templated(self) -> bool:
@@ -224,6 +224,13 @@ class SubselectDataSource(BaseSQLDataSource):
 @attr.s
 class SQLDataSource(abc.ABC, BaseSQLDataSource):
     """Data source for SQL database"""
+
+    is_table_source: ClassVar[bool] = True
+
+    def is_manual_allowed(self) -> bool:
+        # Marking a regular table source as manual lets the user point at a table that is not in
+        # the connector listing — that requires raw-SQL-level privileges on the connection.
+        return self.connection.is_subselect_allowed
 
     @property
     @abc.abstractmethod
@@ -313,8 +320,7 @@ class TableSQLDataSourceMixin(BaseSQLDataSource):
         if table_name is None:
             return None
 
-        table_name = self._render_dataset_parameter_values(table_name)
-        return table_name
+        return self.render_dataset_parameter_values(table_name)
 
     def is_templated(self) -> bool:
         return self._is_value_templated(self.raw_table_name)
@@ -383,7 +389,7 @@ class SchemaSQLDataSourceMixin(BaseSQLDataSource):
         assert isinstance(self._spec, SchemaSQLDataSourceSpec)
         # TODO FIX: DO NOT DO THIS IN PROPERTY!!!!!
         #  USE METHOD get_effective schema name or dump from connection on initial data source creation
-        return self._spec.schema_name if self._spec.schema_name else self.get_connection_cls().default_schema_name  # type: ignore  # TODO: fix
+        return self._spec.schema_name or self.get_connection_cls().default_schema_name  # type: ignore  # TODO: fix
 
 
 @attr.s

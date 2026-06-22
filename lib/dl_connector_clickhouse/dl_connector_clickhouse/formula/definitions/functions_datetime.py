@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Union,
-)
+from typing import TYPE_CHECKING
 
 import clickhouse_sqlalchemy.types as ch_types
 import sqlalchemy as sa
@@ -24,7 +21,6 @@ from dl_formula.definitions.literals import un_literal
 
 from dl_connector_clickhouse.formula.constants import ClickHouseDialect as D
 
-
 if TYPE_CHECKING:
     from dl_formula.translation.context import TranslationCtx
 
@@ -43,7 +39,7 @@ def _datetrunc2_ch_impl_19_3_3(
 def _datetrunc3_ch_impl_19_3_3(
     date_ctx: TranslationCtx,
     unit_ctx: TranslationCtx,
-    num_ctx: Union[TranslationCtx, int],
+    num_ctx: TranslationCtx | int,
 ) -> ClauseElement:
     date_expr = date_ctx.expression
     unit = base.norm_datetrunc_unit(unit_ctx.expression)
@@ -63,7 +59,7 @@ def _datetrunc3_ch_impl_19_3_3(
 
 def _datetime_interval_ch(type_name: str, mult: int) -> ClauseElement:
     type_name = normalize_and_validate_datetime_interval_type(type_name)
-    func_name = "toInterval{}".format(type_name.capitalize())
+    func_name = f"toInterval{type_name.capitalize()}"
     return getattr(sa.func, func_name)(mult)
 
 
@@ -147,13 +143,15 @@ DEFINITIONS_DATETIME = [
                         sa.func.toDate(date), datetime_interval(unit.value, num.value, caps=False)
                     )
                     if base.norm_datetrunc_unit(unit) in {"year", "quarter", "month", "week"}
-                    else sa.func.toDate(
-                        sa.func.toStartOfInterval(
-                            sa.func.toDate(date), datetime_interval(unit.value, num.value, caps=False)
+                    else (
+                        sa.func.toDate(
+                            sa.func.toStartOfInterval(
+                                sa.func.toDate(date), datetime_interval(unit.value, num.value, caps=False)
+                            )
                         )
+                        if base.norm_datetrunc_unit(unit) == "day"
+                        else sa.func.toDate(date)
                     )
-                    if base.norm_datetrunc_unit(unit) == "day"
-                    else sa.func.toDate(date)
                 ),
             ),
         ]

@@ -1,6 +1,6 @@
-from typing import Callable
+from collections.abc import Callable
 
-from dl_constants.enums import DataSourceType
+from dl_constants import DataSourceType
 from dl_core.connection_executors.sync_base import SyncConnExecutorBase
 from dl_core.connection_models import (
     TableDefinition,
@@ -79,7 +79,7 @@ class SnowFlakeTableDataSource(SnowFlakeDataSourceMixin, TableSQLDataSourceMixin
         self,
         conn_executor_factory: Callable[[], SyncConnExecutorBase],
     ) -> SchemaInfo:
-        return super(SnowFlakeTableDataSource, self).get_schema_info(conn_executor_factory=conn_executor_factory)
+        return super().get_schema_info(conn_executor_factory=conn_executor_factory)
 
     @require_table_name
     def get_sql_source(self, alias: str | None = None) -> SqlSourceType:

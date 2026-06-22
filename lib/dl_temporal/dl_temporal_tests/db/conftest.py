@@ -1,6 +1,7 @@
+from collections.abc import AsyncGenerator
+import contextlib
 import datetime
 import logging
-from typing import AsyncGenerator
 
 import pytest
 import pytest_asyncio
@@ -56,13 +57,11 @@ async def fixture_register_namespace(
     temporal_client: dl_temporal.TemporalClient,
     temporal_namespace: str,
 ) -> None:
-    try:
+    with contextlib.suppress(dl_temporal.AlreadyExistsError):
         await temporal_client.register_namespace(
             namespace=temporal_namespace,
             workflow_execution_retention_period=datetime.timedelta(days=1),
         )
-    except dl_temporal.AlreadyExists:
-        pass
 
 
 @pytest_asyncio.fixture(autouse=True)

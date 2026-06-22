@@ -16,7 +16,7 @@ from dl_api_lib_testing.helpers.multi_query import (
     count_joins,
 )
 from dl_api_lib_tests.db.base import DefaultApiTestBase
-from dl_constants.enums import (
+from dl_constants import (
     OrderDirection,
     UserDataType,
     WhereClauseOperation,
@@ -82,17 +82,12 @@ class TestBasicWindowFunctions(DefaultApiTestBase, DefaultBasicWindowFunctionTes
                 # for testing queries with window functions only in the filter section
                 select_fields = select_fields[:-1]
 
-            result_resp = data_api.get_result(
+            return data_api.get_result(
                 dataset=ds,
-                fields=select_fields
-                + [
-                    ds.find_field(title="order_date"),
-                    ds.find_field(title="city"),
-                ],
+                fields=[*select_fields, ds.find_field(title="order_date"), ds.find_field(title="city")],
                 filters=filters,
                 fail_ok=True,
             )
-            return result_resp
 
         result_resp = get_result(
             filters=[
@@ -234,8 +229,7 @@ class TestBasicWindowFunctions(DefaultApiTestBase, DefaultBasicWindowFunctionTes
                 fail_ok=True,
             )
             assert result_resp.status_code == HTTPStatus.OK, result_resp.json
-            data_rows = get_data_rows(result_resp)
-            return data_rows
+            return get_data_rows(result_resp)
 
         # ORDER BY City ASC
         data_1 = _get_data(OrderDirection.asc)

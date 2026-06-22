@@ -1,9 +1,6 @@
 import abc
 import logging
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-)
+from typing import TYPE_CHECKING
 
 import attr
 
@@ -14,9 +11,8 @@ from dl_core.us_manager.mutation_cache.usentry_mutation_cache import (
 )
 from dl_core.utils import FutureRef
 
-
 if TYPE_CHECKING:
-    from dl_core.services_registry.top_level import ServicesRegistry  # noqa
+    from dl_core.services_registry.top_level import ServicesRegistry
 
 LOGGER = logging.getLogger(__name__)
 
@@ -35,7 +31,7 @@ class MutationCacheEngineFactory(metaclass=abc.ABCMeta):
 class DefaultMutationCacheEngineFactory(MutationCacheEngineFactory):
     _services_registry_ref: FutureRef["ServicesRegistry"] = attr.ib()
     cache_type: type[GenericCacheEngine] = attr.ib()
-    _saved_inmemory_engine: Optional[MemoryCacheEngine] = None
+    _saved_inmemory_engine: MemoryCacheEngine | None = None
 
     @classmethod
     def _get_memory_cache_engine_singleton(cls) -> MemoryCacheEngine:
@@ -47,7 +43,7 @@ class DefaultMutationCacheEngineFactory(MutationCacheEngineFactory):
     def service_registry(self) -> "ServicesRegistry":
         return self._services_registry_ref.ref
 
-    def _get_redis_cache_engine(self, allow_slave: bool) -> Optional[RedisCacheEngine]:
+    def _get_redis_cache_engine(self, allow_slave: bool) -> RedisCacheEngine | None:
         try:
             redis_client = self.service_registry.get_mutations_redis_client(allow_slave)
             if redis_client is None:
@@ -59,11 +55,10 @@ class DefaultMutationCacheEngineFactory(MutationCacheEngineFactory):
     def get_cache_engine(self, allow_slave: bool) -> GenericCacheEngine:
         if self.cache_type == MemoryCacheEngine:
             return self._get_memory_cache_engine_singleton()
-        elif self.cache_type == RedisCacheEngine:
+        if self.cache_type == RedisCacheEngine:
             redis_cache_engine = self._get_redis_cache_engine(allow_slave)
             if redis_cache_engine:
                 return redis_cache_engine
             LOGGER.info("Can not create mutation cache engine: service registry did not return a Redis client")
             raise CacheInitializationError("Cannot create mutation cache engine")
-        else:
-            raise CacheInitializationError("No initialization for this type of Cache Engine in factory")
+        raise CacheInitializationError("No initialization for this type of Cache Engine in factory")

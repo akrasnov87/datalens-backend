@@ -15,7 +15,6 @@ from sqlalchemy.sql import (
     table,
 )
 
-
 # Reference:
 # https://github.com/sqlalchemy/sqlalchemy/blob/rel_1_4/test/sql/test_compiler.py#L107
 
@@ -169,7 +168,7 @@ def test_compile(dialect, query, literal_binds):
     sql_text = str(
         query.compile(
             dialect=dialect,
-            compile_kwargs=dict(literal_binds=literal_binds),
+            compile_kwargs={"literal_binds": literal_binds},
         )
     )
     assert sql_text

@@ -3,7 +3,6 @@ from pathlib import Path
 
 import attr
 
-
 log = logging.getLogger(__name__)
 
 
@@ -18,11 +17,7 @@ class PipRequirement:
 
     @property
     def cleaned_version(self) -> str:
-        cleaned_version = _strip_version(self.raw_version)
-        if cleaned_version.startswith("=="):
-            cleaned_version = cleaned_version[2:]
-
-        return cleaned_version
+        return _strip_version(self.raw_version).removeprefix("==")
 
 
 @attr.s(frozen=True)
@@ -30,9 +25,9 @@ class PipRequirementsIO:
     path: Path = attr.ib()
 
     def read_existing(self, gather_all: bool = False) -> dict[str, PipRequirement]:
-        result = dict()
+        result = {}
         with open(self.path) as fh:
-            for line in fh.readlines():
+            for line in fh:
                 try:
                     parts = line.strip().split("==")
                     name = parts[0].strip()
@@ -43,12 +38,11 @@ class PipRequirementsIO:
                     if gather_all or name not in ["mypy", "python"]:
                         result[name] = PipRequirement(name=name, raw_version=version)
                 except Exception:
-                    log.warning(f"Failed to parse {line} from file {self.path}")
+                    log.warning("Failed to parse %s from file %s", line, self.path)
         return result
 
     def write_updates(self, to_update: dict[str, PipRequirement]) -> None:
         requirements = self.read_existing(gather_all=True)
         requirements.update(to_update)
-        with open(self.path, "wt") as fh:
-            for name, requirement in sorted(requirements.items()):
-                fh.write(f"{name}=={requirement.raw_version}\n")
+        with open(self.path, "w") as fh:
+            fh.writelines(f"{name}=={requirement.raw_version}\n" for name, requirement in sorted(requirements.items()))

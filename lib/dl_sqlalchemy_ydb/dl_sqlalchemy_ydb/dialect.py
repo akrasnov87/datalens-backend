@@ -3,6 +3,7 @@ import typing
 from typing import Any
 import uuid
 
+from frozendict import frozendict
 import sqlalchemy as sa
 from sqlalchemy.engine import reflection
 from sqlalchemy.exc import CompileError
@@ -22,7 +23,7 @@ import dl_sqlalchemy_ydb.dialect as ydb_dialect
 
 class YqlListType(ydb_sa.types.ListType):
     def result_processor(self, dialect: sa.engine.Dialect, coltype: typing.Any) -> typing.Any:
-        def process(value: typing.Optional[list]) -> typing.Optional[list]:
+        def process(value: list | None) -> list | None:
             if value is None:
                 return None
 
@@ -54,18 +55,18 @@ class YqlTimestamp(sa.types.DateTime):
     __visit_name__ = "Timestamp"
 
     def result_processor(self, dialect: sa.engine.Dialect, coltype: typing.Any) -> typing.Any:
-        def process(value: typing.Optional[datetime.datetime]) -> typing.Optional[datetime.datetime]:
+        def process(value: datetime.datetime | None) -> datetime.datetime | None:
             if value is None:
                 return None
             if not self.timezone:
                 return value
-            return value.replace(tzinfo=datetime.timezone.utc)
+            return value.replace(tzinfo=datetime.UTC)
 
         return process
 
     def literal_processor(self, dialect: sa.engine.Dialect) -> typing.Any:
         def process(value: datetime.datetime) -> str:
-            dt = value.astimezone(datetime.timezone.utc)
+            dt = value.astimezone(datetime.UTC)
             dt = dt.replace(tzinfo=None)
             formatted_dt = dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
@@ -82,18 +83,18 @@ class YqlDateTime(YqlTimestamp, sa.types.DateTime):
     __visit_name__ = "Datetime"
 
     def bind_processor(self, dialect: sa.engine.Dialect) -> typing.Any:
-        def process(value: typing.Optional[datetime.datetime]) -> typing.Optional[int]:
+        def process(value: datetime.datetime | None) -> int | None:
             if value is None:
                 return None
             if not self.timezone:
-                value = value.replace(tzinfo=datetime.timezone.utc)
+                value = value.replace(tzinfo=datetime.UTC)
             return int(value.timestamp())
 
         return process
 
     def literal_processor(self, dialect: sa.engine.Dialect) -> typing.Any:
         def process(value: datetime.datetime) -> str:
-            dt = value.astimezone(datetime.timezone.utc)
+            dt = value.astimezone(datetime.UTC)
             dt = dt.replace(tzinfo=None)
             formatted_dt = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -110,7 +111,7 @@ class YqlInterval(sa.types.Interval):
     __visit_name__ = "Interval"
 
     def result_processor(self, dialect: sa.engine.Dialect, coltype: typing.Any) -> typing.Any:
-        def process(value: typing.Optional[datetime.timedelta] | int) -> typing.Optional[int]:
+        def process(value: datetime.timedelta | None | int) -> int | None:
             if value is None:
                 return None
             if isinstance(value, datetime.timedelta):
@@ -160,7 +161,7 @@ class YqlUuid(sa.types.TEXT):
             if not isinstance(value, uuid.UUID):
                 value = uuid.UUID(value)
 
-            return f'UUID("{str(value)}")'
+            return f'UUID("{value!s}")'
 
         return process
 
@@ -217,8 +218,8 @@ class YqlClosure(ydb_sa.types.Lambda):
     def __init__(
         self,
         func,
-        *args,
-    ):
+        *args: Any,
+    ) -> None:
         super().__init__(func)
 
         self.args = args
@@ -237,7 +238,7 @@ class YqlDotAccess(ColumnElement):
         self,
         expression,
         index: int,
-    ):
+    ) -> None:
         self.dot_expression = expression
         self.dot_index = index
 
@@ -260,93 +261,93 @@ class CustomYqlTypeCompiler(ydb_sa.YqlTypeCompiler):
     def visit_datetime(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:
         return "Datetime"
 
-    def visit_DATETIME(self, type_: sa.DATETIME, **kw: typing.Any) -> typing.Any:
+    def visit_DATETIME(self, type_: sa.DATETIME, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return self.visit_datetime(type_, **kw)
 
-    def visit_Datetime(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:
+    def visit_Datetime(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return self.visit_datetime(type_, **kw)
 
     def visit_datetime64(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:
         return "Datetime64"
 
-    def visit_DATETIME64(self, type_: sa.DATETIME, **kw: typing.Any) -> typing.Any:
+    def visit_DATETIME64(self, type_: sa.DATETIME, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return self.visit_datetime64(type_, **kw)
 
-    def visit_Datetime64(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:
+    def visit_Datetime64(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return self.visit_datetime64(type_, **kw)
 
     def visit_timestamp(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:
         return "Timestamp"
 
-    def visit_TIMESTAMP(self, type_: sa.DATETIME, **kw: typing.Any) -> typing.Any:
+    def visit_TIMESTAMP(self, type_: sa.DATETIME, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return self.visit_timestamp(type_, **kw)
 
-    def visit_Timestamp(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:
+    def visit_Timestamp(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return self.visit_timestamp(type_, **kw)
 
     def visit_timestamp64(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:
         return "Timestamp64"
 
-    def visit_TIMESTAMP64(self, type_: sa.DATETIME, **kw: typing.Any) -> typing.Any:
+    def visit_TIMESTAMP64(self, type_: sa.DATETIME, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return self.visit_timestamp64(type_, **kw)
 
-    def visit_Timestamp64(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:
+    def visit_Timestamp64(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return self.visit_timestamp64(type_, **kw)
 
     def visit_interval(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:
         return "Interval"
 
-    def visit_INTERVAL(self, type_: sa.DATETIME, **kw: typing.Any) -> typing.Any:
+    def visit_INTERVAL(self, type_: sa.DATETIME, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return self.visit_interval(type_, **kw)
 
-    def visit_Interval(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:
+    def visit_Interval(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return self.visit_interval(type_, **kw)
 
     def visit_interval64(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:
         return "Interval64"
 
-    def visit_INTERVAL64(self, type_: sa.DATETIME, **kw: typing.Any) -> typing.Any:
+    def visit_INTERVAL64(self, type_: sa.DATETIME, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return self.visit_interval64(type_, **kw)
 
-    def visit_Interval64(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:
+    def visit_Interval64(self, type_: sa.DateTime, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return self.visit_interval64(type_, **kw)
 
-    def visit_INTEGER(self, type_: sa.INTEGER, **kw: typing.Any) -> typing.Any:
+    def visit_INTEGER(self, type_: sa.INTEGER, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return self.visit_integer(type_, **kw)
 
     def visit_integer(self, type_: sa.Integer, **kw: typing.Any) -> typing.Any:
         return "int32"
 
-    def visit_SMALLINT(self, type_: sa.SMALLINT, **kw: typing.Any) -> typing.Any:
+    def visit_SMALLINT(self, type_: sa.SMALLINT, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return self.visit_small_integer(type_, **kw)
 
     def visit_small_integer(self, type_: sa.SmallInteger, **kw: typing.Any) -> typing.Any:
         return "int16"
 
-    def visit_BIGINT(self, type_: sa.BIGINT, **kw: typing.Any) -> typing.Any:
+    def visit_BIGINT(self, type_: sa.BIGINT, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return self.visit_big_integer(type_, **kw)
 
     def visit_big_integer(self, type_: sa.BigInteger, **kw: typing.Any) -> typing.Any:
         return "int64"
 
-    def visit_String(self, type_: typing.Any, **kw: typing.Any) -> typing.Any:
+    def visit_String(self, type_: typing.Any, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return "String"
 
-    def visit_Utf8(self, type_: typing.Any, **kw: typing.Any) -> typing.Any:
+    def visit_Utf8(self, type_: typing.Any, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return "Utf8"
 
-    def visit_Double(self, type_: typing.Any, **kw: typing.Any) -> typing.Any:
+    def visit_Double(self, type_: typing.Any, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return "Double"
 
-    def visit_Float(self, type_: typing.Any, **kw: typing.Any) -> typing.Any:
+    def visit_Float(self, type_: typing.Any, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return "Float"
 
-    def visit_Uuid(self, type_: typing.Any, **kw: typing.Any) -> typing.Any:
+    def visit_Uuid(self, type_: typing.Any, **kw: typing.Any) -> typing.Any:  # noqa: N802
         return "UUID"
 
     def get_ydb_type(
         self, type_: sa.types.TypeEngine, is_optional: bool
-    ) -> typing.Union[ydb_sa.ydb.PrimitiveType, ydb_sa.ydb.AbstractTypeBuilder]:
+    ) -> ydb_sa.ydb.PrimitiveType | ydb_sa.ydb.AbstractTypeBuilder:
         if isinstance(type_, sa.TypeDecorator):
             type_ = type_.impl
 
@@ -383,21 +384,19 @@ class CustomYqlTypeCompiler(ydb_sa.YqlTypeCompiler):
 
         return super().get_ydb_type(type_, is_optional)
 
-    def visit_ARRAY(self, type_: sa.ARRAY, **kw: Any):
+    def visit_ARRAY(self, type_: sa.ARRAY, **kw: Any):  # noqa: N802
         inner = self.process(type_.item_type, **kw)
 
         if isinstance(type_, YqlOptionalItemListType):
             return f"List<{inner}?>"
-        else:
-            return f"List<{inner}>"
+        return f"List<{inner}>"
 
     def visit_list_type(self, type_: ydb_sa.types.ListType, **kw: Any):
         inner = self.process(type_.item_type, **kw)
 
         if isinstance(type_, YqlOptionalItemListType):
             return f"List<{inner}?>"
-        else:
-            return f"List<{inner}>"
+        return f"List<{inner}>"
 
 
 class CustomYqlCompiler(ydb_sa.YqlCompiler):
@@ -413,9 +412,7 @@ class CustomYqlCompiler(ydb_sa.YqlCompiler):
             raise CompileError("Lambdas with **kwargs are not supported")
 
         args = [literal_column("$" + arg) for arg in spec.args]
-        text = f'({", ".join("$" + arg for arg in spec.args)}) -> ' f"{{ RETURN {self.process(func(*args), **kw)} ;}}"
-
-        return text
+        return f'({", ".join("$" + arg for arg in spec.args)}) -> ' f"{{ RETURN {self.process(func(*args), **kw)} ;}}"
 
     def visit_closure(self, closure: YqlClosure, **kw: Any):
         func = closure.func
@@ -427,15 +424,13 @@ class CustomYqlCompiler(ydb_sa.YqlCompiler):
             raise CompileError("Closures with **kwargs are not supported")
 
         args = [literal_column("$" + arg) for arg in spec.args]
-        text = (
+        return (
             f'(({", ".join("$" + arg for arg in spec.args)}) -> '
             f"{{ RETURN {self.process(func(*args), **kw)} ;}})"
             f'({", ".join(self.process(arg, **kw) for arg in closure.args)})'
         )
 
-        return text
-
-    def visit_dot_access(self, dot_access: YqlDotAccess, **kw):
+    def visit_dot_access(self, dot_access: YqlDotAccess, **kw: Any):
         return f"{self.process(dot_access.dot_expression, **kw)}.{dot_access.dot_index}"
 
 
@@ -486,9 +481,9 @@ class CustomYqlDialect(ydb_sa.YqlDialect):
     type_compiler = CustomYqlTypeCompiler
     statement_compiler = CustomYqlCompiler
 
-    colspecs = {
-        **ydb_sa.YqlDialect.colspecs,
-        **{
+    colspecs = frozendict(
+        {
+            **ydb_sa.YqlDialect.colspecs,
             sa.types.INTEGER: ydb_sa.types.Int32,
             sa.types.Integer: ydb_sa.types.Int32,
             sa.types.BIGINT: ydb_sa.types.Int64,
@@ -501,20 +496,22 @@ class CustomYqlDialect(ydb_sa.YqlDialect):
             sa.types.DATETIME: ydb_sa.types.YqlDateTime,
             sa.types.TIMESTAMP: ydb_sa.types.YqlTimestamp,
             sa.types.Interval: YqlInterval,
-        },
-    }
+        }
+    )
 
-    def __init__(self, *args: typing.Any, **kwargs: typing.Any):
+    def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:
         super().__init__(
             *args,
             **{
                 **kwargs,
-                **dict(_add_declare_for_yql_stmt_vars=True),
+                "_add_declare_for_yql_stmt_vars": True,
             },
         )
 
     @reflection.cache
-    def get_columns(self, connection, table_name, schema=None, **kw):
+    # `object` (not `Any`): @reflection.cache regenerates this signature via exec, whose namespace
+    # cannot resolve typing names; `object` is a builtin and is always available there.
+    def get_columns(self, connection, table_name, schema=None, **kw: object):
         table = self._describe_table(connection, table_name, schema)
         as_compatible = []
         for column in table.columns:

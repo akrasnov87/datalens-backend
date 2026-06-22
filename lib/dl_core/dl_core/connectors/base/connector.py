@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import (
+    Callable,
+    Set,
+)
 from typing import (
     TYPE_CHECKING,
-    AbstractSet,
-    Callable,
     ClassVar,
-    Optional,
 )
 
 from sqlalchemy.orm import Query
 
-from dl_constants.enums import SourceBackendType
+from dl_constants import SourceBackendType
 from dl_core.connections_security.base import ConnSecuritySettings
 from dl_core.connectors.base.data_source_migration import (
     DataSourceMigrator,
@@ -35,12 +36,11 @@ from dl_dashsql.literalizer import (
     DefaultDashSQLParamLiteralizer,
 )
 
-
 if TYPE_CHECKING:
     from marshmallow import Schema
     from sqlalchemy.types import TypeEngine
 
-    from dl_constants.enums import (
+    from dl_constants import (
         ConnectionType,
         DataSourceType,
     )
@@ -63,20 +63,20 @@ class CoreSourceDefinition(abc.ABC):
 class CoreConnectionDefinition(abc.ABC):
     conn_type: ClassVar[ConnectionType]
     connection_cls: ClassVar[type[ConnectionBase]]
-    us_storage_schema_cls: ClassVar[Optional[type[Schema]]] = None
+    us_storage_schema_cls: ClassVar[type[Schema] | None] = None
     type_transformer_cls: ClassVar[type[TypeTransformer]]  # TODO: Move to CoreBackendDefinition
-    sync_conn_executor_cls: ClassVar[Optional[type[ConnExecutorBase]]] = None
-    async_conn_executor_cls: ClassVar[Optional[type[AsyncConnExecutorBase]]] = None
+    sync_conn_executor_cls: ClassVar[type[ConnExecutorBase] | None] = None
+    async_conn_executor_cls: ClassVar[type[AsyncConnExecutorBase] | None] = None
     lifecycle_manager_cls: ClassVar[type[ConnectionLifecycleManager]] = DefaultConnectionLifecycleManager
     schema_migration_cls: ClassVar[type[ConnectionSchemaMigration]] = DefaultConnectionSchemaMigration
     dialect_string: ClassVar[str]
     data_source_migrator_cls: ClassVar[type[DataSourceMigrator]] = DefaultDataSourceMigrator
-    settings_definition: ClassVar[Optional[type[ConnectorSettingsDefinition]]] = None
+    settings_definition: ClassVar[type[ConnectorSettingsDefinition] | None] = None
     custom_dashsql_key_names: frozenset[str] = frozenset()
     allow_export: ClassVar[bool] = False
 
 
-class CoreBackendDefinition(abc.ABC):
+class CoreBackendDefinition:
     backend_type: ClassVar[SourceBackendType] = SourceBackendType.NONE
     compiler_cls: ClassVar[type[QueryCompiler]] = QueryCompiler
     query_cls: ClassVar[type[Query]] = Query
@@ -90,10 +90,10 @@ class CoreConnector(abc.ABC):
     source_definitions: ClassVar[tuple[type[CoreSourceDefinition], ...]] = ()
     # TODO: Move to CoreBackendDefinition:
     sa_types: ClassVar[
-        Optional[dict[tuple[SourceBackendType, GenericNativeType], Callable[[GenericNativeType], TypeEngine]]]
+        dict[tuple[SourceBackendType, GenericNativeType], Callable[[GenericNativeType], TypeEngine]] | None
     ] = None
-    rqe_adapter_classes: ClassVar[AbstractSet[type[CommonBaseDirectAdapter]]] = frozenset()
-    conn_security: ClassVar[AbstractSet[ConnSecuritySettings]] = frozenset()
+    rqe_adapter_classes: ClassVar[Set[type[CommonBaseDirectAdapter]]] = frozenset()
+    conn_security: ClassVar[Set[ConnSecuritySettings]] = frozenset()
     query_fail_exceptions: frozenset[type[Exception]] = frozenset()
     notification_classes: ClassVar[tuple[type[BaseNotification], ...]] = ()
 

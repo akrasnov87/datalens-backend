@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import copy
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any
 
 from sqlalchemy.sql.elements import ClauseElement
 
@@ -22,21 +19,20 @@ from dl_formula.core.nodes import FormulaItem
 from dl_formula.core.position import Position
 from dl_formula.definitions.scope import Scope
 
-
 ContextFlags = int  # bitwise combination of ContextFlag values
 
 
 class TranslationCtx:
     __slots__ = (
-        "collect_errors",
+        "_messages",
         "base_token",
         "children",
-        "_messages",
-        "forked",
+        "collect_errors",
         "data_type",
         "data_type_params",
         "expression",
         "flags",
+        "forked",
         "node",
         "required_scopes",
     )
@@ -57,15 +53,15 @@ class TranslationCtx:
 
     def __init__(
         self,
-        collect_errors: Optional[bool] = None,
-        base_token: Optional[str] = None,
-        flags: Optional[ContextFlags] = None,
-        expression: Optional[ClauseElement] = None,
-        data_type: Optional[DataType] = None,
-        data_type_params: Optional[DataTypeParams] = None,
-        node: Optional[FormulaItem] = None,
+        collect_errors: bool | None = None,
+        base_token: str | None = None,
+        flags: ContextFlags | None = None,
+        expression: ClauseElement | None = None,
+        data_type: DataType | None = None,
+        data_type_params: DataTypeParams | None = None,
+        node: FormulaItem | None = None,
         required_scopes: int = Scope.EXPLICIT_USAGE,
-    ):
+    ) -> None:
         self.collect_errors = collect_errors if collect_errors is not None else self.default_collect_errors
         self.base_token = base_token
         self.children: list[TranslationCtx] = []
@@ -98,11 +94,11 @@ class TranslationCtx:
             _c0,
         )
 
-    def copy(self) -> "TranslationCtx":
+    def copy(self) -> TranslationCtx:
         return copy.copy(self)
 
     @property
-    def extract(self) -> Optional[NodeExtract]:
+    def extract(self) -> NodeExtract | None:
         return self.node.extract if self.node is not None else None
 
     @property
@@ -115,7 +111,7 @@ class TranslationCtx:
         """Return list of registered warnings."""
         return self._messages[MessageLevel.WARNING]
 
-    def flush(self) -> "TranslationCtx":
+    def flush(self) -> TranslationCtx:
         """
         Flatten child contexts into self and validate:
         - aggregation consistency and
@@ -135,7 +131,7 @@ class TranslationCtx:
             if self.forked:
                 raise RuntimeError("Data type must be set for forked contexts")
 
-            elif self.children:
+            if self.children:
                 # propagate directly because there were no calculations here
                 # (single child, no operator)
                 self.data_type = self.children[0].data_type
@@ -162,8 +158,8 @@ class TranslationCtx:
         self,
         level: MessageLevel,
         message: str,
-        token: Optional[str] = None,
-        code: Optional[tuple[str, ...]] = None,
+        token: str | None = None,
+        code: tuple[str, ...] | None = None,
     ) -> None:
         token = token if token is not None else self.base_token
         position = self.node.position if self.node is not None else Position()
@@ -180,20 +176,20 @@ class TranslationCtx:
 
         self._messages[level].append(error)
 
-    def add_error(self, message: str, token: Optional[str] = None, code: Optional[tuple[str, ...]] = None) -> None:
+    def add_error(self, message: str, token: str | None = None, code: tuple[str, ...] | None = None) -> None:
         return self._add_message(level=MessageLevel.ERROR, message=message, token=token, code=code)
 
-    def add_warning(self, message: str, token: Optional[str] = None, code: Optional[tuple[str, ...]] = None) -> None:
+    def add_warning(self, message: str, token: str | None = None, code: tuple[str, ...] | None = None) -> None:
         return self._add_message(level=MessageLevel.WARNING, message=message, token=token, code=code)
 
-    def set_type(self, data_type: DataType, data_type_params: Optional[DataTypeParams] = None) -> None:
+    def set_type(self, data_type: DataType, data_type_params: DataTypeParams | None = None) -> None:
         self.data_type = data_type
         self.data_type_params = data_type_params if data_type_params is not None else DataTypeParams()
 
     def set_expression(self, expression: Any) -> None:
         self.expression = expression
 
-    def set_token(self, token: Optional[str]) -> None:
+    def set_token(self, token: str | None) -> None:
         self.base_token = token
 
     def set_flags(self, flags: ContextFlags) -> None:
@@ -213,11 +209,11 @@ class TranslationCtx:
 
     def child(
         self,
-        token: Optional[str] = None,
-        flags: Optional[int] = None,
-        node: Optional[FormulaItem] = None,
-        required_scopes: Optional[int] = None,
-    ) -> "TranslationCtx":
+        token: str | None = None,
+        flags: int | None = None,
+        node: FormulaItem | None = None,
+        required_scopes: int | None = None,
+    ) -> TranslationCtx:
         """
         Spawn new child context.
         In `forked` mode only one child is permitted.
@@ -239,7 +235,7 @@ class TranslationCtx:
         self.children.append(child)
         return child
 
-    def adopt(self, child: "TranslationCtx") -> None:
+    def adopt(self, child: TranslationCtx) -> None:
         """
         "Adopt" a child context by adding it to children of self as if it were created by `self.fork()`.
         Can be used for substituting formula nodes for already translated expressions.

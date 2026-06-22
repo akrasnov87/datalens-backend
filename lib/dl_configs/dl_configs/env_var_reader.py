@@ -1,20 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import os
 from typing import (
-    Callable,
-    Generic,
     Literal,
     NamedTuple,
-    Optional,
     TypeVar,
-    Union,
     overload,
 )
 
-
 _RET_TV = TypeVar("_RET_TV")
-_FACTORY_RET_TV = TypeVar("_FACTORY_RET_TV")
 
 
 class SecretStr(str):
@@ -26,14 +21,14 @@ class SecretStr(str):
 
 
 class Required(NamedTuple):
-    message: Optional[str] = None
+    message: str | None = None
 
 
-class Factory(Generic[_FACTORY_RET_TV]):
-    def __init__(self, factory: Callable[[], _FACTORY_RET_TV]):
+class Factory[FACTORY_RET_TV]:
+    def __init__(self, factory: Callable[[], FACTORY_RET_TV]) -> None:
         self._factory = factory
 
-    def build(self) -> _FACTORY_RET_TV:
+    def build(self) -> FACTORY_RET_TV:
         return self._factory()
 
 
@@ -42,32 +37,30 @@ class EnvError(Exception):
 
 
 @overload
-def get_from_env(env_key: str, converter: Callable[[str], _RET_TV], default: Literal[None]) -> Optional[_RET_TV]:
+def get_from_env[RET_TV](env_key: str, converter: Callable[[str], RET_TV], default: Literal[None]) -> RET_TV | None:
     pass
 
 
-@overload  # noqa
-def get_from_env(env_key: str, converter: Callable[[str], _RET_TV], default: Required) -> _RET_TV:
+@overload
+def get_from_env[RET_TV](env_key: str, converter: Callable[[str], RET_TV], default: Required) -> RET_TV:
     pass
 
 
-@overload  # noqa
-def get_from_env(
-    env_key: str, converter: Callable[[str], _RET_TV], default: Union[_RET_TV, Factory[_RET_TV]]
-) -> _RET_TV:
+@overload
+def get_from_env[RET_TV](env_key: str, converter: Callable[[str], RET_TV], default: RET_TV | Factory[RET_TV]) -> RET_TV:
     pass
 
 
-@overload  # noqa
-def get_from_env(env_key: str, converter: Callable[[str], _RET_TV]) -> _RET_TV:
+@overload
+def get_from_env[RET_TV](env_key: str, converter: Callable[[str], RET_TV]) -> RET_TV:
     pass
 
 
 def get_from_env(  # noqa
     env_key: str,
     converter: Callable[[str], _RET_TV],
-    default: Union[_RET_TV, Factory[_RET_TV], Required, None] = Required(),  # noqa: B008
-) -> Optional[_RET_TV]:
+    default: _RET_TV | Factory[_RET_TV] | Required | None = Required(),  # noqa: B008
+) -> _RET_TV | None:
     if env_key in os.environ:
         try:
             return converter(os.environ[env_key])

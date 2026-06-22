@@ -1,12 +1,13 @@
 import abc
 import asyncio
+from collections.abc import (
+    Generator,
+    Iterable,
+)
 from http import HTTPStatus
 from typing import (
     ClassVar,
-    Generator,
-    Iterable,
     NamedTuple,
-    Optional,
 )
 
 from aiohttp import web
@@ -19,7 +20,10 @@ from dl_api_client.dsmaker.api.data_api import (
     SyncHttpDataApiV2,
 )
 from dl_api_client.dsmaker.api.http_sync_base import SyncHttpClientBase
-from dl_api_client.dsmaker.primitives import Dataset
+from dl_api_client.dsmaker.primitives import (
+    Dataset,
+    WhereClause,
+)
 from dl_api_lib.app.data_api.app import DataApiAppFactory
 from dl_api_lib.app_settings import (
     CacheInvalidationSettings,
@@ -99,7 +103,7 @@ class DataApiTestBase(ApiTestBase, metaclass=abc.ABCMeta):
             PIVOT_ENGINE_TYPE=PIVOT_ENGINE_TYPE_PANDAS,
         )
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def data_api_app_settings(
         self,
         bi_test_config: ApiTestEnvironmentConfiguration,
@@ -125,15 +129,13 @@ class DataApiTestBase(ApiTestBase, metaclass=abc.ABCMeta):
                 ),
             )
 
-        settings = TestingDataApiAppSettings(fallback=deprecated_settings, **extra_kwargs)
+        return TestingDataApiAppSettings(fallback=deprecated_settings, **extra_kwargs)
 
-        return settings
-
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def data_api_app_factory(self, data_api_app_settings: DataApiAppSettings) -> DataApiAppFactory:
         return TestingDataApiAppFactory(settings=data_api_app_settings)
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def data_api_app(
         self,
         data_api_app_factory: DataApiAppFactory,
@@ -143,7 +145,7 @@ class DataApiTestBase(ApiTestBase, metaclass=abc.ABCMeta):
             connectors_settings=connectors_settings,
         )
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def data_api_lowlevel_aiohttp_client(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -152,7 +154,7 @@ class DataApiTestBase(ApiTestBase, metaclass=abc.ABCMeta):
     ) -> TestClient:
         return loop.run_until_complete(aiohttp_client(data_api_app))
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def data_api_sync_client(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -165,15 +167,15 @@ class DataApiTestBase(ApiTestBase, metaclass=abc.ABCMeta):
             ),
         )
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def data_api(
         self,
         data_api_sync_client: SyncHttpClientBase,
-        bi_headers: Optional[dict[str, str]],
+        bi_headers: dict[str, str] | None,
     ) -> SyncHttpDataApiV2:
         return SyncHttpDataApiV2(client=data_api_sync_client, headers=bi_headers or {})
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def native_agg_function_names(self) -> dict[str, str]:
         return {
             "sum": "sum",
@@ -193,27 +195,32 @@ class StandardizedDataApiTestBase(DataApiTestBase, DatasetTestBase, metaclass=ab
         )
 
     def get_dataset_params(self, dataset_params: dict, db_table: DbTable) -> dict:
-        return dataset_params | dict(
-            parameters=dataset_params.get("parameters", {})
-            | dict(
-                schema_name=db_table.schema,
-                table_name=db_table.name,
-            )
-        )
+        return dataset_params | {
+            "parameters": dataset_params.get("parameters", {})
+            | {
+                "schema_name": db_table.schema,
+                "table_name": db_table.name,
+            }
+        }
 
     def get_result(
         self,
         ds: Dataset,
         data_api: SyncHttpDataApiV2,
         field_names: Iterable[str],
+        filters: list[WhereClause] | None = None,
         query_params: dict | None = None,
+        fail_ok: bool = False,
     ) -> HttpDataApiResponse:
         data_resp = data_api.get_result(
             dataset=ds,
             fields=[ds.find_field(title=field_name) for field_name in field_names],
+            filters=filters,
             query_params=query_params,
+            fail_ok=fail_ok,
         )
-        assert data_resp.status_code == HTTPStatus.OK, data_resp.response_errors
+        if not fail_ok:
+            assert data_resp.status_code == HTTPStatus.OK, data_resp.response_errors
         return data_resp
 
     def get_range(
@@ -234,10 +241,14 @@ class StandardizedDataApiTestBase(DataApiTestBase, DatasetTestBase, metaclass=ab
         ds: Dataset,
         data_api: SyncHttpDataApiV2,
         field_name: str,
+        filters: list[WhereClause] | None = None,
+        ignore_nonexistent_filters: bool | None = None,
     ) -> HttpDataApiResponse:
         data_resp = data_api.get_distinct(
             dataset=ds,
             field=ds.find_field(title=field_name),
+            filters=filters,
+            ignore_nonexistent_filters=ignore_nonexistent_filters,
         )
         assert data_resp.status_code == HTTPStatus.OK, data_resp.response_errors
         return data_resp
@@ -248,16 +259,18 @@ class StandardizedDataApiTestBase(DataApiTestBase, DatasetTestBase, metaclass=ab
         data_api: SyncHttpDataApiV2,
         field_names: Iterable[str],
         order_by: Iterable[str],
+        filters: list[WhereClause] | None = None,
     ) -> HttpDataApiResponse:
         data_resp = data_api.get_result(
             dataset=ds,
             fields=[ds.find_field(title=field_name) for field_name in field_names],
             order_by=[ds.find_field(title=field_name) for field_name in order_by],
+            filters=filters,
         )
         assert data_resp.status_code == HTTPStatus.OK, data_resp.response_errors
         return data_resp
 
-    def get_preview(self, ds: Dataset, data_api: SyncHttpDataApiV2, limit: Optional[int] = None) -> HttpDataApiResponse:
+    def get_preview(self, ds: Dataset, data_api: SyncHttpDataApiV2, limit: int | None = None) -> HttpDataApiResponse:
         if limit:
             data_resp = data_api.get_preview(dataset=ds, limit=limit)
         else:

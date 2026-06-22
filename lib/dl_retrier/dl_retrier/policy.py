@@ -1,9 +1,6 @@
+from collections.abc import Iterator
 import datetime
 import http
-from typing import (
-    Iterator,
-    TypeAlias,
-)
 
 import attr
 
@@ -16,7 +13,7 @@ class Retry:
     sleep_before_seconds: float
 
 
-ErrorCode: TypeAlias = int
+type ErrorCode = int
 
 
 @attr.s(frozen=True, hash=True)
@@ -77,13 +74,13 @@ class RetryPolicy:
         return error_code in self.retryable_codes
 
     def iter_retries(self) -> Iterator[Retry]:
-        start_dt = datetime.datetime.now()
+        start_dt = datetime.datetime.now(datetime.UTC)
         end_dt = start_dt + datetime.timedelta(seconds=self.total_timeout)
         max_attempts_count = self.retries_count + 1  # First attempt is not a retry
 
         for attempt_number in range(1, max_attempts_count + 1):
             sleep_before_seconds = self._get_sleep_before(attempt_number)
-            total_timeout_remaining = (end_dt - datetime.datetime.now()).total_seconds()
+            total_timeout_remaining = (end_dt - datetime.datetime.now(datetime.UTC)).total_seconds()
 
             if sleep_before_seconds > total_timeout_remaining:
                 break

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import abc
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-)
+from typing import TYPE_CHECKING
 
 import attr
 
 from dl_api_commons.base_models import FeatureFlags
+from dl_api_lib.app_settings import ConstraintsSettings
 from dl_api_lib.connector_availability.base import ConnectorAvailabilityConfig
 from dl_api_lib.service_registry.field_id_generator_factory import FieldIdGeneratorFactory
 from dl_api_lib.service_registry.formula_parser_factory import FormulaParserFactory
@@ -22,12 +20,13 @@ from dl_api_lib.service_registry.typed_query_raw_processor_factory import (
     DefaultRawQueryProcessorFactory,
     TypedQueryRawProcessorFactory,
 )
-from dl_constants.enums import QueryProcessingMode
+from dl_constants import QueryProcessingMode
 from dl_core.services_registry.top_level import (
     DefaultServicesRegistry,
     ServicesRegistry,
 )
 from dl_core.utils import FutureRef
+import dl_extract
 from dl_formula.parser.factory import ParserType
 from dl_i18n.localizer_base import (
     Localizer,
@@ -35,7 +34,6 @@ from dl_i18n.localizer_base import (
 )
 from dl_pivot.base.transformer_factory import PivotTransformerFactory
 from dl_rls.subject_resolver import BaseSubjectResolver
-
 
 if TYPE_CHECKING:
     from dl_api_lib.service_registry.dataset_validator_factory import DatasetValidatorFactory
@@ -48,7 +46,7 @@ class ApiServiceRegistry(ServicesRegistry, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_dataset_validator_factory(self) -> "DatasetValidatorFactory":
+    def get_dataset_validator_factory(self) -> DatasetValidatorFactory:
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -88,29 +86,38 @@ class ApiServiceRegistry(ServicesRegistry, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_exports_history_url_path(self) -> Optional[str]:
+    def get_exports_history_url_path(self) -> str | None:
         raise NotImplementedError
 
     @abc.abstractmethod
     def get_feature_flags(self) -> FeatureFlags:
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def get_constraints(self) -> ConstraintsSettings:
+        raise NotImplementedError
+
+    def get_extract_clickhouse_provider(self) -> dl_extract.ExtractClickhouseProvider:
+        raise NotImplementedError
+
 
 @attr.s
-class DefaultApiServiceRegistry(DefaultServicesRegistry, ApiServiceRegistry):  # noqa
-    _default_formula_parser_type: Optional[ParserType] = attr.ib(kw_only=True, default=None)
-    _formula_parser_factory: Optional[FormulaParserFactory] = attr.ib(kw_only=True)
-    _dataset_validator_factory: Optional["DatasetValidatorFactory"] = attr.ib(kw_only=True)
-    _field_id_generator_factory: Optional[FieldIdGeneratorFactory] = attr.ib(kw_only=True)
-    _supported_functions_manager: Optional[SupportedFunctionsManager] = attr.ib(kw_only=True, default=None)
-    _localizer_factory: Optional[LocalizerFactory] = attr.ib(kw_only=True, default=None)
-    _localizer_fallback: Optional[Localizer] = attr.ib(kw_only=True, default=None)
-    _connector_availability: Optional[ConnectorAvailabilityConfig] = attr.ib(kw_only=True, default=None)
+class DefaultApiServiceRegistry(DefaultServicesRegistry, ApiServiceRegistry):
+    _default_formula_parser_type: ParserType | None = attr.ib(kw_only=True, default=None)
+    _formula_parser_factory: FormulaParserFactory | None = attr.ib(kw_only=True)
+    _dataset_validator_factory: DatasetValidatorFactory | None = attr.ib(kw_only=True)
+    _field_id_generator_factory: FieldIdGeneratorFactory | None = attr.ib(kw_only=True)
+    _supported_functions_manager: SupportedFunctionsManager | None = attr.ib(kw_only=True, default=None)
+    _localizer_factory: LocalizerFactory | None = attr.ib(kw_only=True, default=None)
+    _localizer_fallback: Localizer | None = attr.ib(kw_only=True, default=None)
+    _connector_availability: ConnectorAvailabilityConfig | None = attr.ib(kw_only=True, default=None)
     _query_proc_mode: QueryProcessingMode = attr.ib(kw_only=True, default=QueryProcessingMode.basic)
-    _pivot_transformer_factory: Optional[PivotTransformerFactory] = attr.ib(kw_only=True, default=None)
+    _pivot_transformer_factory: PivotTransformerFactory | None = attr.ib(kw_only=True, default=None)
     _typed_query_processor_factory: TypedQueryProcessorFactory = attr.ib(kw_only=True)
     _typed_query_raw_processor_factory: TypedQueryRawProcessorFactory = attr.ib(kw_only=True)
     _feature_flags: FeatureFlags = attr.ib(kw_only=True, factory=FeatureFlags)
+    _constraints: ConstraintsSettings = attr.ib(kw_only=True, factory=ConstraintsSettings)
+    _extract_clickhouse_provider: dl_extract.ExtractClickhouseProvider | None = attr.ib(kw_only=True, default=None)
 
     _multi_query_mutator_factory_factory: SRMultiQueryMutatorFactory = attr.ib(
         init=False,
@@ -120,19 +127,19 @@ class DefaultApiServiceRegistry(DefaultServicesRegistry, ApiServiceRegistry):  #
         ),
     )
 
-    @_formula_parser_factory.default  # noqa
+    @_formula_parser_factory.default
     def _default_formula_parser_factory(self) -> FormulaParserFactory:
         return FormulaParserFactory(default_formula_parser_type=self._default_formula_parser_type)
 
-    @_field_id_generator_factory.default  # noqa
+    @_field_id_generator_factory.default
     def _default_field_id_generator_factory(self) -> FieldIdGeneratorFactory:
         return FieldIdGeneratorFactory()
 
-    @_typed_query_processor_factory.default  # noqa
+    @_typed_query_processor_factory.default
     def _default_typed_query_processor_factory(self) -> TypedQueryProcessorFactory:
         return DefaultQueryProcessorFactory(service_registry_ref=FutureRef.fulfilled(self))
 
-    @_typed_query_raw_processor_factory.default  # noqa
+    @_typed_query_raw_processor_factory.default
     def _default_typed_query_raw_processor_factory(self) -> TypedQueryRawProcessorFactory:
         return DefaultRawQueryProcessorFactory(service_registry_ref=FutureRef.fulfilled(self))
 
@@ -140,7 +147,7 @@ class DefaultApiServiceRegistry(DefaultServicesRegistry, ApiServiceRegistry):  #
         assert self._formula_parser_factory is not None
         return self._formula_parser_factory
 
-    def get_dataset_validator_factory(self) -> "DatasetValidatorFactory":
+    def get_dataset_validator_factory(self) -> DatasetValidatorFactory:
         assert self._dataset_validator_factory is not None
         return self._dataset_validator_factory
 
@@ -180,11 +187,18 @@ class DefaultApiServiceRegistry(DefaultServicesRegistry, ApiServiceRegistry):  #
     def get_typed_query_raw_processor_factory(self) -> TypedQueryRawProcessorFactory:
         return self._typed_query_raw_processor_factory
 
-    def get_exports_history_url_path(self) -> Optional[str]:
+    def get_exports_history_url_path(self) -> str | None:
         return self._exports_history_url_path
 
     def get_feature_flags(self) -> FeatureFlags:
         return self._feature_flags
+
+    def get_constraints(self) -> ConstraintsSettings:
+        return self._constraints
+
+    def get_extract_clickhouse_provider(self) -> dl_extract.ExtractClickhouseProvider:
+        assert self._extract_clickhouse_provider is not None
+        return self._extract_clickhouse_provider
 
     def close(self) -> None:
         if self._formula_parser_factory is not None:

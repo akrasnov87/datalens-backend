@@ -1,14 +1,13 @@
 import abc
-from typing import (
-    Any,
+from collections.abc import (
     Callable,
-    Optional,
     Sequence,
 )
+from typing import Any
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DataSourceType,
 )
@@ -65,7 +64,7 @@ class DefaultDataSourceMigrator(DataSourceMigrator):
         self,
         migration_dtos: Sequence[DataSourceMigrationInterface],
     ) -> DataSourceMigrationInterface:
-        raise exc.DataSourceMigrationImpossible()
+        raise exc.DataSourceMigrationImpossibleError()
 
     def _load_migration_dto(
         self,
@@ -79,8 +78,8 @@ class DefaultDataSourceMigrator(DataSourceMigrator):
 class MigrationKeyMappingItem:
     migration_dto_key: str = attr.ib(kw_only=True)
     source_spec_key: str = attr.ib(kw_only=True)
-    custom_export_resolver: Optional[Callable[[DataSourceSpec, str], Any]] = attr.ib(kw_only=True, default=None)
-    custom_import_resolver: Optional[Callable[[DataSourceMigrationInterface, str], Any]] = attr.ib(
+    custom_export_resolver: Callable[[DataSourceSpec, str], Any] | None = attr.ib(kw_only=True, default=None)
+    custom_import_resolver: Callable[[DataSourceMigrationInterface, str], Any] | None = attr.ib(
         kw_only=True, default=None
     )
 
@@ -119,17 +118,14 @@ class SpecBasedSourceMigrator(DataSourceMigrator):
         self,
         data_source_spec: DataSourceSpec,
     ) -> Sequence[DataSourceMigrationInterface]:
-        result: list[DataSourceMigrationInterface] = []
-        for migration_spec in self.get_migration_specs():
-            if migration_spec.source_type == data_source_spec.source_type:
-                result.append(
-                    self._export_for_migration_spec(
-                        data_source_spec=data_source_spec,
-                        migration_spec=migration_spec,
-                    )
-                )
-
-        return result
+        return [
+            self._export_for_migration_spec(
+                data_source_spec=data_source_spec,
+                migration_spec=migration_spec,
+            )
+            for migration_spec in self.get_migration_specs()
+            if migration_spec.source_type == data_source_spec.source_type
+        ]
 
     def _choose_migration_dto(
         self,
@@ -141,7 +137,7 @@ class SpecBasedSourceMigrator(DataSourceMigrator):
                 if type(dto) is migration_spec.dto_cls:
                     return dto
 
-        raise exc.DataSourceMigrationImpossible()
+        raise exc.DataSourceMigrationImpossibleError()
 
     def _load_migration_dto(
         self,
@@ -162,8 +158,7 @@ class SpecBasedSourceMigrator(DataSourceMigrator):
                     params[mapping_item.source_spec_key] = getattr(migration_dto, mapping_item.migration_dto_key)
 
             params = {key: value for key, value in params.items() if value is not None}
-            dsrc_spec = migration_spec.dsrc_spec_cls(**params)
-            return dsrc_spec
+            return migration_spec.dsrc_spec_cls(**params)
 
         raise TypeError(f"Invalid dto class: {type(migration_dto)}")
 

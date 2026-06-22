@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 import logging
 from typing import (
     TYPE_CHECKING,
     ClassVar,
-    Iterable,
-    Optional,
     TypeVar,
 )
 
@@ -18,7 +17,7 @@ import ydb_dbapi
 import ydb_dbapi.connections
 
 from dl_configs.utils import get_root_certificates
-from dl_constants.enums import ConnectionType
+from dl_constants import ConnectionType
 from dl_core import exc
 from dl_core.connection_executors.models.db_adapter_data import RawColumnInfo
 from dl_core.connection_models import (
@@ -34,7 +33,6 @@ from dl_connector_ydb.core.ydb.constants import (
     YDBAuthTypeMode,
 )
 from dl_connector_ydb.core.ydb.target_dto import YDBConnTargetDTO
-
 
 if TYPE_CHECKING:
     from dl_core.connection_models import (
@@ -54,7 +52,7 @@ class YDBAdapterBase(YQLAdapterBase[_DBA_YDB_BASE_DTO_TV]):
     conn_type: ClassVar[ConnectionType] = CONNECTION_TYPE_YDB
     dsn_template: ClassVar[str] = "{dialect}:///ydb/"  # 'yql:///ydb/'
 
-    def _get_ssl_ca(self) -> Optional[bytes]:
+    def _get_ssl_ca(self) -> bytes | None:
         if not self._target_dto.ssl_enable:
             return None
 
@@ -92,13 +90,13 @@ class YDBAdapterBase(YQLAdapterBase[_DBA_YDB_BASE_DTO_TV]):
 
     def get_connect_args(self) -> dict:
         target_dto = self._target_dto
-        args = dict(
-            host=self._target_dto.host,
-            port=self._target_dto.port,
-            protocol="grpcs" if self._target_dto.ssl_enable else "grpc",
-            database=target_dto.db_name,
-            root_certificates=self._get_ssl_ca(),
-        )
+        args = {
+            "host": self._target_dto.host,
+            "port": self._target_dto.port,
+            "protocol": "grpcs" if self._target_dto.ssl_enable else "grpc",
+            "database": target_dto.db_name,
+            "root_certificates": self._get_ssl_ca(),
+        }
         self._update_connect_args(args)
         return args
 
@@ -124,7 +122,7 @@ class YDBAdapterBase(YQLAdapterBase[_DBA_YDB_BASE_DTO_TV]):
                 res = resp.result()
                 children = [
                     (
-                        "{}/{}".format(path, child.name),
+                        f"{path}/{child.name}",
                         child,
                     )
                     for child in res.children
@@ -143,8 +141,7 @@ class YDBAdapterBase(YQLAdapterBase[_DBA_YDB_BASE_DTO_TV]):
         driver_excs = self.EXTRA_EXC_CLS
         try:
             result = self._list_table_names_i(db_name=db_name, show_dot=show_dot)
-            for item in result:
-                yield item
+            yield from result
         except driver_excs as err:
             query = "list_directory()"
             raise exc.DatabaseQueryError(db_message=str(err), query=query, inspector_query=query) from None
@@ -175,9 +172,7 @@ class YDBAdapterBase(YQLAdapterBase[_DBA_YDB_BASE_DTO_TV]):
                 driver = connection.connection._driver  # type: ignore  # 2024-01-24 # TODO: "DBAPIConnection" has no attribute "_driver"  [attr-defined]
                 assert driver
 
-                if table_def.db_name is None:
-                    table_path = table_def.table_name
-                elif table_def.table_name.startswith("/"):
+                if table_def.db_name is None or table_def.table_name.startswith("/"):
                     table_path = table_def.table_name
                 else:
                     table_path = table_def.db_name.rstrip("/") + "/" + table_def.table_name

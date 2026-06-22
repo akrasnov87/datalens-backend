@@ -1,7 +1,5 @@
-from typing import (
-    Callable,
-    ClassVar,
-)
+from collections.abc import Callable
+from typing import ClassVar
 
 import attr
 
@@ -96,6 +94,7 @@ class ConnectionStarRocks(
                     source_type=SOURCE_TYPE_STARROCKS_TABLE,
                     localizer=localizer,
                     disabled=not self.is_subselect_allowed,
+                    disabled_text=self.subselect_disabled_text,
                     template_enabled=self.is_datasource_template_allowed,
                     db_name_form_enabled=True,
                     db_name_form_title=localizer.translate(Translatable("source_templates-label-starrocks_catalog")),
@@ -109,6 +108,7 @@ class ConnectionStarRocks(
                 source_type=SOURCE_TYPE_STARROCKS_SUBSELECT,
                 localizer=localizer,
                 disabled=not self.is_subselect_allowed,
+                disabled_text=self.subselect_disabled_text,
                 template_enabled=self.is_datasource_template_allowed,
             )
         )
@@ -148,11 +148,11 @@ class ConnectionStarRocks(
                 offset=offset,
             )
             return [
-                dict(
-                    db_name=db_name,
-                    schema_name=table.schema_name,
-                    table_name=table.table_name,
-                )
+                {
+                    "db_name": db_name,
+                    "schema_name": table.schema_name,
+                    "table_name": table.table_name,
+                }
                 for table in tables
             ]
 
@@ -165,11 +165,11 @@ class ConnectionStarRocks(
                 db_name=catalog_name,
             )
             parameter_combinations.extend(
-                dict(
-                    db_name=catalog_name,
-                    schema_name=table.schema_name,
-                    table_name=table.table_name,
-                )
+                {
+                    "db_name": catalog_name,
+                    "schema_name": table.schema_name,
+                    "table_name": table.table_name,
+                }
                 for table in tables
             )
 

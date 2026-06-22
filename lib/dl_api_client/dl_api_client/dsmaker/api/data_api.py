@@ -35,7 +35,7 @@ from dl_api_client.dsmaker.primitives import (
     UpdateAction,
     WhereClause,
 )
-from dl_constants.enums import (
+from dl_constants import (
     FieldRole,
     OrderDirection,
     RangeType,
@@ -463,10 +463,8 @@ class DataApiV2SerializationAdapter(BaseApiV1SerializationAdapter):
             data["order_by"] = order_by_data
 
         if filters is not None:
-            filter_data: list[dict] = []
             filter_schema = FilterClauseSchema()
-            for condition in filters:
-                filter_data.append(filter_schema.dump(condition))
+            filter_data: list[dict] = [filter_schema.dump(condition) for condition in filters]
             data["filters"] = filter_data
 
         if parameters is not None:
@@ -488,10 +486,8 @@ class DataApiV2SerializationAdapter(BaseApiV1SerializationAdapter):
             data["parameter_values"] = parameters_data
 
         if blocks is not None:
-            block_data: list[dict] = []
             block_schema = QueryBlockSchema()
-            for block in blocks:
-                block_data.append(block_schema.dump(block))
+            block_data: list[dict] = [block_schema.dump(block) for block in blocks]
             data["blocks"] = block_data
 
         if updates:
@@ -580,7 +576,7 @@ class DataApiV2SerializationAdapter(BaseApiV1SerializationAdapter):
             field.as_req_legend_item(role=FieldRole.range, range_type=RangeType.min),
             field.as_req_legend_item(role=FieldRole.range, range_type=RangeType.max),
         ]
-        data = self.make_req_data_common(
+        return self.make_req_data_common(
             dataset=dataset,
             fields=fields,
             filters=filters,
@@ -589,8 +585,6 @@ class DataApiV2SerializationAdapter(BaseApiV1SerializationAdapter):
             updates=updates,
             ignore_nonexistent_filters=ignore_nonexistent_filters,
         )
-
-        return data
 
     def make_req_data_get_distinct(
         self,
@@ -613,7 +607,7 @@ class DataApiV2SerializationAdapter(BaseApiV1SerializationAdapter):
         else:
             field_li = field.as_req_legend_item(role=FieldRole.distinct)
         fields = [field_li]
-        data = self.make_req_data_common(
+        return self.make_req_data_common(
             dataset=dataset,
             limit=limit,
             offset=offset,
@@ -625,8 +619,6 @@ class DataApiV2SerializationAdapter(BaseApiV1SerializationAdapter):
             updates=updates,
             ignore_nonexistent_filters=ignore_nonexistent_filters,
         )
-
-        return data
 
     def make_req_data_get_pivot(
         self,
@@ -703,6 +695,35 @@ class SyncHttpDataApiV2(SyncHttpDataApiBase):
         if query_params:
             url += "?" + urllib.parse.urlencode(query_params)
         return self._request(url, method="post", data=raw_body, headers=headers)
+
+    def get_response_for_dataset_result_preflight(
+        self,
+        dataset_id: str,
+        raw_body: dict,
+        headers: dict | None = None,
+    ) -> ClientResponse:
+        url = f"/api/data/{self.api_v}/datasets/{dataset_id}/result-preflight"
+        return self._request(url, method="post", data=raw_body, headers=headers)
+
+    def get_result_preflight(
+        self,
+        *,
+        dataset: Dataset,
+        updates: list[UpdateAction | dict] | None = None,
+        fields: list[ResultField | RequestLegendItem] | None = None,
+        filters: list[WhereClause] | None = None,
+        fail_ok: bool = False,
+    ) -> HttpDataApiResponse:
+        data = self.serial_adapter.make_req_data_get_result(
+            dataset=dataset,
+            fields=fields,
+            filters=filters,
+            updates=updates,
+        )
+        response = self.get_response_for_dataset_result_preflight(dataset_id=dataset.id, raw_body=data)
+        if not fail_ok:
+            assert response.status_code == HTTPStatus.OK, response.json
+        return self.make_response_obj(client_response=response, data=None)
 
     def get_response_for_dataset_value_range(
         self,
@@ -1184,7 +1205,7 @@ class AsyncHttpDataApiV2(AsyncHttpDataApiBase):
 
 
 @attr.s
-class SyncHttpDataApiV1_5(SyncHttpDataApiV2):
+class SyncHttpDataApiV1p5(SyncHttpDataApiV2):
     api_v = "v1.5"
 
     def _make_resp_data(self, full_response_data: dict) -> dict:

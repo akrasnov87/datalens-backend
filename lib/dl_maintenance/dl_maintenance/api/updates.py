@@ -28,10 +28,7 @@ update_dataset(
 
 """
 
-from typing import (
-    Optional,
-    Sequence,
-)
+from collections.abc import Sequence
 import uuid
 
 import attr
@@ -47,7 +44,7 @@ from dl_api_lib.request_model.data import (
     ReplaceConnectionAction,
     SourceActionBase,
 )
-from dl_constants.enums import (
+from dl_constants import (
     AggregationFunction,
     CalcMode,
     DataSourceRole,
@@ -84,12 +81,12 @@ class SimpleDatasetUpdateGen:
     def add_field(
         self,
         title: str,
-        formula: Optional[str] = None,
-        source: Optional[str] = None,
-        cast: Optional[UserDataType] = None,
+        formula: str | None = None,
+        source: str | None = None,
+        cast: UserDataType | None = None,
         aggregation: AggregationFunction = AggregationFunction.none,
-        default_value: Optional[BIValue] = None,
-        value_constraint: Optional[BaseParameterValueConstraint] = None,
+        default_value: BIValue | None = None,
+        value_constraint: BaseParameterValueConstraint | None = None,
     ) -> FieldAction:
         if default_value is not None:
             calc_mode = CalcMode.parameter

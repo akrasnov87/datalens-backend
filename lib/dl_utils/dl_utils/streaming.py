@@ -1,69 +1,69 @@
 from __future__ import annotations
 
-import logging
-from typing import (
-    Any,
+from collections.abc import (
     AsyncGenerator,
     AsyncIterable,
     Awaitable,
     Callable,
-    Generic,
     Iterable,
-    Optional,
     Sequence,
+)
+import logging
+from typing import (
+    Any,
     TypeVar,
 )
 
 import attr
 
-
 LOGGER = logging.getLogger(__name__)
 
+ENTRY_TV = TypeVar("ENTRY_TV")
 
-_ENTRY_TV = TypeVar("_ENTRY_TV")
+
 # Alias for readability
-TChunk = Sequence  # `Sequence[_ENTRY_TV]`  # Chunk of "rows" (which might be anything)
+TChunk = Sequence  # `Sequence[ENTRY_TV]`  # Chunk of "rows" (which might be anything)
 
 
-class AsyncChunkedBase(Generic[_ENTRY_TV]):
+class AsyncChunkedBase[ENTRY_TV]:
     """A wrapper for an iterable providing both chunked and pre-item interfaces"""
 
     @property
-    def items(self) -> AsyncIterable[_ENTRY_TV]:
+    def items(self) -> AsyncIterable[ENTRY_TV]:
         raise NotImplementedError
 
     @property
-    def chunks(self) -> AsyncIterable[TChunk[_ENTRY_TV]]:
+    def chunks(self) -> AsyncIterable[TChunk[ENTRY_TV]]:
         raise NotImplementedError
 
-    async def all(self) -> list[_ENTRY_TV]:
-        result: list[_ENTRY_TV] = []
+    async def all(self) -> list[ENTRY_TV]:
+        result: list[ENTRY_TV] = []
         async for chunk in self.chunks:
             result += chunk
         return result
 
-    def limit(self, max_count: int, limit_exception: type[Exception]) -> AsyncChunkedLimited:
+    def limit(self, max_count: int, limit_exception: type[Exception]) -> AsyncChunkedLimited[ENTRY_TV]:
         return AsyncChunkedLimited(chunked=self, max_count=max_count, limit_exc_to_raise=limit_exception)
 
 
 @attr.s
-class AsyncChunked(AsyncChunkedBase[_ENTRY_TV]):
-    _chunked_data: AsyncIterable[TChunk[_ENTRY_TV]] = attr.ib(repr=False)
+class AsyncChunked(AsyncChunkedBase[ENTRY_TV]):
+    _chunked_data: AsyncIterable[TChunk[ENTRY_TV]] = attr.ib(repr=False)
 
     @classmethod
     def from_chunked_iterable(
         cls,
-        sync_chunked_data: Iterable[TChunk[_ENTRY_TV]],
-    ) -> AsyncChunked[_ENTRY_TV]:
-        async def async_chunk_gen() -> AsyncGenerator[TChunk[_ENTRY_TV], None]:
+        sync_chunked_data: Iterable[TChunk[ENTRY_TV]],
+    ) -> AsyncChunked[ENTRY_TV]:
+        async def async_chunk_gen() -> AsyncGenerator[TChunk[ENTRY_TV], None]:
             for chunk in sync_chunked_data:
                 yield chunk
 
         return cls(chunked_data=async_chunk_gen())
 
     @property
-    def items(self) -> AsyncIterable[_ENTRY_TV]:
-        async def item_gen() -> AsyncGenerator[_ENTRY_TV, None]:
+    def items(self) -> AsyncIterable[ENTRY_TV]:
+        async def item_gen() -> AsyncGenerator[ENTRY_TV, None]:
             async for chunk in self._chunked_data:
                 for item in chunk:
                     yield item
@@ -71,22 +71,22 @@ class AsyncChunked(AsyncChunkedBase[_ENTRY_TV]):
         return item_gen()
 
     @property
-    def chunks(self) -> AsyncIterable[TChunk[_ENTRY_TV]]:
+    def chunks(self) -> AsyncIterable[TChunk[ENTRY_TV]]:
         return self._chunked_data
 
 
 @attr.s
-class AsyncChunkedLimited(AsyncChunkedBase[_ENTRY_TV]):
-    _chunked: AsyncChunkedBase = attr.ib()
+class AsyncChunkedLimited(AsyncChunkedBase[ENTRY_TV]):
+    _chunked: AsyncChunkedBase[ENTRY_TV] = attr.ib()
     _max_count: int = attr.ib()
     limit_exc_to_raise: type[Exception] = attr.ib(kw_only=True)
 
     @property
-    def items(self) -> AsyncIterable[_ENTRY_TV]:
+    def items(self) -> AsyncIterable[ENTRY_TV]:
         if self._max_count is None:
             return self._chunked.items
 
-        async def async_item_gen() -> AsyncGenerator[_ENTRY_TV, None]:
+        async def async_item_gen() -> AsyncGenerator[ENTRY_TV, None]:
             cnt = 0
             async for item in self._chunked.items:
                 cnt += 1
@@ -94,16 +94,16 @@ class AsyncChunkedLimited(AsyncChunkedBase[_ENTRY_TV]):
                     raise self.limit_exc_to_raise()
                 yield item
 
-            LOGGER.info(f"Received {cnt} data rows.")
+            LOGGER.info("Received %s data rows.", cnt)
 
         return async_item_gen()
 
     @property
-    def chunks(self) -> AsyncIterable[TChunk[_ENTRY_TV]]:
+    def chunks(self) -> AsyncIterable[TChunk[ENTRY_TV]]:
         if self._max_count is None:
             return self._chunked.chunks
 
-        async def async_chunk_gen() -> AsyncGenerator[TChunk[_ENTRY_TV], None]:
+        async def async_chunk_gen() -> AsyncGenerator[TChunk[ENTRY_TV], None]:
             cnt = 0
             async for chunk in self._chunked.chunks:
                 cnt += len(chunk)
@@ -111,24 +111,24 @@ class AsyncChunkedLimited(AsyncChunkedBase[_ENTRY_TV]):
                     raise self.limit_exc_to_raise()
                 yield chunk
 
-            LOGGER.info(f"Received {cnt} data rows.")
+            LOGGER.info("Received %s data rows.", cnt)
 
         return async_chunk_gen()
 
 
 @attr.s
-class LazyAsyncChunked(AsyncChunkedBase[_ENTRY_TV]):
+class LazyAsyncChunked(AsyncChunkedBase[ENTRY_TV]):
     """
     ``AsyncChunkedBase`` implementation that executes an initialization callable only when iteration starts.
     """
 
-    _initializer: Callable[[], Awaitable[AsyncChunkedBase[_ENTRY_TV]]] = attr.ib(repr=False)
+    _initializer: Callable[[], Awaitable[AsyncChunkedBase[ENTRY_TV]]] = attr.ib(repr=False)
     _finalizer: Callable[[], Awaitable[Any]] = attr.ib(repr=False)
-    _chunked: Optional[Awaitable[AsyncChunkedBase[_ENTRY_TV]]] = attr.ib(init=False, default=None)
+    _chunked: Awaitable[AsyncChunkedBase[ENTRY_TV]] | None = attr.ib(init=False, default=None)
 
     @property
-    def items(self) -> AsyncIterable[_ENTRY_TV]:
-        async def item_gen() -> AsyncGenerator[_ENTRY_TV, None]:
+    def items(self) -> AsyncIterable[ENTRY_TV]:
+        async def item_gen() -> AsyncGenerator[ENTRY_TV, None]:
             if self._chunked is None:
                 self._chunked = await self._initializer()  # type: ignore  # TODO: fix
             try:
@@ -140,8 +140,8 @@ class LazyAsyncChunked(AsyncChunkedBase[_ENTRY_TV]):
         return item_gen()
 
     @property
-    def chunks(self) -> AsyncIterable[TChunk[_ENTRY_TV]]:
-        async def chunk_gen() -> AsyncGenerator[TChunk[_ENTRY_TV], None]:
+    def chunks(self) -> AsyncIterable[TChunk[ENTRY_TV]]:
+        async def chunk_gen() -> AsyncGenerator[TChunk[ENTRY_TV], None]:
             if self._chunked is None:
                 self._chunked = await self._initializer()  # type: ignore  # TODO: fix
             try:
@@ -153,12 +153,9 @@ class LazyAsyncChunked(AsyncChunkedBase[_ENTRY_TV]):
         return chunk_gen()
 
 
-_CBO_ITEM_TV = TypeVar("_CBO_ITEM_TV")
-
-
-async def chunkify_by_one(
-    items: AsyncIterable[_CBO_ITEM_TV],
-) -> AsyncIterable[Sequence[_CBO_ITEM_TV]]:
+async def chunkify_by_one[CBO_ITEM_TV](
+    items: AsyncIterable[CBO_ITEM_TV],
+) -> AsyncIterable[Sequence[CBO_ITEM_TV]]:
     """Helper to wrap an iterable into a chunked iterable with one item per chunk"""
     async for item in items:
         yield (item,)

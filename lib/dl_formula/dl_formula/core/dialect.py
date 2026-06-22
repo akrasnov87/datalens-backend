@@ -1,7 +1,11 @@
-""" ... """
+"""..."""
 
 from __future__ import annotations
 
+from collections.abc import (
+    Collection,
+    Generator,
+)
 from functools import reduce
 import inspect
 from itertools import chain
@@ -10,17 +14,13 @@ from operator import ior
 import re
 from typing import (
     Any,
-    Collection,
-    Generator,
     NamedTuple,
-    Optional,
 )
 
 from dl_dynamic_enum import (
     AutoEnumValue,
     DynamicEnum,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ class DialectCombo(NamedTuple):
 
     @property
     def common_name_and_version(self) -> str:
-        return f'{self.common_name.name}_{"_".join((str(part) for part in self.common_version))}'.strip("_")
+        return f'{self.common_name.name}_{"_".join(str(part) for part in self.common_version)}'.strip("_")
 
     def __sub__(self, other: Any) -> DialectCombo:
         if isinstance(other, DialectBit):
@@ -87,8 +87,7 @@ class DialectCombo(NamedTuple):
             return DialectCombo(
                 bits=self.bits - other.bits,
             )
-        else:
-            raise TypeError(type(other))
+        raise TypeError(type(other))
 
     def __or__(self, other: Any) -> DialectCombo:
         if isinstance(other, DialectBit):
@@ -99,8 +98,7 @@ class DialectCombo(NamedTuple):
             return DialectCombo(
                 bits=self.bits | other.bits,
             )
-        else:
-            raise TypeError(type(other))
+        raise TypeError(type(other))
 
     def __and__(self, other: Any) -> DialectCombo:
         if isinstance(other, DialectBit):
@@ -111,8 +109,7 @@ class DialectCombo(NamedTuple):
             return DialectCombo(
                 bits=self.bits & other.bits,
             )
-        else:
-            raise TypeError(type(other))
+        raise TypeError(type(other))
 
     def __bool__(self) -> bool:
         return bool(self.bits)
@@ -210,11 +207,11 @@ def register_default_dialect(dialect_name: DialectName, dialect_combo: DialectCo
 
 def from_name_and_version(
     dialect_name: DialectName,
-    dialect_version: Optional[str],
+    dialect_version: str | None,
 ) -> DialectCombo:
     """Return ``DialectCombo`` instance corresponding to the version string (``SELECT VERSION()``)"""
 
-    parsed_version: Optional[VersionType]
+    parsed_version: VersionType | None
     if dialect_version:
         version_match = re.search(r"(?P<version>\d+(\.\d+)+)", dialect_version)
         if version_match is None:
@@ -225,10 +222,10 @@ def from_name_and_version(
     else:
         parsed_version = None
 
-    LOGGER.info(f"Parsed dialect version {dialect_version} as {parsed_version}")
+    LOGGER.info("Parsed dialect version %s as %s", dialect_version, parsed_version)
 
     if parsed_version is None and dialect_name in dialect_defaults:
-        LOGGER.info(f"Falling back to {dialect_defaults[dialect_name]}")
+        LOGGER.info("Falling back to %s", dialect_defaults[dialect_name])
         return dialect_defaults[dialect_name]
 
     matches_by_name = sorted(
@@ -247,7 +244,7 @@ def from_name_and_version(
     if matches_by_version:
         # perfect match. Return the latest dialect version possible
         matched_dialect = matches_by_version[-1]
-        LOGGER.info(f"Matched dialect found: {matched_dialect.single_bit}")
+        LOGGER.info("Matched dialect found: %s", matched_dialect.single_bit)
         return matched_dialect
 
     LOGGER.warning('Failed to get dialect for DB "%s" and version "%s"', dialect_name.name, dialect_version)

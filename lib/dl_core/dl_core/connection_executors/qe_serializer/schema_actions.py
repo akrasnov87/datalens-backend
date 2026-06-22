@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Union,
-)
+from typing import Any
 
 from marshmallow import fields
 
-from dl_constants.enums import DashSQLQueryType
+from dl_constants import DashSQLQueryType
 from dl_core.connection_executors.adapters.common_base import CommonBaseDirectAdapter
 from dl_core.connection_executors.models.connection_target_dto_base import ConnTargetDTO
 from dl_core.connection_executors.qe_serializer import dba_actions as dba_actions
@@ -37,11 +34,11 @@ class DBAdapterActionBaseSchema(BaseQEAPISchema):
     def dump_dba_cls(self, act: dba_actions.ActionExecuteQuery) -> str:
         return f"{act.dba_cls.__module__}.{act.dba_cls.__qualname__}"
 
-    def load_dba_cls(self, value: str) -> Union[type[CommonBaseDirectAdapter]]:
+    def load_dba_cls(self, value: str) -> type[CommonBaseDirectAdapter]:
         mod_name, cls_name = value.rsplit(".", 1) if "." in value else (None, value)
         candidate = next(
             filter(
-                lambda clz: clz.__module__ == mod_name and clz.__qualname__ == cls_name or clz.__qualname__ == value,
+                lambda clz: (clz.__module__ == mod_name and clz.__qualname__ == cls_name) or clz.__qualname__ == value,
                 self.allowed_dba_classes,
             ),  # TODO clz.__qualname__ == value method is deprecated, to be removed someday
             None,

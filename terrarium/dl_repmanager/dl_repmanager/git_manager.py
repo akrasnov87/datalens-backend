@@ -1,24 +1,23 @@
 from pathlib import Path
 import subprocess
-from typing import Optional
 
 import attr
 
 
 @attr.s()
-class GitManager:  # type:ignore
+class GitManager:  # type: ignore
     _path: Path = attr.ib()
     _suppress_stdout_on_run: bool = attr.ib(default=True)
 
     def _run_git(
         self,
         args: list[str],
-        cwd: Optional[Path] = None,
+        cwd: Path | None = None,
         extract_stdout: bool = False,
     ) -> subprocess.CompletedProcess:
         actual_cwd: Path = cwd or self._path
 
-        stdout_target: Optional[int]
+        stdout_target: int | None
         if extract_stdout:
             stdout_target = subprocess.PIPE
         elif self._suppress_stdout_on_run:
@@ -26,8 +25,8 @@ class GitManager:  # type:ignore
         else:
             stdout_target = None
 
-        return subprocess.run(
-            ["git", *args],
+        return subprocess.run(  # noqa: S603
+            ["git", *args],  # noqa: S607
             cwd=actual_cwd,
             stdout=stdout_target,
             check=True,
@@ -38,7 +37,7 @@ class GitManager:  # type:ignore
         args: list[str],
         *,
         auto_strip: bool,
-        cwd: Optional[Path] = None,
+        cwd: Path | None = None,
     ) -> str:
         proc = self._run_git(args=args, cwd=cwd, extract_stdout=True)
         stdout = proc.stdout.decode("ascii")
@@ -74,9 +73,7 @@ class GitManager:  # type:ignore
                 cwd=destination.parent,
             )
 
-        dest_repo_manager = attr.evolve(self, path=destination)
-
-        return dest_repo_manager
+        return attr.evolve(self, path=destination)
 
     def checkout(self, rev: str) -> None:
         rev_hash = self._get_git_output(["rev-parse", rev], auto_strip=True)

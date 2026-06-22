@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Optional,
-    Sequence,
-)
+from collections.abc import Sequence
+from typing import Any
 
 import attr
 
@@ -25,7 +22,7 @@ class ExampleConfig:
     source: ExampleSource = attr.ib(kw_only=True)
     # e.g. formula_fields = (('My Field', 'STR([col1])'),)
     formula_fields: list[tuple[str, str]] = attr.ib(kw_only=True)
-    dialect: Optional[DialectCombo] = attr.ib(kw_only=True, default=None)
+    dialect: DialectCombo | None = attr.ib(kw_only=True, default=None)
     name: str = attr.ib(kw_only=True, default=EXAMPLE_TITLE)
     # group_by and order_by are lists of formulas
     group_by: Sequence[str] = attr.ib(kw_only=True, default=())
@@ -38,7 +35,7 @@ class ExampleConfig:
     additional_transformations: Sequence[list[tuple[str, str]]] = attr.ib(kw_only=True, default=())
     # If additional transformations are applied,
     # then one might want to disguise real formulas used for the result with these overrides
-    override_formula_fields: Optional[list[tuple[str, str]]] = attr.ib(kw_only=True, default=None)
+    override_formula_fields: list[tuple[str, str]] | None = attr.ib(kw_only=True, default=None)
 
 
 @attr.s(frozen=True)

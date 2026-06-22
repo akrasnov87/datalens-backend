@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-)
+from typing import TYPE_CHECKING
 
 import attr
 import typing_extensions
@@ -11,7 +8,6 @@ import typing_extensions
 from dl_core.connection_executors.models.connection_target_dto_base import BaseSQLConnTargetDTO
 
 from dl_connector_ydb.core.ydb.constants import YDBAuthTypeMode
-
 
 if TYPE_CHECKING:
     from dl_constants.types import TJSONLike
@@ -22,7 +18,7 @@ class YDBConnTargetDTO(BaseSQLConnTargetDTO):
     auth_type: YDBAuthTypeMode = attr.ib()
 
     ssl_enable: bool = attr.ib(kw_only=True, default=False)
-    ssl_ca: Optional[str] = attr.ib(kw_only=True, default=None)
+    ssl_ca: str | None = attr.ib(kw_only=True, default=None)
 
     def to_jsonable_dict(self) -> dict[str, TJSONLike]:
         return {

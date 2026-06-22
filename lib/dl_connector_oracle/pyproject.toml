@@ -21,9 +21,10 @@ dl-formula-ref = {path = "../dl_formula_ref"}
 dl-i18n = {path = "../dl_i18n"}
 dl-sqlalchemy-oracle = {path = "../dl_sqlalchemy_oracle"}
 dl-type-transformer = {path = "../dl_type_transformer"}
+frozendict = "*"
 marshmallow = "*"
 oracledb = "*"
-python = ">=3.10, <3.13"
+python = ">=3.12, <3.13"
 sqlalchemy = "*"
 
 [tool.poetry.group.tests.dependencies]
@@ -32,7 +33,6 @@ dl-api-lib-testing = {path = "../dl_api_lib_testing"}
 dl-core-testing = {path = "../dl_core_testing"}
 dl-formula-testing = {path = "../dl_formula_testing"}
 dl-testing = {path = "../dl_testing"}
-frozendict = "*"
 pytest = "*"
 requests = "*"
 
@@ -93,7 +93,6 @@ root_dir = "dl_connector_oracle_tests/"
 target_path = "db"
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_connector_oracle_tests/"
 skip_compose = "true"
 target_path = "unit"

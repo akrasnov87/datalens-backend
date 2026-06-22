@@ -22,8 +22,9 @@ dl-query-processing = {path = "../dl_query_processing"}
 dl-sqlalchemy-bitrix = {path = "../dl_sqlalchemy_bitrix"}
 dl-type-transformer = {path = "../dl_type_transformer"}
 dl-utils = {path = "../dl_utils"}
+frozendict = "*"
 marshmallow = "*"
-python = ">=3.10, <3.13"
+python = ">=3.12, <3.13"
 redis = "*"
 redis_cache_lock = {path = "../redis-cache-lock"}
 sqlalchemy = "*"
@@ -80,7 +81,6 @@ root_dir = "dl_connector_bitrix_gds_tests/"
 target_path = "ext"
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_connector_bitrix_gds_tests/"
 skip_compose = "true"
 target_path = "unit"

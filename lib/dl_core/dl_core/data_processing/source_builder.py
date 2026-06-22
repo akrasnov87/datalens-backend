@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Collection
 from itertools import chain
 import logging
 from typing import (
     Any,
     ClassVar,
-    Collection,
     NamedTuple,
-    Optional,
-    Union,
 )
 
 import attr
@@ -17,7 +15,7 @@ import sqlalchemy as sa
 from sqlalchemy.sql.elements import ClauseElement
 
 from dl_cache_engine.primitives import LocalKeyRepresentation
-from dl_constants.enums import JoinType
+from dl_constants import JoinType
 from dl_core import exc
 from dl_core.components.ids import AvatarId
 from dl_core.data_processing.prepared_components.primitives import (
@@ -27,10 +25,9 @@ from dl_core.data_processing.prepared_components.primitives import (
 from dl_core.query.bi_query import SqlSourceType
 from dl_core.query.expression import JoinOnExpressionCtx
 
-
 LOGGER = logging.getLogger(__name__)
 
-JoinExpressionType = Union[ClauseElement, str]
+JoinExpressionType = ClauseElement | str
 
 _MAX_AVATAR_REUSAGE_CNT = 10
 
@@ -50,7 +47,7 @@ class SqlSourceBuilder:
     """
 
     # Constants
-    _COMMON_JOIN_PARAMS: ClassVar[dict[str, bool]] = dict(all=False, any=False, global_=False)
+    _COMMON_JOIN_PARAMS: ClassVar[dict[str, bool]] = {"all": False, "any": False, "global_": False}
     _JOIN_PARAMS_BY_TYPE: ClassVar[dict[JoinType, dict[str, Any]]] = {
         JoinType.inner: {"type": "inner"},
         JoinType.left: {"isouter": True, "type": "left"},
@@ -85,11 +82,11 @@ class SqlSourceBuilder:
         used_avatar_ids: set[AvatarId] = {root_avatar_id}
         used_avatar_ids_as_list: list[AvatarId] = []
 
-        relations_by_left: dict[Optional[AvatarId], list[JoinOnExpressionCtx]] = defaultdict(list)
+        relations_by_left: dict[AvatarId | None, list[JoinOnExpressionCtx]] = defaultdict(list)
         for rel in join_on_expressions:
             relations_by_left[rel.left_id].append(rel)
 
-        def _recursive_collect(avatar_id: Optional[AvatarId], ambiguous_relations: bool) -> None:
+        def _recursive_collect(avatar_id: AvatarId | None, ambiguous_relations: bool) -> None:
             avatar_user_relations = [
                 rel
                 for rel in relations_by_left[avatar_id]
@@ -104,7 +101,7 @@ class SqlSourceBuilder:
 
                 relation_expr_ctx = prep_relation.expression
                 relation_expr: JoinExpressionType = relation_expr_ctx.expression  # type: ignore  # 2024-01-24 # TODO: "ClauseElement" has no attribute "expression"  [attr-defined]
-                LOGGER.info(f"Including relation between avatars {avatar_id} and {child_avatar_id}")
+                LOGGER.info("Including relation between avatars %s and %s", avatar_id, child_avatar_id)
                 avatar_join_info_list.append(
                     AvatarJoinInfo(
                         avatar_id=child_avatar_id, join_type=prep_relation.join_type, on_clause=relation_expr
@@ -188,15 +185,16 @@ class SqlSourceBuilder:
         )
         if used_avatar_ids != required_avatar_ids:
             LOGGER.warning(
-                f"Used avatar IDs are different from required: required: {required_avatar_ids}, "
-                f"used: {used_avatar_ids}"
+                "Used avatar IDs are different from required: required: %s, used: %s",
+                required_avatar_ids,
+                used_avatar_ids,
             )
 
         data_key = LocalKeyRepresentation()
         for prep_src_info in prepared_sources:
             data_key = data_key.multi_extend(*prep_src_info.data_key.key_parts)
 
-        joint_source: Optional[SqlSourceType] = None
+        joint_source: SqlSourceType | None = None
         if not use_empty_source:
             joint_source = self.build_from_avatar_join_info(
                 root_avatar_id=root_avatar_id,
@@ -204,7 +202,7 @@ class SqlSourceBuilder:
                 prepared_sources=prepared_sources,
             )
 
-        joint_dsrc_info = PreparedMultiFromInfo(
+        return PreparedMultiFromInfo(
             sql_source=joint_source,
             data_source_list=data_source_list,
             query_compiler=first_prep_source.query_compiler,
@@ -215,4 +213,3 @@ class SqlSourceBuilder:
             target_connection_ref=first_prep_source.target_connection_ref,
             data_key=data_key,
         )
-        return joint_dsrc_info

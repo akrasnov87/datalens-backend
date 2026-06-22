@@ -12,7 +12,7 @@ attrs = "*"
 dl-api-commons = {path = "../dl_api_commons"}
 dl-constants = {path = "../../lib/dl_constants"}
 marshmallow = "*"
-python = ">=3.10, <3.13"
+python = ">=3.12, <3.13"
 
 [tool.poetry.group.tests.dependencies]
 pytest = "*"
@@ -37,7 +37,6 @@ requires = [
 ]
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_rls_tests/"
 skip_compose = "true"
 target_path = "unit"

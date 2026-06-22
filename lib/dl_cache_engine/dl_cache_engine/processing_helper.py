@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Awaitable,
+    Callable,
+)
 import enum
 import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    Awaitable,
-    Callable,
     ClassVar,
-    Optional,
 )
 
 import attr
@@ -18,7 +19,6 @@ from dl_utils.streaming import (
     AsyncChunked,
     AsyncChunkedBase,
 )
-
 
 if TYPE_CHECKING:
     from dl_cache_engine.cache_invalidation.engine import (
@@ -53,7 +53,7 @@ class CacheSituation(enum.IntEnum):
 
 @attr.s
 class CacheProcessingHelper:
-    _cache_engine: Optional[EntityCacheEngineAsync] = attr.ib(kw_only=True)
+    _cache_engine: EntityCacheEngineAsync | None = attr.ib(kw_only=True)
     _cache_invalidation_engine: CacheInvalidationEngine | None = attr.ib(kw_only=True, default=None)
 
     error_ttl_sec: ClassVar[float] = 1.5
@@ -61,10 +61,10 @@ class CacheProcessingHelper:
     async def get_cache_entry_manager(
         self,
         *,
-        cache_options: Optional[BIQueryCacheOptions],
+        cache_options: BIQueryCacheOptions | None,
         allow_cache_read: bool = True,
         locked_cache: bool = False,
-    ) -> Optional[EntityCacheEntryManagerAsyncBase]:
+    ) -> EntityCacheEntryManagerAsyncBase | None:
         if cache_options is None:
             return None
         if not cache_options.cache_enabled:
@@ -113,11 +113,11 @@ class CacheProcessingHelper:
     async def run_with_cache(
         self,
         *,
-        generate_func: Callable[[], Awaitable[Optional[TJSONExtChunkStream]]],
+        generate_func: Callable[[], Awaitable[TJSONExtChunkStream | None]],
         cache_options: BIQueryCacheOptions,
         allow_cache_read: bool = True,
         use_locked_cache: bool = False,
-    ) -> tuple[CacheSituation, Optional[TJSONExtChunkStream]]:
+    ) -> tuple[CacheSituation, TJSONExtChunkStream | None]:
         cem = await self.get_cache_entry_manager(
             cache_options=cache_options,
             allow_cache_read=allow_cache_read,
@@ -137,17 +137,17 @@ class CacheProcessingHelper:
         #         await cem.finalize(result=result, error=dump_error(sys.exc_info()))
         # The rest is just for verbosity.
 
-        result_iter: Optional[TJSONExtChunkStream]
+        result_iter: TJSONExtChunkStream | None
         sync_result_iter = None
         try:
             sync_result_iter = await cem.initialize()
-        except BaseException as err:  # noqa
-            LOGGER.error("Error during checking cache", exc_info=True)
+        except BaseException as err:
+            LOGGER.exception("Error during checking cache")
             try:
                 err_serializable = self._dump_error_for_cache(err)
                 await cem.finalize(result=None, error=err_serializable)
             except Exception:  # Not skipping `CancelledError` here
-                LOGGER.error("Error during finalizing cache (after an error during checking cache)", exc_info=True)
+                LOGGER.exception("Error during finalizing cache (after an error during checking cache)")
             LOGGER.debug("Going to db selector due to cache read error")
             result = await generate_func()
             return CacheSituation.cache_error, result
@@ -158,7 +158,7 @@ class CacheProcessingHelper:
             try:
                 await cem.finalize(result=None)
             except Exception:  # Not skipping `CancelledError` here
-                LOGGER.error("Error during finalizing cache (after a cache hit)", exc_info=True)
+                LOGGER.exception("Error during finalizing cache (after a cache hit)")
             return CacheSituation.full_hit, result_iter
 
         LOGGER.info("Got selector result from cache engine: not found")
@@ -184,7 +184,7 @@ class CacheProcessingHelper:
                     ttl_sec=self.error_ttl_sec,
                 )
             except Exception:
-                LOGGER.error("Error during finalizing cache (after a generate error)", exc_info=True)
+                LOGGER.exception("Error during finalizing cache (after a generate error)")
             raise
 
         try:
@@ -193,6 +193,6 @@ class CacheProcessingHelper:
             )
             LOGGER.info("Saved to cache")
         except Exception:
-            LOGGER.error("Error during finalizing cache (after a generate success)", exc_info=True)
+            LOGGER.exception("Error during finalizing cache (after a generate success)")
 
         return CacheSituation.generated, result_iter

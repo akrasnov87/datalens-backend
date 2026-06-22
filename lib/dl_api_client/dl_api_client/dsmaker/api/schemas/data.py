@@ -33,7 +33,7 @@ from dl_api_client.dsmaker.primitives import (
     TemplateRoleSpec,
     TreeRoleSpec,
 )
-from dl_constants.enums import (
+from dl_constants import (
     FieldRole,
     FieldType,
     FieldVisibility,
@@ -48,7 +48,6 @@ from dl_constants.enums import (
     UserDataType,
     WhereClauseOperation,
 )
-
 
 _ROLE_SPEC_TV = TypeVar("_ROLE_SPEC_TV", bound=RoleSpec)
 
@@ -101,7 +100,7 @@ class RoleSpecSchema(OneOfSchema):
         dimension_values = ma_fields.Nested(DimensionValueSpecSchema, many=True, allow_none=True)
         visibility = ma_fields.Enum(FieldVisibility)
 
-    type_schemas = {
+    type_schemas = {  # noqa: RUF012
         FieldRole.row.name: RowRoleSpecSchemaVariant,
         FieldRole.measure.name: RoleSpecSchemaVariant,
         FieldRole.info.name: RoleSpecSchemaVariant,
@@ -142,7 +141,7 @@ class ItemRefSchema(OneOfSchema):
     type_field_remove = False
     type_field = "type"
 
-    type_schemas = {
+    type_schemas = {  # noqa: RUF012
         QueryItemRefType.id.name: IdRefSchema,
         QueryItemRefType.title.name: TitleRefSchema,
         QueryItemRefType.measure_name.name: EmptyRefSchema,
@@ -251,7 +250,7 @@ class PivotRoleSpecSchema(OneOfSchema):
         role = ma_fields.Enum(PivotRole, required=True)
         sorting = ma_fields.Nested(PivotMeasureSortingSchema, allow_none=True, load_default=None)
 
-    type_schemas = {
+    type_schemas = {  # noqa: RUF012
         PivotRole.pivot_row.name: DimensionPivotRoleSpecSchemaVariant,
         PivotRole.pivot_column.name: DimensionPivotRoleSpecSchemaVariant,
         PivotRole.pivot_measure.name: MeasurePivotRoleSpecSchemaVariant,
@@ -366,7 +365,7 @@ class BlockPlacementSchema(OneOfSchema):  # type: ignore  # 2024-01-24 # TODO: N
     type_field_remove = True
     type_field = "type"
 
-    type_schemas = {
+    type_schemas = {  # noqa: RUF012
         QueryBlockPlacementType.root.name: RootBlockPlacementSchema,
         QueryBlockPlacementType.after.name: AfterBlockPlacementSchema,
     }

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from frozendict import frozendict
+
 from dl_api_lib.error_handling import (
     BIError,
     PublicAPIErrorSchema,
@@ -8,7 +10,7 @@ from dl_api_lib.error_handling import (
 from dl_constants.exc import (
     DEFAULT_ERR_CODE_API_PREFIX,
     GLOBAL_ERR_PREFIX,
-    DLBaseException,
+    DLBaseError,
 )
 
 
@@ -46,33 +48,33 @@ def test_bi_error_default_message():
 
 
 def test_regular_bi_error_building():
-    class ExcA(DLBaseException):
-        err_code = DLBaseException.err_code + ["EXC_A"]
-        _message = "ExcA message"
+    class ExcAError(DLBaseError):
+        err_code = (*DLBaseError.err_code, "EXC_A")
+        _message = "ExcAError message"
 
-    class NonDLExc(Exception):
+    class NonDLExcError(Exception):
         pass
 
-    class NonDLExc2(Exception):
+    class NonDLExc2Error(Exception):
         message = "Some message"
-        details = {"some": "detail"}
-        debug_info = {"some": "debug_info"}
+        details = frozendict({"some": "detail"})
+        debug_info = frozendict({"some": "debug_info"})
 
     exc_to_status = {
-        ExcA: 400,
+        ExcAError: 400,
     }
 
-    exc_a = ExcA()
+    exc_a = ExcAError()
     assert BIError(
         http_code=400,
-        application_code_stack=tuple(ExcA.err_code),
+        application_code_stack=tuple(ExcAError.err_code),
         forward_for_anonymous=False,
         message=exc_a.message,
         details=exc_a.details,
         debug=exc_a.debug_info,
     ) == BIError.from_exception(exc_a, exc_code_mapping=exc_to_status)
 
-    for exc_unk in (NonDLExc(), NonDLExc2):
+    for exc_unk in (NonDLExcError(), NonDLExc2Error):
         assert BIError(
             http_code=None,
             application_code_stack=(),
@@ -89,15 +91,15 @@ def test_regular_schema():
         http_code=None,
         application_code_stack=("A", "B"),
         forward_for_anonymous=False,
-        debug=dict(a="b"),
-        details=dict(a="b"),
+        debug={"a": "b"},
+        details={"a": "b"},
     )
 
     # Ensure all fields passed to output
     assert RegularAPIErrorSchema().dump(bi_error) == {
         "code": "ERR.DS_API.A.B",
-        "debug": dict(a="b"),
-        "details": dict(a="b"),
+        "debug": {"a": "b"},
+        "details": {"a": "b"},
         "message": "Some message",
     }
 
@@ -108,8 +110,8 @@ def test_public_schema_for_non_forwarded():
         http_code=None,
         application_code_stack=("A", "B"),
         forward_for_anonymous=False,
-        debug=dict(stackrace=["1", "2"]),
-        details=dict(private_code="Some private value"),
+        debug={"stackrace": ["1", "2"]},
+        details={"private_code": "Some private value"},
     )
 
     assert PublicAPIErrorSchema().dump(bi_error) == {
@@ -126,13 +128,13 @@ def test_public_schema_for_forwarded():
         http_code=None,
         application_code_stack=("A", "B"),
         forward_for_anonymous=True,
-        debug=dict(stackrace=["1", "2"]),
-        details=dict(private_code="Some public value"),
+        debug={"stackrace": ["1", "2"]},
+        details={"private_code": "Some public value"},
     )
 
     # Ensure that message and error code are passed to output for whitelisted errors
     assert PublicAPIErrorSchema().dump(bi_error) == {
-        "code": ".".join([GLOBAL_ERR_PREFIX, DEFAULT_ERR_CODE_API_PREFIX] + list(bi_error.application_code_stack)),
+        "code": ".".join([GLOBAL_ERR_PREFIX, DEFAULT_ERR_CODE_API_PREFIX, *list(bi_error.application_code_stack)]),
         "debug": {},
         "details": {},
         "message": bi_error.message,

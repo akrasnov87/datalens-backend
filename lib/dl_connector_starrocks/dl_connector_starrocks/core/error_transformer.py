@@ -10,7 +10,6 @@ from dl_core.connectors.base.error_transformer import DbErrorTransformer
 from dl_core.connectors.base.error_transformer import ErrorTransformerRule as Rule
 import dl_core.exc as exc
 
-
 TABLE_DOES_NOT_EXIST_ERROR_CODES = (
     1051,  # StarRocks <= 3.2 "Unknown table"
     5502,  # StarRocks >= 3.4 "Getting analyzing error. Detail message: Unknown table"
@@ -20,10 +19,11 @@ SQL_SYNTAX_ERROR_CODE = 1064
 
 def is_table_does_not_exist_async_error() -> ExcMatchCondition:
     def _(exc: Exception) -> bool:
-        if isinstance(exc, pymysql.OperationalError):
-            if len(exc.args) >= 2 and exc.args[0] in TABLE_DOES_NOT_EXIST_ERROR_CODES:
-                return True
-        return False
+        return bool(
+            isinstance(exc, pymysql.OperationalError)
+            and len(exc.args) >= 2
+            and exc.args[0] in TABLE_DOES_NOT_EXIST_ERROR_CODES
+        )
 
     return _
 
@@ -41,10 +41,9 @@ def is_table_does_not_exist_sync_error() -> ExcMatchCondition:
 
 def is_sql_syntax_error_async_error() -> ExcMatchCondition:
     def _(exc: Exception) -> bool:
-        if isinstance(exc, pymysql.ProgrammingError):
-            if len(exc.args) >= 2 and exc.args[0] == SQL_SYNTAX_ERROR_CODE:
-                return True
-        return False
+        return bool(
+            isinstance(exc, pymysql.ProgrammingError) and len(exc.args) >= 2 and exc.args[0] == SQL_SYNTAX_ERROR_CODE
+        )
 
     return _
 
@@ -69,13 +68,13 @@ class AsyncStarRocksChainedDbErrorTransformer(error_transformer.ChainedDbErrorTr
         inspector_query: str | None,
     ) -> error_transformer.DBExcKWArgs:
         if isinstance(wrapper_exc, (pymysql.OperationalError, pymysql.ProgrammingError)):
-            return dict(
-                db_message=str(orig_exc) if orig_exc else str(wrapper_exc),
-                query=debug_query,
-                inspector_query=inspector_query,
-                orig=wrapper_exc,
-                details={},
-            )
+            return {
+                "db_message": str(orig_exc) if orig_exc else str(wrapper_exc),
+                "query": debug_query,
+                "inspector_query": inspector_query,
+                "orig": wrapper_exc,
+                "details": {},
+            }
         return error_transformer.ChainedDbErrorTransformer._get_error_kw(
             debug_query, orig_exc, wrapper_exc, inspector_query
         )
@@ -83,33 +82,26 @@ class AsyncStarRocksChainedDbErrorTransformer(error_transformer.ChainedDbErrorTr
 
 async_starrocks_db_error_transformer: DbErrorTransformer = AsyncStarRocksChainedDbErrorTransformer(
     (
-        Rule(
-            when=is_table_does_not_exist_async_error(),
-            then_raise=exc.SourceDoesNotExist,
-        ),
+        Rule(when=is_table_does_not_exist_async_error(), then_raise=exc.SourceDoesNotExistError),
         Rule(
             when=wrapper_exc_is_and_matches_re(
-                wrapper_exc_cls=pymysql.ProgrammingError,
-                err_regex_str=".*SQL syntax.*",
+                wrapper_exc_cls=pymysql.ProgrammingError, err_regex_str=".*SQL syntax.*"
             ),
-            then_raise=exc.InvalidQuery,
+            then_raise=exc.InvalidQueryError,
         ),
-        Rule(
-            when=is_sql_syntax_error_async_error(),
-            then_raise=exc.InvalidQuery,
-        ),
+        Rule(when=is_sql_syntax_error_async_error(), then_raise=exc.InvalidQueryError),
+        *error_transformer.default_error_transformer_rules,
     )
-    + error_transformer.default_error_transformer_rules
 )
 
 
 sync_starrocks_db_error_transformer: DbErrorTransformer = error_transformer.make_default_transformer_with_custom_rules(
     Rule(
         when=is_table_does_not_exist_sync_error(),
-        then_raise=exc.SourceDoesNotExist,
+        then_raise=exc.SourceDoesNotExistError,
     ),
     Rule(
         when=is_sql_syntax_error_sync_error(),
-        then_raise=exc.InvalidQuery,
+        then_raise=exc.InvalidQueryError,
     ),
 )

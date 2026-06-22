@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from functools import partial
-from typing import (
+from collections.abc import (
     Callable,
     Collection,
 )
+from functools import partial
+from typing import Any
 
 from clickhouse_sqlalchemy import types as ch_types
 import sqlalchemy as sa
 from sqlalchemy.types import TypeEngine
 
-from dl_constants.enums import SourceBackendType
+from dl_constants import SourceBackendType
 from dl_type_transformer.native_type import (
     ClickHouseDateTime64NativeType,
     ClickHouseDateTime64WithTZNativeType,
@@ -51,7 +52,7 @@ def ch_instantiator(typecls: type[TypeEngine]) -> Callable:
     return type_gen
 
 
-def ch_fallback_type_gen(*args, **kwargs):  # type: ignore  # TODO: fix
+def ch_fallback_type_gen(*args: Any, **kwargs: Any) -> TypeEngine:
     return ch_types.Nullable(ch_types.String())
 
 

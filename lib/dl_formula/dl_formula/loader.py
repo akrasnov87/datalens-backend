@@ -1,7 +1,4 @@
-from typing import (
-    Collection,
-    Optional,
-)
+from collections.abc import Collection
 
 import attr
 
@@ -18,7 +15,7 @@ from dl_formula.formula_connectors import (
 @attr.s(frozen=True)
 class FormulaLibraryConfig:
     # Whitelist of connector entrypoints to be loaded
-    formula_connector_ep_names: Optional[Collection[str]] = attr.ib(kw_only=True, default=None)
+    formula_connector_ep_names: Collection[str] | None = attr.ib(kw_only=True, default=None)
 
 
 def preload_bi_formula() -> None:

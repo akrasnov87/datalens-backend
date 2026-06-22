@@ -1,4 +1,4 @@
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DataSourceType,
     SourceBackendType,
@@ -7,7 +7,6 @@ from dl_dynamic_enum import (
     AutoEnumValue,
     DynamicEnum,
 )
-
 
 BACKEND_TYPE_STARROCKS = SourceBackendType.declare("STARROCKS")
 CONNECTION_TYPE_STARROCKS = ConnectionType.declare("starrocks")
@@ -23,6 +22,7 @@ class ListingSources(DynamicEnum):
 STARROCKS_SYSTEM_CATALOGS = (
     "information_schema",
     "_statistics_",
+    "sys",
 )
 
 # StarRocks doesn't provide a way to query the catalog list with a SELECT statement

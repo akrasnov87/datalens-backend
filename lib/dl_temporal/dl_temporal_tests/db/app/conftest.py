@@ -1,15 +1,15 @@
+from collections.abc import AsyncGenerator
 import logging
 import os
 from typing import (
-    AsyncGenerator,
     ClassVar,
+    override,
 )
 
 import aiohttp
 import attr
 import pytest
 import pytest_asyncio
-from typing_extensions import override
 
 import dl_temporal
 import dl_temporal.app
@@ -17,17 +17,14 @@ import dl_temporal_tests.db.activities as activities
 import dl_temporal_tests.db.workflows as workflows
 import dl_testing
 
-
 DIR_PATH = os.path.dirname(__file__)
 LOGGER = logging.getLogger(__name__)
 
 
-class Settings(dl_temporal.app.BaseTemporalWorkerAppSettings):
-    ...
+class Settings(dl_temporal.app.BaseTemporalWorkerAppSettings): ...
 
 
-class App(dl_temporal.app.BaseTemporalWorkerApp):
-    ...
+class App(dl_temporal.app.BaseTemporalWorkerApp): ...
 
 
 @attr.define(kw_only=True, slots=False)
@@ -42,6 +39,7 @@ class Factory(dl_temporal.app.BaseTemporalWorkerAppFactory[App]):
         return [
             *await super()._get_temporal_workflows(),
             workflows.Workflow,
+            workflows.RaisingWorkflow,
         ]
 
     @override
@@ -51,6 +49,7 @@ class Factory(dl_temporal.app.BaseTemporalWorkerAppFactory[App]):
         return [
             *await super()._get_temporal_activities(),
             activities.Activity(),
+            activities.RaisingActivity(),
         ]
 
     @override

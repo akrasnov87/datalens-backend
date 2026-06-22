@@ -10,19 +10,22 @@ class TestDatasetVersionItemResponseSchema(DefaultApiTestBase):
         saved_dataset: Dataset,
     ) -> None:
         """Make sure that all dataset fields have the expected structure."""
-        dataset = control_api.client.get("/api/v1/datasets/{}/versions/draft".format(saved_dataset.id)).json
+        dataset = control_api.client.get(f"/api/v1/datasets/{saved_dataset.id}/versions/draft").json
 
         assert dataset["id"] == saved_dataset.id
         assert dataset["is_favorite"] is False
 
         assert isinstance(dataset["permissions"], dict)
-        assert all((isinstance(permission, bool) for permission in dataset["permissions"].values()))
+        assert all(isinstance(permission, bool) for permission in dataset["permissions"].values())
 
         assert isinstance(dataset["full_permissions"], dict)
-        assert all((isinstance(permission, bool) for permission in dataset["full_permissions"].values()))
+        assert all(isinstance(permission, bool) for permission in dataset["full_permissions"].values())
 
         assert isinstance(dataset["dataset"], dict)
         assert isinstance(dataset["options"], dict)
 
         assert "is_cache_invalidation_enabled_in_conn" in dataset["options"]
         assert isinstance(dataset["options"]["is_cache_invalidation_enabled_in_conn"], bool)
+
+        assert "query_settings_enabled" in dataset["options"]
+        assert isinstance(dataset["options"]["query_settings_enabled"], bool)

@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Collection,
-    Optional,
-)
+from collections.abc import Collection
+from typing import Any
 
 from dl_core.data_processing.processing.operation import (
     BaseOp,
@@ -22,7 +19,7 @@ class OpExecutionContext:
     _streams: dict[str, AbstractStream]
     _operations: tuple[BaseOp, ...]
 
-    def __init__(self, processing_id: str, streams: Collection[AbstractStream], operations: Collection[BaseOp]):
+    def __init__(self, processing_id: str, streams: Collection[AbstractStream], operations: Collection[BaseOp]) -> None:
         self._processing_id = processing_id
         self._streams = {stream.id: stream for stream in streams}
         self._operations = tuple(op for op in operations)
@@ -37,7 +34,7 @@ class OpExecutionContext:
 
     @property
     def streams(self) -> Collection[AbstractStream]:
-        return [stream for stream in self._streams.values()]
+        return list(self._streams.values())
 
     @property
     def data_streams(self) -> Collection[DataStreamAsync]:
@@ -47,7 +44,7 @@ class OpExecutionContext:
     def processing_id(self) -> str:
         return self._processing_id
 
-    def get_stream(self, stream_id: str) -> Optional[AbstractStream]:
+    def get_stream(self, stream_id: str) -> AbstractStream | None:
         return self._streams.get(stream_id)
 
     def add_stream(self, stream: AbstractStream) -> None:
@@ -71,11 +68,11 @@ class OpExecutionContext:
         return self._operations_by_output[stream_id]
 
     def clone(self, **kwargs: Any) -> OpExecutionContext:
-        new_kwargs = dict(
-            processing_id=self._processing_id,
-            streams=self._streams.values(),
-            operations=self._operations,
-        )
+        new_kwargs = {
+            "processing_id": self._processing_id,
+            "streams": self._streams.values(),
+            "operations": self._operations,
+        }
 
         for key, val in kwargs.items():
             if key not in new_kwargs:

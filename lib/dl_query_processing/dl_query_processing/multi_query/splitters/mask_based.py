@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import (
+    Collection,
+    Sequence,
+)
 from enum import Enum
 import itertools
 from typing import (
     Any,
     ClassVar,
-    Collection,
-    Optional,
-    Sequence,
 )
 
 import attr
 
-from dl_constants.enums import JoinType
+from dl_constants import JoinType
 import dl_formula.core.aux_nodes as formula_aux_nodes
 import dl_formula.core.exc as formula_exc
 from dl_formula.core.extract import NodeExtract
@@ -122,8 +123,8 @@ class QuerySplitMask:
     add_formulas: tuple[AddFormulaInfo, ...] = attr.ib(kw_only=True)
     filter_indices: frozenset[int] = attr.ib(kw_only=True)
     add_filters: tuple[CompiledFormulaInfo, ...] = attr.ib(kw_only=True)
-    join_type: Optional[JoinType] = attr.ib(kw_only=True)
-    joining_node: Optional[formula_fork_nodes.QueryForkJoiningBase] = attr.ib(kw_only=True)
+    join_type: JoinType | None = attr.ib(kw_only=True)
+    joining_node: formula_fork_nodes.QueryForkJoiningBase | None = attr.ib(kw_only=True)
     is_base: bool = attr.ib(kw_only=True, default=False)
 
     # calculated props
@@ -255,13 +256,12 @@ class MultiQuerySplitter(MultiQuerySplitterBase):
         filters: list[CompiledFormulaInfo] = [
             formula for filter_idx, formula in enumerate(query.filters) if filter_idx in split_mask.filter_indices
         ]
-        for filter in split_mask.add_filters:
-            filters.append(filter)
+        filters.extend(split_mask.add_filters)
 
         join_on = query.join_on
         joined_from = query.joined_from
 
-        subquery = CompiledQuery(
+        return CompiledQuery(
             id=split_mask.subquery_id,
             level_type=query.level_type,
             select=select,
@@ -279,19 +279,18 @@ class MultiQuerySplitter(MultiQuerySplitterBase):
                 row_count_hard_limit=query.meta.row_count_hard_limit,
             ),
         )
-        return subquery
 
     def _make_join_on_expression(
         self,
         left_subquery_mask: QuerySplitMask,
         right_subquery_mask: QuerySplitMask,
-    ) -> Optional[CompiledJoinOnFormulaInfo]:
-        def and_part(condition: Optional[formula_nodes.Binary], part: formula_nodes.Binary) -> formula_nodes.Binary:
+    ) -> CompiledJoinOnFormulaInfo | None:
+        def and_part(condition: formula_nodes.Binary | None, part: formula_nodes.Binary) -> formula_nodes.Binary:
             if condition is None:
                 return part
             return formula_nodes.Binary.make(name="and", left=condition, right=part)
 
-        join_expr: Optional[formula_nodes.Binary] = None
+        join_expr: formula_nodes.Binary | None = None
 
         aliases_from_right_to_left: dict[str, str] = {}
         left_map = {add_formula.expr.extract: add_formula.alias for add_formula in left_subquery_mask.add_formulas}
@@ -376,7 +375,7 @@ class MultiQuerySplitter(MultiQuerySplitterBase):
         formula_split_masks: list[AliasedFormulaSplitMask],
         base_gb_alias_by_extract: dict[NodeExtract, str],
         formula_alias_to_subquery_id_map: dict[str, str],
-        substitute_error_node: Optional[formula_aux_nodes.ErrorNode] = None,
+        substitute_error_node: formula_aux_nodes.ErrorNode | None = None,
         exclude_indices: Collection[int] = frozenset(),
     ) -> list[CompiledFormulaInfo]:
         if exclude_indices:
@@ -482,7 +481,7 @@ class MultiQuerySplitter(MultiQuerySplitterBase):
         for subquery_mask in split_masks:
             formula_split_masks += subquery_mask.formula_split_masks
 
-        base_subquery_mask, other_subquery_masks = self._separate_base_and_other_masks(split_masks)
+        base_subquery_mask, _other_subquery_masks = self._separate_base_and_other_masks(split_masks)
         base_gb_alias_by_extract = {
             dim.expr.extract_not_none: dim.alias for dim in base_subquery_mask.add_formulas if dim.is_group_by
         }
@@ -496,7 +495,7 @@ class MultiQuerySplitter(MultiQuerySplitterBase):
             for add_formula in subquery_mask.add_formulas:
                 formula_alias_to_subquery_id_map[add_formula.alias] = subquery_mask.subquery_id
 
-        substitute_error_node: Optional[formula_aux_nodes.ErrorNode] = None
+        substitute_error_node: formula_aux_nodes.ErrorNode | None = None
         if not subqueries_compatible:
             substitute_error_node = formula_aux_nodes.ErrorNode.make(
                 message="LOD dimensions are incompatible",
@@ -653,9 +652,8 @@ class MultiQuerySplitter(MultiQuerySplitterBase):
                         # mask points to nonexistent children
                         raise ValueError("Invalid node index")
 
-                    else:
-                        for child_node_idx, child, _ in autonomous_children:
-                            collect_recursively(child, child_node_idx)
+                    for child_node_idx, child, _ in autonomous_children:
+                        collect_recursively(child, child_node_idx)
 
             # If `prefix == mask`, then this node is blacklisted, skip it.
 
@@ -703,16 +701,16 @@ class MultiQuerySplitter(MultiQuerySplitterBase):
                     incoming_masks=sorted(node_index_list),
                 )
                 if counter_formula_indices:
-                    for node_idx in counter_formula_indices:
-                        counter_formula_split_masks.append(
-                            AliasedFormulaSplitMask(
-                                alias=expr_id_gen.get_id(),
-                                query_part=query_part,
-                                formula_list_idx=formula_list_idx,
-                                inner_node_idx=node_idx,
-                                outer_node_idx=node_idx,
-                            )
+                    counter_formula_split_masks.extend(
+                        AliasedFormulaSplitMask(
+                            alias=expr_id_gen.get_id(),
+                            query_part=query_part,
+                            formula_list_idx=formula_list_idx,
+                            inner_node_idx=node_idx,
+                            outer_node_idx=node_idx,
                         )
+                        for node_idx in counter_formula_indices
+                    )
 
         return counter_formula_split_masks
 
@@ -722,7 +720,7 @@ class MultiQuerySplitter(MultiQuerySplitterBase):
         split_masks: list[QuerySplitMask],
         base_formula_split_masks: list[AliasedFormulaSplitMask],
         base_filter_indices: set[int],
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Here we try to determine if there is a need to generate a "base" sub-query
         that all the explicitly generated ones will be joined to.
@@ -750,7 +748,7 @@ class MultiQuerySplitter(MultiQuerySplitterBase):
         # Try to find a candidate for being the base sub-query among the existing sub-query masks
         max_dimensions = max(mask.group_by_count for mask in split_masks)
 
-        max_query_id: Optional[str] = None
+        max_query_id: str | None = None
         max_query_has_all_base_dimensions = False
         max_query_has_all_base_filters = True
         max_query_has_direct_join = True
@@ -853,12 +851,12 @@ class MultiQuerySplitter(MultiQuerySplitterBase):
             formula_split_masks=tuple(base_formula_split_masks),
             add_formulas=tuple(new_add_formulas),
             filter_indices=frozenset(new_filter_indices),
-            add_filters=tuple(),
+            add_filters=(),
             join_type=None,
             joining_node=None,
             is_base=True,
         )
-        return [base_mask] + split_masks
+        return [base_mask, *split_masks]
 
     def _separate_base_and_other_masks(
         self,
@@ -910,10 +908,10 @@ class MultiQuerySplitter(MultiQuerySplitterBase):
                     from_ids=add_formula.from_ids,
                     is_group_by=add_formula.is_group_by,
                 )
-                base_mask = base_mask.clone(add_formulas=base_mask.add_formulas + (new_add_formula,))
+                base_mask = base_mask.clone(add_formulas=(*base_mask.add_formulas, new_add_formula))
                 base_add_formula_extracts.add(add_formula.expr.extract_not_none)
 
-        return [base_mask] + other_masks
+        return [base_mask, *other_masks]
 
     def _get_query_patch_from_split_masks(
         self,
@@ -948,10 +946,9 @@ class MultiQuerySplitter(MultiQuerySplitterBase):
         result_queries.append(updated_original_query)
 
         # Put it all into a patch object and return it
-        patch = CompiledMultiQueryPatch(
+        return CompiledMultiQueryPatch(
             patch_multi_query=CompiledMultiQuery(queries=result_queries),
         )
-        return patch
 
     def split_query(
         self,
@@ -959,15 +956,14 @@ class MultiQuerySplitter(MultiQuerySplitterBase):
         requirement_subtree: CompiledMultiQueryBase,
         query_id_gen: PrefixedIdGen,
         expr_id_gen: PrefixedIdGen,
-    ) -> Optional[CompiledMultiQueryPatch]:
+    ) -> CompiledMultiQueryPatch | None:
         split_masks = self.get_split_masks(query, expr_id_gen=expr_id_gen, query_id_gen=query_id_gen)
         if not split_masks:
             return None
 
-        patch = self._get_query_patch_from_split_masks(
+        return self._get_query_patch_from_split_masks(
             query=query,
             split_masks=split_masks,
             query_id_gen=query_id_gen,
             expr_id_gen=expr_id_gen,
         )
-        return patch

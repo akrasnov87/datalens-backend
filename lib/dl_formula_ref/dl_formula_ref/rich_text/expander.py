@@ -1,9 +1,6 @@
+from collections.abc import Callable
 from functools import singledispatchmethod
 import re
-from typing import (
-    Callable,
-    Optional,
-)
 
 import attr
 
@@ -51,8 +48,7 @@ from dl_formula_ref.texts import (
 )
 from dl_i18n.localizer_base import Translatable
 
-
-_MACRO_CHOICES = "|".join(("ref", "link", "text", "table", "dialects", "arg", "argn", "type", "macro", "category"))
+_MACRO_CHOICES = "ref|link|text|table|dialects|arg|argn|type|macro|category"
 # 3 kinds of macros:
 #     {type: single_value}
 #     {type: first_value: second_value}
@@ -65,14 +61,7 @@ SIMPLE_MACRO_RE = re.compile(
     r"(|:(?P<second_value>[^{}:|`]+)|(?P<list>(\|[^{}:|`]+)+))"
     r"\}"
 )
-_BLOCK_MACRO_CHOICES = "|".join(
-    (
-        "if",
-        "note",
-        "audience",
-        "end",
-    )
-)
+_BLOCK_MACRO_CHOICES = "if|note|audience|end"
 END_TAG = "end"
 BLOCK_TAG_RE = re.compile(r"\{\s*(?P<tag_name>" + _BLOCK_MACRO_CHOICES + r")(\s+(?P<block_param>[^}]+))?\s*\}")
 
@@ -80,12 +69,12 @@ BLOCK_TAG_RE = re.compile(r"\{\s*(?P<tag_name>" + _BLOCK_MACRO_CHOICES + r")(\s+
 @attr.s
 class MacroExpander:
     _resources: AliasedResourceRegistryBase = attr.ib(kw_only=True, factory=SimpleAliasedResourceRegistry)
-    _func_link_provider: Optional[Callable[[str, Optional[str]], tuple[str, str]]] = attr.ib(kw_only=True, default=None)
-    _cat_link_provider: Optional[Callable[[str, Optional[str]], tuple[str, str]]] = attr.ib(kw_only=True, default=None)
-    _args: Optional[list[FuncArg]] = attr.ib(kw_only=True, default=None)
+    _func_link_provider: Callable[[str, str | None], tuple[str, str]] | None = attr.ib(kw_only=True, default=None)
+    _cat_link_provider: Callable[[str, str | None], tuple[str, str]] | None = attr.ib(kw_only=True, default=None)
+    _args: list[FuncArg] | None = attr.ib(kw_only=True, default=None)
     _translation_callable: Callable[[str | Translatable], str] = attr.ib(kw_only=True, default=lambda s: s)
 
-    def _get_raw_link_url_by_alias(self, alias: str) -> Optional[str]:
+    def _get_raw_link_url_by_alias(self, alias: str) -> str | None:
         if alias not in self._resources:
             return None
 
@@ -97,11 +86,11 @@ class MacroExpander:
     def _get_raw_table_body_by_alias(self, alias: str) -> list[list[str | Translatable]]:
         return self._resources.get_table(alias).table_body
 
-    def _get_func_name_and_url(self, func_name: str, category_name: Optional[str] = None) -> tuple[str, str]:
+    def _get_func_name_and_url(self, func_name: str, category_name: str | None = None) -> tuple[str, str]:
         assert self._func_link_provider is not None
         return self._func_link_provider(func_name, category_name)
 
-    def _get_cat_name_and_url(self, category_name: str, anchor_name: Optional[str] = None) -> tuple[str, str]:
+    def _get_cat_name_and_url(self, category_name: str, anchor_name: str | None = None) -> tuple[str, str]:
         assert self._cat_link_provider is not None
         return self._cat_link_provider(category_name, anchor_name)
 
@@ -124,7 +113,7 @@ class MacroExpander:
     def _make_block_macro(
         self,
         tag_name: str,
-        block_param: Optional[str],
+        block_param: str | None,
         block_text: str,
         nested_replacements: dict[MacroReplacementKey, BaseTextElement],
     ) -> BaseTextElement:
@@ -146,7 +135,7 @@ class MacroExpander:
         elif tag_name == "audience":
             block_param = block_param
             assert block_param is not None
-            audiences = [item.strip() for item in block_param.split((","))]
+            audiences = [item.strip() for item in block_param.split(",")]
             element = AudienceBlock(
                 audience_types=audiences,
                 rich_text=RichText(text=block_text, replacements=nested_replacements),
@@ -158,10 +147,10 @@ class MacroExpander:
     def _get_block_replacements(self, text: str) -> dict[MacroReplacementKey, BaseTextElement]:
         block_replacements: dict[MacroReplacementKey, BaseTextElement] = {}
 
-        block_match: Optional[re.Match] = BLOCK_TAG_RE.search(text)
+        block_match: re.Match | None = BLOCK_TAG_RE.search(text)
         while block_match is not None and block_match.group("tag_name") != END_TAG:
             tag_name: str = block_match.group("tag_name")
-            block_param: Optional[str] = block_match.group("block_param")
+            block_param: str | None = block_match.group("block_param")
             block_text_start_pos = block_match.end()
             nested_block_replacements = self._get_block_replacements(text[block_text_start_pos:])
 
@@ -220,8 +209,8 @@ class MacroExpander:
     def _make_macro(self, macro_match: re.Match) -> BaseMacro:
         macro_type: str = macro_match.group("type").strip()
         first_value: str = macro_match.group("first_value").strip()
-        list_str: Optional[str] = macro_match.group("list")
-        second_value: Optional[str] = macro_match.group("second_value")
+        list_str: str | None = macro_match.group("list")
+        second_value: str | None = macro_match.group("second_value")
 
         if macro_type in LIST_MACROS:
             value_list = [first_value]
@@ -243,7 +232,7 @@ class MacroExpander:
     @expand_macro.register
     def expand_macro_ref(self, macro: RefMacro) -> LinkTextElement:
         # In theory, we can easily support anchors here just like in category links
-        assert macro.arg.count("/") <= 1, 'The format is "[category_name/]function_name", got "{}"'.format(macro.arg)
+        assert macro.arg.count("/") <= 1, f'The format is "[category_name/]function_name", got "{macro.arg}"'
         if macro.arg.find("/") > -1:
             macro.category_name, macro.arg = macro.arg.split("/")
         func_name, url = self._get_func_name_and_url(func_name=macro.arg, category_name=macro.category_name)
@@ -254,7 +243,7 @@ class MacroExpander:
 
     @expand_macro.register
     def expand_macro_category(self, macro: CategoryMacro) -> LinkTextElement:
-        assert macro.arg.count("#") <= 1, 'The format is "category_name[#anchor_name]", got "{}"'.format(macro.arg)
+        assert macro.arg.count("#") <= 1, f'The format is "category_name[#anchor_name]", got "{macro.arg}"'
         if macro.arg.find("#") > -1:
             macro.arg, macro.anchor_name = macro.arg.split("#")
         cat_name, url = self._get_cat_name_and_url(category_name=macro.arg, anchor_name=macro.anchor_name)
@@ -298,17 +287,18 @@ class MacroExpander:
 
     @expand_macro.register
     def expand_macro_type(self, macro: TypeMacro) -> ListTextElement:
-        items: list[TermTextElement] = []
         type_list = [DataType[type_name.strip().upper()] for type_name in macro.values]
-        for h_type_name in get_human_data_type_list(types=type_list):
-            items.append(
+        return ListTextElement(
+            items=[
                 TermTextElement(
                     term=self._translate_text(h_type_name),
                     wrap=False,
                 )
-            )
-
-        return ListTextElement(items=items, sep=" | ", wrap=True)
+                for h_type_name in get_human_data_type_list(types=type_list)
+            ],
+            sep=" | ",
+            wrap=True,
+        )
 
     @expand_macro.register
     def expand_macro_arg(self, macro: ArgMacro) -> CodeSpanTextElement:

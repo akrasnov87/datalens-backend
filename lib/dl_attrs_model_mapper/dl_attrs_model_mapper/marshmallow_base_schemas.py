@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import collections
+from collections import OrderedDict
 import logging
 from typing import (
     Any,
     ClassVar,
-    Generic,
-    Optional,
-    OrderedDict,
     TypeVar,
-    Union,
 )
 
 import marshmallow
@@ -23,15 +20,13 @@ from marshmallow_oneofschema import OneOfSchema
 
 from dl_attrs_model_mapper.base import MapperBaseModel
 
-
 LOGGER = logging.getLogger(__name__)
 
-_TARGET_OBJECT_BASE_TV = TypeVar("_TARGET_OBJECT_BASE_TV")
 _TARGET_OBJECT_GENERATED_TV = TypeVar("_TARGET_OBJECT_GENERATED_TV")
 
 
-class BaseSchema(marshmallow.Schema, Generic[_TARGET_OBJECT_BASE_TV]):
-    target_cls: ClassVar[type[_TARGET_OBJECT_BASE_TV]]  # type: ignore  # 2024-01-29 # TODO: ClassVar cannot contain type variables  [misc]
+class BaseSchema[TARGET_OBJECT_BASE_TV](marshmallow.Schema):
+    target_cls: ClassVar[type[TARGET_OBJECT_BASE_TV]]
     _fields_to_skip_on_none: ClassVar[set[str]]
 
     # TODO FIX: Make tests
@@ -45,19 +40,19 @@ class BaseSchema(marshmallow.Schema, Generic[_TARGET_OBJECT_BASE_TV]):
         return data
 
     @post_load(pass_many=False)
-    def post_load(self, data: dict[str, Any], **_: Any) -> _TARGET_OBJECT_BASE_TV:
+    def post_load(self, data: dict[str, Any], **_: Any) -> TARGET_OBJECT_BASE_TV:
         try:
             return self.target_cls(**data)
-        except Exception as exc:
-            logging.exception(f"Can not instantiate class {self.target_cls}: {exc}")
+        except Exception:
+            LOGGER.exception("Can not instantiate class %s", self.target_cls)
             raise
 
     @post_dump(pass_many=False)
-    def post_dump(self, data: Union[dict[str, Any], OrderedDict[str, Any]], **_: Any) -> dict[str, Any]:
+    def post_dump(self, data: dict[str, Any] | OrderedDict[str, Any], **_: Any) -> dict[str, Any]:
         # If Meta.ordered == False MA does not respect keys order at all
         # But ordered dict will break some contracts
         # So we use that in Py>3.7 any dict is ordered to do not break contracts
-        ordered_data = {k: v for k, v in data.items()} if isinstance(data, collections.OrderedDict) else data
+        ordered_data = dict(data.items()) if isinstance(data, collections.OrderedDict) else data
 
         if len(self._fields_to_skip_on_none):
             ordered_data = {
@@ -76,7 +71,7 @@ class BaseSchema(marshmallow.Schema, Generic[_TARGET_OBJECT_BASE_TV]):
         cls,
         generate_for: type[_TARGET_OBJECT_GENERATED_TV],
         field_map: dict[str, fields.Field],
-        fields_to_skip_on_none: Optional[set[str]] = None,
+        fields_to_skip_on_none: set[str] | None = None,
     ) -> type[BaseSchema[_TARGET_OBJECT_GENERATED_TV]]:
         # TODO FIX: Generate mnemonic class name
         class ResultingSchema(
@@ -94,11 +89,11 @@ class BaseSchema(marshmallow.Schema, Generic[_TARGET_OBJECT_BASE_TV]):
 class BaseOneOfSchema(OneOfSchema):
     type_field = "type"
 
-    type_schemas: dict[str, type[BaseSchema]] = {}  # type: ignore  # 2024-01-29 # TODO: Incompatible types in assignment (expression has type "dict[str, type[BaseSchema[Any]]]", base class "OneOfSchema" defined the type as "dict[str, type[Schema]]")  [assignment]
+    type_schemas = {}  # noqa: RUF012
     _map_cls_type_discriminator: ClassVar[dict[type, str]] = {}
 
     @classmethod
-    def register_type(cls, schema: type[BaseSchema], discriminator: str, aliases: tuple[str, ...] = tuple()) -> None:
+    def register_type(cls, schema: type[BaseSchema], discriminator: str, aliases: tuple[str, ...] = ()) -> None:
         cls._map_cls_type_discriminator[schema.target_cls] = discriminator
         cls.type_schemas[discriminator] = schema
         for alias in aliases:
@@ -121,7 +116,7 @@ class BaseOneOfSchema(OneOfSchema):
         # TODO FIX: Generate mnemonic class name
         class GeneratedOneOfSchema(BaseOneOfSchema):
             type_field = type_discriminator_field_name
-            type_schemas: dict[str, type[BaseSchema]] = {}
+            type_schemas = {}  # noqa: RUF012
             _map_cls_type_discriminator: ClassVar[dict[type, str]] = {}
 
         return GeneratedOneOfSchema

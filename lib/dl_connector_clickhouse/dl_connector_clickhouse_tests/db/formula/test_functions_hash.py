@@ -4,10 +4,9 @@ from dl_formula_testing.testcases.functions_hash import (
 )
 
 from dl_connector_clickhouse_tests.db.formula.base import (
-    ClickHouse_21_8TestBase,
-    ClickHouse_22_10TestBase,
+    ClickHouse21p8TestBase,
+    ClickHouse22p10TestBase,
 )
-
 
 CH_HASH_FUNCTION_SUPPORT = HashFunctionSupport(
     md5=True,
@@ -24,15 +23,15 @@ class HashFunctionClickHouseTestSuite(DefaultHashFunctionFormulaConnectorTestSui
     hash_function_support = CH_HASH_FUNCTION_SUPPORT
 
 
-class TestHashFunctionClickHouse_21_8(
-    ClickHouse_21_8TestBase,
+class TestHashFunctionClickHouse21p8(
+    ClickHouse21p8TestBase,
     HashFunctionClickHouseTestSuite,
 ):
     pass
 
 
-class TestHashFunctionClickHouse_22_10(
-    ClickHouse_22_10TestBase,
+class TestHashFunctionClickHouse22p10(
+    ClickHouse22p10TestBase,
     HashFunctionClickHouseTestSuite,
 ):
     pass

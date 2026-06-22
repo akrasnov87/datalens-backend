@@ -1,5 +1,5 @@
 import asyncio
-from typing import Callable
+from collections.abc import Callable
 
 import pytest
 
@@ -11,7 +11,7 @@ from dl_connector_snowflake.core.dto import SnowFlakeConnDTO
 from dl_connector_snowflake.core.target_dto import SnowFlakeConnTargetDTO
 from dl_connector_snowflake.db_testing.engine_wrapper import SnowFlakeDbEngineConfig
 from dl_connector_snowflake.formula.constants import SnowFlakeDialect as D
-import dl_connector_snowflake_tests.ext.config as test_config  # noqa
+import dl_connector_snowflake_tests.ext.config as test_config
 from dl_connector_snowflake_tests.ext.settings import Settings
 
 
@@ -32,7 +32,9 @@ class SnowFlakeTestBase(FormulaConnectorTestBase):
 
     @pytest.fixture(scope="class")
     def loop(self):
-        return asyncio.get_event_loop()
+        loop = asyncio.new_event_loop()
+        yield loop
+        loop.close()
 
     @pytest.fixture(scope="class")
     def _sf_target_dto(self, loop, settings: Settings):
@@ -60,7 +62,7 @@ class SnowFlakeTestBase(FormulaConnectorTestBase):
 
     @pytest.fixture(scope="class")
     def engine_params(self, _sf_creator_func: Callable) -> dict:
-        return dict(creator=_sf_creator_func)
+        return {"creator": _sf_creator_func}
 
     @pytest.fixture(scope="class")
     def engine_config(self, db_url: str, engine_params: dict, _sf_target_dto) -> SnowFlakeDbEngineConfig:

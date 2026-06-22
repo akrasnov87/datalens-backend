@@ -1,15 +1,14 @@
 import asyncio
-import logging
-from typing import (
-    AbstractSet,
+from collections.abc import (
     Callable,
     Collection,
-    Optional,
+    Set,
 )
+import logging
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     DataSourceRole,
     ProcessorType,
 )
@@ -52,7 +51,6 @@ from dl_query_processing.translation.primitives import (
     TranslatedMultiQueryBase,
 )
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -68,7 +66,7 @@ class QueryExecutor:
     _compeng_processor_type: ProcessorType = attr.ib(kw_only=True)
     _source_db_processor_type: ProcessorType = attr.ib(kw_only=True)
     _allow_cache_usage: bool = attr.ib(kw_only=True)
-    _avatar_alias_mapper: Optional[Callable[[str], str]] = attr.ib(kw_only=True, default=None)
+    _avatar_alias_mapper: Callable[[str], str] | None = attr.ib(kw_only=True, default=None)
     _us_manager: USManagerBase = attr.ib(kw_only=True)
     _compeng_semaphore: asyncio.Semaphore = attr.ib(kw_only=True)
     _parameter_value_specs: list[ParameterValueSpec] | None = attr.ib(kw_only=True, default=None)
@@ -89,11 +87,11 @@ class QueryExecutor:
         limit = translated_flat_query.limit
 
         # Limit query size if hard limit is set to minimize the amount of downloaded data
-        if is_top_level:  # only for queries that will be downloaded
-            if limit is None or limit > row_count_hard_limit:
-                limit = row_count_hard_limit + 1
+        # only for queries that will be downloaded
+        if is_top_level and (limit is None or limit > row_count_hard_limit):
+            limit = row_count_hard_limit + 1
 
-        bi_query = BIQuery(
+        return BIQuery(
             select_expressions=translated_flat_query.select,
             group_by_expressions=translated_flat_query.group_by,
             order_by_expressions=translated_flat_query.order_by,
@@ -103,8 +101,6 @@ class QueryExecutor:
             offset=translated_flat_query.offset,
             distinct=distinct if is_top_level else False,
         )
-
-        return bi_query
 
     async def _get_compeng_data_processor(self) -> OperationProcessorAsyncBase:
         factory = self._service_registry.get_data_processor_factory()
@@ -156,7 +152,9 @@ class QueryExecutor:
         op: BaseOp  # For usage in various parts of this function
 
         LOGGER.info(
-            f"Executing level type {level_type}. " f"Got source streams with result IDs: {list(streams_by_result_id)}"
+            "Executing level type %s. Got source streams with result IDs: %s",
+            level_type,
+            list(streams_by_result_id),
         )
 
         streams: list[DataStreamAsync] = [stream for _, stream in sorted(streams_by_result_id.items())]  # type: ignore  # TODO: fix
@@ -178,7 +176,7 @@ class QueryExecutor:
         else:
             result_to_stream_id_map = {result_id: stream.id for result_id, stream in streams_by_result_id.items()}
 
-        required_avatar_ids: AbstractSet[str]
+        required_avatar_ids: Set[str]
 
         # 2. Make operations for queries.
         # These can have many levels
@@ -199,7 +197,7 @@ class QueryExecutor:
             is_top_level = translated_flat_query.id in top_level_query_ids
             is_bottom_level = bool(query_froms) and not any(from_obj.id in all_query_ids for from_obj in query_froms)
             if translated_flat_query.is_empty():
-                raise exc.EmptyQuery()
+                raise exc.EmptyQueryError()
             result_id = translated_flat_query.id
             required_avatar_ids = frozenset(translated_flat_query.joined_from.iter_ids())
 
@@ -214,7 +212,7 @@ class QueryExecutor:
                 # 2. SELECT containing only constants or data-independent functions (see below)
                 # 3. Multiple FROMs - real JOIN is required here
 
-                root_avatar_id: Optional[str] = translated_flat_query.joined_from.root_from_id
+                root_avatar_id: str | None = translated_flat_query.joined_from.root_from_id
 
                 if is_empty_source:
                     # FIXME: This is quite a dirty hack and should be refactored in the long term
@@ -280,8 +278,10 @@ class QueryExecutor:
             )
             assert isinstance(op, DownloadOp)  # for typing
             LOGGER.info(
-                f"Adding DownloadOp for query {result_id} with "
-                f"input stream {op.source_stream_id} and output stream {op.dest_stream_id}"
+                "Adding DownloadOp for query %s with input stream %s and output stream %s",
+                result_id,
+                op.source_stream_id,
+                op.dest_stream_id,
             )
             operations.append(op)
             output_stream_to_result_map[op.dest_stream_id] = result_id
@@ -303,10 +303,10 @@ class QueryExecutor:
         role: DataSourceRole,
         translated_multi_query: TranslatedMultiQueryBase,
         from_subquery: bool,
-        subquery_limit: Optional[int],
+        subquery_limit: int | None,
     ) -> tuple[dict[AvatarId, AbstractStream], dict[AvatarId, str]]:
         base_avatar_ids = translated_multi_query.get_base_root_from_ids()
-        required_avatar_ids: list[str] = [from_id for from_id in translated_multi_query.get_base_froms()]
+        required_avatar_ids: list[str] = list(translated_multi_query.get_base_froms())
         required_avatar_ids = sorted(set(required_avatar_ids + list(base_avatar_ids)))
 
         prep_component_manager = DefaultPreparedComponentManager(
@@ -350,8 +350,8 @@ class QueryExecutor:
             stream_aliases[stream.id] = stream.alias
 
         id_map_for_log = {result_id: stream.id for result_id, stream in streams_by_result_id.items()}
-        LOGGER.info(f"Generated base streams for result IDs: {id_map_for_log}")
-        LOGGER.info(f"Using aliases: {stream_aliases}")
+        LOGGER.info("Generated base streams for result IDs: %s", id_map_for_log)
+        LOGGER.info("Using aliases: %s", stream_aliases)
         assert len(streams_by_result_id) == len(stream_aliases)
         return streams_by_result_id, stream_aliases
 
@@ -393,7 +393,7 @@ class QueryExecutor:
                 role=exec_info.role,
                 row_count_hard_limit=row_count_hard_limit,
             )
-        except exc.EmptyQuery as e:
+        except exc.EmptyQueryError as e:
             if empty_query_mode == EmptyQueryMode.error:
                 raise
             empty_rows: list[TBIDataRow]
@@ -431,21 +431,20 @@ class QueryExecutor:
                 row_count_hard_limit=row_count_hard_limit,
             )
 
-        streams = [stream for stream in streams_by_result_id.values()]
+        streams = list(streams_by_result_id.values())
         assert len(streams) == 1, f"There must be exactly one output data stream, got {len(streams)}"
         one_stream = streams[0]
 
         assert isinstance(one_stream, DataStreamAsync)
         rows = await one_stream.data.all()
 
-        executed_query = ExecutedQuery(
+        return ExecutedQuery(
             rows=rows,
             meta=ExecutedQueryMetaInfo.from_trans_meta(
                 trans_meta=top_query.meta,
                 debug_query=query_for_response,
-                target_connection_ids=set(
+                target_connection_ids={
                     target_conn.uuid for target_conn in exec_info.target_connections if target_conn.uuid is not None
-                ),
+                },
             ),
         )
-        return executed_query

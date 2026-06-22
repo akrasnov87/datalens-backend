@@ -1,4 +1,5 @@
 from datetime import (
+    UTC,
     datetime,
     timedelta,
 )
@@ -15,7 +16,7 @@ from dl_api_lib_testing.connector.data_api_suites import (
     DefaultConnectorDataResultTestSuite,
 )
 from dl_api_lib_testing.data_api_base import DataApiTestParams
-from dl_constants.enums import WhereClauseOperation
+from dl_constants import WhereClauseOperation
 
 from dl_connector_clickhouse_tests.db.api.base import (
     ClickHouseDataApiReadonlyUserTestBase,
@@ -33,13 +34,14 @@ class TestClickHouseDataResult(ClickHouseDataApiTestBase, DefaultConnectorDataRe
             formula=f"DATETRUNC(DATETIME([{data_api_test_params.date_field}]), 'day', 1)"
         )
 
+        now = datetime.now(UTC)
         result_resp = data_api.get_result(
             dataset=ds,
             fields=[ds.find_field(title="Countd")],
             filters=[
                 ds.find_field(title="Datetrunc").filter(
                     WhereClauseOperation.BETWEEN,
-                    [datetime.today() - timedelta(days=1), datetime.today()],
+                    [now - timedelta(days=1), now],
                 ),
             ],
         )

@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import abc
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-)
+from typing import TYPE_CHECKING
 
 import attr
 
@@ -17,15 +14,14 @@ from dl_dashsql.typed_query.processor.cache import (
     DefaultTypedQueryCacheKeyBuilder,
 )
 
-
 if TYPE_CHECKING:
     from dl_cache_engine.engine import EntityCacheEngineAsync
-    from dl_core.services_registry.top_level import ServicesRegistry  # noqa
+    from dl_core.services_registry.top_level import ServicesRegistry
 
 
 @attr.s
 class TypedQueryProcessorFactory(abc.ABC):
-    _service_registry_ref: FutureRef["ServicesRegistry"] = attr.ib(kw_only=True)
+    _service_registry_ref: FutureRef[ServicesRegistry] = attr.ib(kw_only=True)
 
     @property
     def service_registry(self) -> ServicesRegistry:
@@ -53,7 +49,7 @@ class DefaultQueryProcessorFactory(TypedQueryProcessorFactory):
         allow_cache_usage = allow_cache_usage and connection.allow_cache
 
         use_cache: bool = False
-        cache_engine: Optional[EntityCacheEngineAsync] = None
+        cache_engine: EntityCacheEngineAsync | None = None
         if allow_cache_usage and connection.cache_ttl_sec_override:  # (ttl is not None and > 0)
             cache_engine_factory = self.service_registry.get_cache_engine_factory()
             if cache_engine_factory is not None:

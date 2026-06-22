@@ -1,7 +1,6 @@
 from typing import (
+    Any,
     ClassVar,
-    Generic,
-    TypeVar,
 )
 
 from marshmallow import (
@@ -16,20 +15,16 @@ class BaseSchema(Schema):
         unknown = EXCLUDE
 
 
-_TARGET_OBJECT_TV = TypeVar("_TARGET_OBJECT_TV")
-
-
-class DefaultSchema(BaseSchema, Generic[_TARGET_OBJECT_TV]):
-    TARGET_CLS: ClassVar[type[_TARGET_OBJECT_TV]]  # type: ignore  # 2024-01-24 # TODO: ClassVar cannot contain type variables  [misc]
+class DefaultSchema[TARGET_OBJECT_TV](BaseSchema):
+    TARGET_CLS: ClassVar[type[TARGET_OBJECT_TV]]
 
     @classmethod
-    def get_target_cls(cls) -> type[_TARGET_OBJECT_TV]:
+    def get_target_cls(cls) -> type[TARGET_OBJECT_TV]:
         return cls.TARGET_CLS
 
-    def to_object(self, data: dict) -> _TARGET_OBJECT_TV:
+    def to_object(self, data: dict) -> TARGET_OBJECT_TV:
         return self.get_target_cls()(**data)
 
     @post_load(pass_many=False)
-    def post_load(self, data, **_) -> _TARGET_OBJECT_TV:  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
-        obj = self.to_object(data)
-        return obj
+    def post_load(self, data: dict, **_: Any) -> TARGET_OBJECT_TV:
+        return self.to_object(data)

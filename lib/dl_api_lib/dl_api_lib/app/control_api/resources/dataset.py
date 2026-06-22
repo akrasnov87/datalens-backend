@@ -36,11 +36,13 @@ import dl_api_lib.schemas.data
 import dl_api_lib.schemas.dataset_base
 import dl_api_lib.schemas.main
 import dl_api_lib.schemas.validation
-from dl_constants.api_constants import DLHeadersCommon
-from dl_constants.enums import (
+from dl_constants import (
     DataSourceCreatedVia,
     ManagedBy,
+    USEntryBranch,
+    USEntryMode,
 )
+from dl_constants.api_constants import DLHeadersCommon
 from dl_constants.exc import CODE_OK
 from dl_core.base_models import (
     CollectionEntryLocation,
@@ -48,14 +50,10 @@ from dl_core.base_models import (
     PathEntryLocation,
     WorkbookEntryLocation,
 )
-from dl_core.components.accessor import DatasetComponentAccessor
 from dl_core.components.editor import DatasetComponentEditor
-from dl_core.constants import DatasetConstraints
-from dl_core.enums import USEntryMode
 from dl_core.us_dataset import Dataset
 from dl_core.utils import generate_revision_id
 import dl_query_processing.exc
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -70,7 +68,7 @@ VALIDATION_OK_MESSAGE = "Validation was successful"
 class DatasetCollection(DatasetResource):
     @classmethod
     def generate_dataset_location(cls, body: dict) -> EntryLocation:
-        name = body.get("name", "Dataset {}".format(str(uuid.uuid4())))
+        name = body.get("name", f"Dataset {uuid.uuid4()!s}")
         return resolve_entry_loc_from_api_req_body(
             name=name,
             collection_id=body.get("collection_id"),
@@ -101,8 +99,9 @@ class DatasetCollection(DatasetResource):
             ds_editor.set_created_via(created_via=body["created_via"])
 
         result_schema = body["dataset"].get("result_schema", [])
-        if len(result_schema) > DatasetConstraints.FIELD_COUNT_LIMIT_SOFT:
-            raise dl_query_processing.exc.DatasetTooManyFieldsFatal()
+        constraints = self.get_service_registry().get_constraints()
+        if len(result_schema) > constraints.FIELD_COUNT_LIMIT_SOFT:
+            raise dl_query_processing.exc.DatasetTooManyFieldsFatalError()
 
         loader = self.create_dataset_api_loader()
         loader.populate_dataset_from_body(dataset=dataset, body=body["dataset"], us_manager=us_manager)
@@ -132,7 +131,7 @@ class DatasetItem(BIResource):
         us_manager.set_context("connection", connection_headers)
 
         ds, _ = DatasetResource.get_dataset(dataset_id=dataset_id, body={}, load_dependencies=False)
-        utils.need_permission_on_entry(ds, USPermissionKind.admin)
+        utils.need_delete_permission_on_entry(ds)
 
         us_manager.delete(ds)
 
@@ -196,15 +195,17 @@ class DatasetCopy(DatasetResource):
         if isinstance(orig_ds_loc, PathEntryLocation):
             copy_ds_loc = PathEntryLocation(copy_us_key)
         else:
-            raise exc.FeatureNotAvailable(message="Dataset copy in workbooks is not supported yet")
+            raise exc.FeatureNotAvailableError(message="Dataset copy in workbooks is not supported yet")
 
         utils.need_permission_on_entry(ds, USPermissionKind.edit)
 
         LOGGER.info("Going to copy dataset %s with new key %r", dataset_id, copy_us_key)
         ds_copy = us_manager.copy_entry(ds, key=copy_ds_loc)
 
-        us_manager.create(ds_copy)
+        # Reset extract properties
+        ds_copy.reset_extract_properties()
 
+        us_manager.create(ds_copy)
         LOGGER.info("Dataset copy was saved with ID %s", ds_copy.uuid)
 
         return self.make_dataset_response_data(dataset=ds_copy, us_entry_buffer=us_manager.get_entry_buffer())
@@ -238,7 +239,7 @@ class DatasetVersionItem(DatasetResource):
             us_manager.set_context("dataset", {DLHeadersCommon.AUDIT_MODE.value: audit_mode})
 
         if "rev_id" in query:
-            ds, _ = self.get_dataset(
+            ds, update_info = self.get_dataset(
                 dataset_id=dataset_id,
                 body={},
                 params={
@@ -246,14 +247,9 @@ class DatasetVersionItem(DatasetResource):
                 },
             )
             utils.need_permission_on_entry(ds, USPermissionKind.edit)
-            # raw entry to avoid double deserialization
-            ds_raw = us_manager.get_migrated_entry(dataset_id)
-            # latest data revision_id for concurrent edit checks
-            revision_id = ds_raw["data"].get("revision_id")
         else:
-            ds, _ = self.get_dataset(dataset_id=dataset_id, body={})
+            ds, update_info = self.get_dataset(dataset_id=dataset_id, body={})
             utils.need_permission_on_entry(ds, USPermissionKind.read)
-            revision_id = ds.revision_id
 
         ds_dict = ds.as_dict()  # FIXME
         # TODO FIX: determine desired behaviour in case of workbooks
@@ -268,7 +264,12 @@ class DatasetVersionItem(DatasetResource):
         ds_dict["is_favorite"] = ds.is_favorite
 
         ds_dict.update(self.make_dataset_response_data(dataset=ds, us_entry_buffer=us_manager.get_entry_buffer()))
-        ds_dict["dataset"]["revision_id"] = revision_id
+
+        # Returning the latest dataset revision_id for concurrent edit checks
+        # Saved revision ought to be the latest revision
+        # If there is no separate saved revision, i.e. dataset was saved with mode=publish,
+        # then saved and published revision IDs point to the same revision and it still is the latest one
+        ds_dict["dataset"]["revision_id"] = update_info.latest_revision_id
 
         return ds_dict
 
@@ -291,19 +292,29 @@ class DatasetVersionItem(DatasetResource):
 
         with us_manager.get_locked_entry_cm(Dataset, dataset_id, wait_timeout=DEFAULT_DATASET_LOCK_WAIT_TIMEOUT) as ds:
             utils.need_permission_on_entry(ds, USPermissionKind.edit)
-            us_manager.load_dependencies(ds)
+            us_manager.load_dataset_dependencies(
+                ds,
+                respect_sources=True,
+            )
 
             result_schema = body["dataset"].get("result_schema", [])
-            if len(result_schema) > DatasetConstraints.FIELD_COUNT_LIMIT_SOFT:
-                raise dl_query_processing.exc.DatasetTooManyFieldsFatal()
+            constraints = self.get_service_registry().get_constraints()
+            if len(result_schema) > constraints.FIELD_COUNT_LIMIT_SOFT:
+                raise dl_query_processing.exc.DatasetTooManyFieldsFatalError()
 
-            ds_accessor = DatasetComponentAccessor(dataset=ds)
+            # Locked entry is loaded from the published branch; consult the saved branch for the actual latest revision_id
+            ds_raw_saved = us_manager.get_migrated_entry(dataset_id, branch=USEntryBranch.saved)
+            latest_revision_id = ds_raw_saved["data"].get("revision_id") or ds.revision_id
 
-            old_sources = ds_accessor.get_data_source_id_list()
             loader = self.create_dataset_api_loader()
             original_ds = us_manager.clone_entry_instance(ds)
 
-            update_info = loader.populate_dataset_from_body(dataset=ds, body=body["dataset"], us_manager=us_manager)
+            update_info = loader.populate_dataset_from_body(
+                dataset=ds,
+                body=body["dataset"],
+                us_manager=us_manager,
+                latest_revision_id=latest_revision_id,
+            )
             new_sources = update_info.added_own_source_ids + update_info.updated_own_source_ids
             invalidate_sample_sources(
                 dataset=ds,
@@ -311,11 +322,11 @@ class DatasetVersionItem(DatasetResource):
                 us_manager=us_manager,
             )
 
-            # checks that all dataset sources have read rights
-            sources_to_check = set(new_sources) - set(old_sources)
+            # Read rights required for all added and changed sources: a connection swap on an
+            # existing source must be gated the same as adding a new source on that connection.
             check_permissions_for_origin_sources(
                 dataset=ds,
-                source_ids=sources_to_check,
+                source_ids=new_sources,
                 permission_kind=USPermissionKind.read,
                 us_entry_buffer=us_manager.get_entry_buffer(),
             )
@@ -379,13 +390,12 @@ class DatasetExportItem(DatasetResource):
         )
 
         dl_loc = ds.entry_key
-        if isinstance(dl_loc, WorkbookEntryLocation):
-            ds_dict["dataset"]["name"] = dl_loc.entry_name
-        elif isinstance(dl_loc, CollectionEntryLocation):
+        if isinstance(dl_loc, (WorkbookEntryLocation, CollectionEntryLocation)):
             ds_dict["dataset"]["name"] = dl_loc.entry_name
 
         ds_dict["dataset"]["revision_id"] = None
         del ds_dict["dataset"]["rls"]
+        del ds_dict["dataset"]["extract"]
 
         notifications = []
         localizer = self.get_service_registry().get_localizer()
@@ -393,7 +403,7 @@ class DatasetExportItem(DatasetResource):
         if ds_warnings:
             notifications.extend(ds_warnings)
 
-        return dict(dataset=ds_dict["dataset"], notifications=notifications)
+        return {"dataset": ds_dict["dataset"], "notifications": notifications}
 
 
 @ns.route("/import")
@@ -412,7 +422,7 @@ class DatasetImportCollection(DatasetResource):
 
     @classmethod
     def generate_dataset_location(cls, body: dict) -> EntryLocation:
-        name = body.get("name", "Dataset {}".format(str(uuid.uuid4())))
+        name = body.get("name", f"Dataset {uuid.uuid4()!s}")
         return resolve_entry_loc_from_api_req_body(
             name=name,
             collection_id=body.get("collection_id"),
@@ -436,8 +446,7 @@ class DatasetImportCollection(DatasetResource):
                     source.get("id"),
                 )
                 raise exc.DatasetImportError("Can not import dataset without a connection")  # TODO BI-6296
-            else:
-                source["connection_id"] = conn_id_mapping[fake_conn_id]
+            source["connection_id"] = conn_id_mapping[fake_conn_id]
 
     @put_to_request_context(endpoint_code="DatasetImport")
     @schematic_request(
@@ -484,22 +493,27 @@ class DatasetImportCollection(DatasetResource):
         ds_editor.set_created_via(created_via=DataSourceCreatedVia.workbook_copy)
 
         result_schema = data["dataset"].get("result_schema", [])
-        if len(result_schema) > DatasetConstraints.FIELD_COUNT_LIMIT_SOFT:
-            raise dl_query_processing.exc.DatasetTooManyFieldsFatal()
+        service_registry = self.get_service_registry()
+        constraints = service_registry.get_constraints()
+        if len(result_schema) > constraints.FIELD_COUNT_LIMIT_SOFT:
+            raise dl_query_processing.exc.DatasetTooManyFieldsFatalError()
 
         loader = self.create_dataset_api_loader()
         loader.populate_dataset_from_body(dataset=dataset, body=data["dataset"], us_manager=us_manager)
+
+        # Reset extract properties
+        dataset.reset_extract_properties()
 
         us_manager.create(dataset)
 
         LOGGER.info("New dataset was saved with ID %s", dataset.uuid)
 
-        localizer = self.get_service_registry().get_localizer()
+        localizer = service_registry.get_localizer()
         ds_warnings = dataset.get_import_warnings_list(localizer=localizer)
         if ds_warnings:
             notifications.extend(ds_warnings)
 
-        return dict(id=dataset.uuid, notifications=notifications)
+        return {"id": dataset.uuid, "notifications": notifications}
 
 
 @ns.route("/validators/dataset")
@@ -508,6 +522,7 @@ class DatasetVersionValidator(DatasetResource):
     @put_to_request_context(endpoint_code="DatasetValidate")
     @schematic_request(
         ns=ns,
+        query=dl_api_lib.schemas.validation.DatasetValidationQuerySchema(),
         body=dl_api_lib.schemas.validation.DatasetValidationSchema(),
         responses={
             200: ("Success", dl_api_lib.schemas.validation.DatasetValidationResponseSchema()),
@@ -518,33 +533,45 @@ class DatasetVersionValidator(DatasetResource):
         self,
         dataset_id: str | None = None,
         version: str | None = None,
+        query: dict | None = None,
         body: dict | None = None,
     ) -> tuple[dict, HTTPStatus]:
         """Validate dataset version schema"""
         us_manager = self.get_regular_us_manager()
+        us_get_dataset_params = None
 
-        # Pass dataset_id to US from URL
         if dataset_id is not None:
+            # Pass dataset_id to US from URL
             connection_headers = {
                 DLHeadersCommon.DATASET_ID.value: dataset_id,
             }
             us_manager.set_context("connection", connection_headers)
 
+            if query is not None and query.get("rev_id") is not None:
+                us_get_dataset_params = {
+                    "revId": query["rev_id"],
+                }
+
         assert body is not None
         dataset, _ = self.get_dataset(
             dataset_id=dataset_id,
             body=body,
+            params=us_get_dataset_params,
         )
         dataset_validator_factory = self.get_service_registry().get_dataset_validator_factory()
-        ds_validator = dataset_validator_factory.get_dataset_validator(ds=dataset, us_manager=us_manager)
+        ds_validator = dataset_validator_factory.get_dataset_validator(
+            ds=dataset,
+            us_manager=us_manager,
+            is_data_api=not self.is_dataset_edit_allowed(dataset),
+        )
         data = {}
 
         # apply updates
         try:
             ds_validator.apply_batch(action_batch=body.get("updates", ()))
-        except exc.DLValidationFatal as err:
+        except exc.DLValidationFatalError as err:
             any_errors = True
-            code = self._make_api_err_code(exc.DLValidationFatal.err_code)
+            code = self._make_api_err_code(err.err_code)
             message = err.message
         else:
             # collect connections not found in us
@@ -606,22 +633,28 @@ class DatasetVersionFieldValidator(DatasetResource):
             body=body,
         )
         dataset_validator_factory = self.get_service_registry().get_dataset_validator_factory()
-        ds_validator = dataset_validator_factory.get_dataset_validator(ds=dataset, us_manager=us_manager)
+        ds_validator = dataset_validator_factory.get_dataset_validator(
+            ds=dataset,
+            us_manager=us_manager,
+            is_data_api=not self.is_dataset_edit_allowed(dataset),
+        )
         formula = body["field"]["formula"]
         # TODO full validation (with aggregation check for this field), not just formula
         field_errors = ds_validator.get_single_formula_errors(formula)
         code = self._make_api_err_code(exc.DLValidationError.err_code) if field_errors else CODE_OK
         message = exc.DLValidationError.default_message if field_errors else VALIDATION_OK_MESSAGE
         error_data = {
-            "field_errors": [
-                {
-                    "title": body["field"].get("title"),
-                    "guid": body["field"].get("guid"),
-                    "errors": field_errors,
-                }
-            ]
-            if field_errors
-            else [],
+            "field_errors": (
+                [
+                    {
+                        "title": body["field"].get("title"),
+                        "guid": body["field"].get("guid"),
+                        "errors": field_errors,
+                    }
+                ]
+                if field_errors
+                else []
+            ),
             "code": code,
             "message": message,
         }

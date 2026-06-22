@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 from pprint import pprint
 import sys
-from typing import Optional
 
 import attr
 
@@ -183,15 +182,6 @@ def make_parser() -> argparse.ArgumentParser:
     req_check_parser.add_argument("--ignore-prefix", type=str, help="Package prefix to ignore when comparing")
     req_check_parser.add_argument("--tests", action="store_true", help="Check for tests, not the main package")
 
-    metapackage_parser = argparse.ArgumentParser(add_help=False)
-    metapackage_parser.add_argument("--metapackage", required=True, help="Metapackage name from repo config")
-
-    subparsers.add_parser(
-        "ensure-mypy-common",
-        parents=[metapackage_parser],
-        help="Checks and updates all sub projects with mypy config using template in the meta package",
-    )
-
     compare_resulting_dependencies = subparsers.add_parser(
         "compare-resulting-deps",
         help=(
@@ -309,13 +299,13 @@ class DlRepManagerTool(CliToolBase):
 
     def package_list(self, package_type: str, mask: str, base_path: Path) -> None:
         for package_info in self.package_index.list_package_infos(package_type=package_type):
-            printable_values = dict(
-                package_type=package_info.package_type,
-                abs_path=package_info.abs_path,
-                rel_path=os.path.relpath(package_info.abs_path, base_path),
-                single_module_name=package_info.single_module_name,
-                package_reg_name=package_info.package_reg_name,
-            )
+            printable_values = {
+                "package_type": package_info.package_type,
+                "abs_path": package_info.abs_path,
+                "rel_path": os.path.relpath(package_info.abs_path, base_path),
+                "single_module_name": package_info.single_module_name,
+                "package_reg_name": package_info.package_reg_name,
+            }
             if mask:
                 print(mask.format(**printable_values))
             else:
@@ -352,7 +342,7 @@ class DlRepManagerTool(CliToolBase):
     def check_requirements(
         self,
         package_name: str,
-        ignore_prefix: Optional[str] = None,
+        ignore_prefix: str | None = None,
         tests: bool = False,
     ) -> None:
         """Compares imports and requirements of a package"""
@@ -377,9 +367,6 @@ class DlRepManagerTool(CliToolBase):
             print()
         if not extra_req_specs and not extra_import_specs:
             print("Requirements are in sync with imports")
-
-    def ensure_mypy_common(self, metapackage_name: str) -> None:
-        self.py_prj_editor.update_mypy_common(metapackage_name=metapackage_name)
 
     def compare_resulting_deps(self, base_revision: str, group: str) -> None:
         repo_root = self.py_prj_editor.base_path
@@ -490,7 +477,7 @@ class DlRepManagerTool(CliToolBase):
         package_index = index_builder.build_index()
 
         repository_navigator = RepositoryNavigator(repository_env=repository_env, package_index=package_index)
-        tool = cls(
+        return cls(
             repository_env=repository_env,
             package_index=package_index,
             repository_navigator=repository_navigator,
@@ -503,10 +490,8 @@ class DlRepManagerTool(CliToolBase):
             ),
             py_prj_editor=PyPrjEditor(
                 repository_env=repository_env,
-                package_index=package_index,
             ),
         )
-        return tool
 
     @classmethod
     def run_parsed_args(cls, args: argparse.Namespace) -> None:
@@ -559,8 +544,6 @@ class DlRepManagerTool(CliToolBase):
                     ignore_prefix=args.ignore_prefix,
                     tests=args.tests,
                 )
-            case "ensure-mypy-common":
-                tool.ensure_mypy_common(metapackage_name=args.metapackage)
             case "compare-resulting-deps":
                 tool.compare_resulting_deps(base_revision=args.base_rev, group=args.group)
             case "resolve":

@@ -1,6 +1,6 @@
 import logging
 
-from dl_constants.enums import DataSourceType
+from dl_constants import DataSourceType
 from dl_core.data_source.sql import (
     BaseSQLDataSource,
     StandardSchemaSQLDataSource,
@@ -15,7 +15,6 @@ from dl_connector_oracle.core.constants import (
     SOURCE_TYPE_ORACLE_SUBSELECT,
     SOURCE_TYPE_ORACLE_TABLE,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 

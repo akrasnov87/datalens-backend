@@ -13,8 +13,7 @@ dl-dynamic-enum = {path = "../dl_dynamic_enum"}
 dl-json = {path = "../dl_json"}
 pydantic = "*"
 pydantic-core = "*"
-python = ">=3.10, <3.13"
-typing-extensions = "*"
+python = ">=3.12, <3.13"
 
 [tool.poetry.group.tests.dependencies]
 pytest = "*"
@@ -43,7 +42,6 @@ requires = [
 ]
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_pydantic_tests/"
 skip_compose = "true"
 target_path = "unit"

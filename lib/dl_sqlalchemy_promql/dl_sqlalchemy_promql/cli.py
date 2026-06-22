@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import (
+    UTC,
+    datetime,
+)
 import logging
+from typing import Any
 from urllib.parse import urljoin
 
 import requests
@@ -11,7 +15,6 @@ from .errors import (
     InterfaceError,
     NotSupportedError,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -29,7 +32,7 @@ def rebuild_prometheus_data(data):
             raise NotSupportedError("Different schemas are not supported")
 
         rows = [
-            {**chunk["metric"], **dict(timestamp=datetime.fromtimestamp(ts), value=float(v))}
+            {**chunk["metric"], "timestamp": datetime.fromtimestamp(ts, tz=UTC).replace(tzinfo=None), "value": float(v)}
             for (ts, v) in chunk["values"]
         ]
         result.append((schema, rows))
@@ -38,7 +41,7 @@ def rebuild_prometheus_data(data):
 
 
 class SyncPromQLClient:
-    def __init__(self, base_url, username, password, auth_type=None, auth_header=None, **kwargs):
+    def __init__(self, base_url, username, password, auth_type=None, auth_header=None, **kwargs: Any) -> None:
         self._closed = False
         self._session = requests.Session()
         self._session.max_redirects = 0
@@ -65,9 +68,9 @@ class SyncPromQLClient:
         self._closed = True
         self._session.close()
 
-    def _request(self, method, endpoint, **kwargs):
+    def _request(self, method, endpoint, **kwargs: Any):
         if endpoint.startswith("/"):
-            LOGGER.warning(f"Endpoint '{endpoint}' starts with '/' that can effect final url")
+            LOGGER.warning("Endpoint '%s' starts with '/' that can affect final url", endpoint)
         url = urljoin(self._base_url, endpoint)
         return self._session.request(method, url, **kwargs)
 
@@ -89,9 +92,7 @@ class SyncPromQLClient:
         )
         response.raise_for_status()
         data = response.json()
-        result = rebuild_prometheus_data(data["data"])
-
-        return result
+        return rebuild_prometheus_data(data["data"])
 
     def test_connection(self):
         response = self._request("get", "-/ready")

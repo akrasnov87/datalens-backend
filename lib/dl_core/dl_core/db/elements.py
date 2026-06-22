@@ -1,22 +1,17 @@
 from __future__ import annotations
 
 from collections import namedtuple
-from typing import (
-    Any,
-    Optional,
-    Sequence,
-    Union,
-)
+from collections.abc import Sequence
+from typing import Any
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     IndexKind,
     UserDataType,
 )
 from dl_type_transformer.native_type import GenericNativeType
 from dl_utils.utils import get_type_full_name
-
 
 _SchemaColumn = namedtuple(
     "_SchemaColumn",
@@ -35,18 +30,18 @@ _SchemaColumn = namedtuple(
 
 
 class SchemaColumn(_SchemaColumn):
-    def __new__(  # type: ignore  # TODO: fix
+    def __new__(
         cls,
         name: str,
-        title: Optional[str] = None,
-        user_type: Optional[Union[UserDataType, str]] = None,
-        nullable: Optional[bool] = True,
-        native_type: Optional[GenericNativeType] = None,
+        title: str | None = None,
+        user_type: UserDataType | str | None = None,
+        nullable: bool | None = True,
+        native_type: GenericNativeType | None = None,
         source_id: Any = None,
-        has_auto_aggregation: Optional[bool] = None,
+        has_auto_aggregation: bool | None = None,
         lock_aggregation: bool = False,
-        description: Optional[str] = None,
-    ):
+        description: str | None = None,
+    ) -> SchemaColumn:
         title = title or name
         if isinstance(user_type, str):
             user_type = UserDataType[user_type]
@@ -64,14 +59,14 @@ class SchemaColumn(_SchemaColumn):
             description=description or "",
         )
 
-    def clone(self, **kwargs) -> "SchemaColumn":  # type: ignore  # TODO: fix
+    def clone(self, **kwargs: Any) -> SchemaColumn:
         return SchemaColumn(**dict(self._asdict(), **kwargs))
 
 
 @attr.s(slots=True, frozen=True)
 class IndexInfo:
     columns: Sequence[str] = attr.ib()
-    kind: Optional[IndexKind] = attr.ib()
+    kind: IndexKind | None = attr.ib()
 
 
 @attr.s(slots=True)
@@ -82,7 +77,7 @@ class SchemaInfo:
     converted: list[SchemaColumn] = attr.ib(default=None)
 
     # None value should be treated as "unknown/no info"
-    indexes: Optional[frozenset[IndexInfo]] = attr.ib(default=None)
+    indexes: frozenset[IndexInfo] | None = attr.ib(default=None)
 
     @indexes.validator
     def check_indexes(self, attribute: Any, value: Any) -> None:
@@ -91,7 +86,7 @@ class SchemaInfo:
         else:
             raise TypeError(f"Indexes must be a frozen set or non, not {get_type_full_name(type(value))!r}")
 
-    def clone(self, **kwargs) -> SchemaInfo:  # type: ignore  # TODO: fix
+    def clone(self, **kwargs: Any) -> SchemaInfo:
         return attr.evolve(self, **kwargs)
 
     @classmethod

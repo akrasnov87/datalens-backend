@@ -1,16 +1,13 @@
+from collections.abc import Callable
 import logging
 import time
-from typing import (
-    Any,
-    Callable,
-)
+from typing import Any
 
 import attr
 import requests
 import requests.adapters
 
 import dl_retrier
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -19,7 +16,7 @@ class RequestsRetryError(Exception):
     """Requests retrier failed attempting to retry"""
 
 
-class RequestsRetryTimeout(requests.exceptions.Timeout, RequestsRetryError):
+class RequestsRetryTimeoutError(requests.exceptions.Timeout, RequestsRetryError):
     """Timed out attempting to retry"""
 
 
@@ -63,7 +60,7 @@ class RequestsPolicyRetrier:
             return last_known_result
 
         if isinstance(last_known_result, requests.Timeout):
-            raise RequestsRetryTimeout() from last_known_result
+            raise RequestsRetryTimeoutError() from last_known_result
 
         if isinstance(last_known_result, Exception):
             raise RequestsRetryError() from last_known_result

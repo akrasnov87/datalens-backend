@@ -19,7 +19,6 @@ from dl_connector_postgresql.core.postgresql_base.exc import (
     PostgresSourceDoesNotExistError,
 )
 
-
 sync_pg_db_error_transformer: DbErrorTransformer = ChainedDbErrorTransformer(
     [
         Rule(
@@ -38,18 +37,19 @@ sync_pg_db_error_transformer: DbErrorTransformer = ChainedDbErrorTransformer(
 
 def make_async_pg_error_transformer() -> DbErrorTransformer:
     rule_descriptions = (
-        ((asyncpg_exc.DivisionByZeroError, None), exc.DivisionByZero),
+        ((asyncpg_exc.DivisionByZeroError, None), exc.DivisionByZeroError),
         (
             (asyncpg_exc.UndefinedFunctionError, r"function round\(double precision"),
             PgDoublePrecisionRoundError,
         ),
-        ((asyncpg_exc.UndefinedFunctionError, None), exc.UnknownFunction),
-        ((OverflowError, "value out of .* range"), exc.NumberOutOfRange),
+        ((asyncpg_exc.UndefinedFunctionError, None), exc.UnknownFunctionError),
+        ((OverflowError, "value out of .* range"), exc.NumberOutOfRangeError),
         ((asyncpg_exc.InvalidTextRepresentationError, None), exc.DataParseError),
-        # ((asyncpg_exc.UndefinedTableError, None), exc.SourceDoesNotExist),
+        # ((asyncpg_exc.UndefinedTableError, None), exc.SourceDoesNotExistError),
         ((asyncpg_exc.UndefinedTableError, None), PostgresSourceDoesNotExistError),
-        # ((asyncpg_exc.FDWTableNotFoundError, None), exc.SourceDoesNotExist),
+        # ((asyncpg_exc.FDWTableNotFoundError, None), exc.SourceDoesNotExistError),
         ((asyncpg_exc.FDWTableNotFoundError, None), PostgresSourceDoesNotExistError),  # todo: test for this error
+        ((asyncpg_exc.ReadOnlySQLTransactionError, None), exc.DatabaseReadOnlyTransactionError),
         ((asyncpg_exc.SyntaxOrAccessError, None), exc.DatabaseOperationalError),
         ((TimeoutError, None), exc.SourceConnectError),
         ((OSError, "Connect call failed"), exc.SourceConnectError),

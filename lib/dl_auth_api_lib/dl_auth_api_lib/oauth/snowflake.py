@@ -7,7 +7,6 @@ import attr
 
 from dl_auth_api_lib import exc
 
-
 _AUTH_URL: str = "https://{account}.snowflakecomputing.com/oauth/authorize?"
 _TOKEN_URL: str = "https://{account}.snowflakecomputing.com/oauth/token-request"
 
@@ -27,8 +26,7 @@ class SnowflakeOAuth:
             "response_type": "code",
             "state": "dl_conn_state",
         }
-        uri = self.auth_url.format(account=self.account) + urllib.parse.urlencode(params)
-        return uri
+        return self.auth_url.format(account=self.account) + urllib.parse.urlencode(params)
 
     async def get_auth_token(self, code: str, client_secret: str) -> dict[str, Any]:
         async with aiohttp.ClientSession(
@@ -44,18 +42,16 @@ class SnowflakeOAuth:
                     resp.raise_for_status()
                 if resp.content_type != "application/json":
                     raise exc.UnexpectedResponseError(
-                        details=dict(
-                            response=await resp.text(),
-                            status=resp.status,
-                        ),
+                        details={
+                            "response": await resp.text(),
+                            "status": resp.status,
+                        },
                     )
-                else:
-                    token_response = await resp.json()
+                token_response = await resp.json()
         return token_response
 
     def _get_session_headers(self, client_secret: str) -> dict[str, str]:
-        headers = {
+        return {
             "Content-Type": "application/x-www-form-urlencoded",
             "Authorization": f"Basic {b64encode(f'{self.client_id}:{client_secret}'.encode()).decode()}",
         }
-        return headers

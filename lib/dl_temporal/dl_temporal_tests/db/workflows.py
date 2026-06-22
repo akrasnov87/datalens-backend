@@ -2,14 +2,14 @@ import logging
 
 import temporalio.workflow
 
-
 with temporalio.workflow.unsafe.imports_passed_through():
+    import datetime
+
     import dl_pydantic
     import dl_temporal_tests.db.activities as activities
     import dl_temporal_tests.db.common as common
 
 import dl_temporal
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -29,6 +29,32 @@ class WorkflowParams(dl_temporal.BaseWorkflowParams):
     return_error: bool
 
     execution_timeout: dl_pydantic.JsonableTimedelta = dl_pydantic.JsonableTimedelta(seconds=1)
+
+    @classmethod
+    def from_default(
+        cls,
+        *,
+        return_error: bool = False,
+        parent_context: dl_temporal.ParentContext | None = None,
+    ) -> "WorkflowParams":
+        # Fixed (non-random) values so the logged params dump is deterministic and tests can assert it.
+        return cls(
+            workflow_int_param=1,
+            workflow_str_param="test",
+            workflow_bool_param=True,
+            workflow_list_param=[1, 2, 3],
+            workflow_dict_param={"1": 1, "2": 2, "3": 3},
+            workflow_timedelta_param=dl_pydantic.JsonableTimedelta(seconds=1),
+            workflow_uuid_param=dl_pydantic.JsonableUUID("00000000-0000-0000-0000-000000000000"),
+            workflow_date_param=dl_pydantic.JsonableDate(2024, 1, 1),
+            workflow_datetime_param=dl_pydantic.JsonableDatetime(2024, 1, 1, tzinfo=datetime.UTC),
+            workflow_datetime_with_timezone_param=dl_pydantic.JsonableDatetimeWithTimeZone(
+                2024, 1, 1, tzinfo=datetime.UTC
+            ),
+            workflow_nested_param=common.NestedModel(test_int=1),
+            parent_context=parent_context if parent_context is not None else dl_temporal.ParentContext(),
+            return_error=return_error,
+        )
 
 
 class WorkflowResult(dl_temporal.BaseWorkflowResult):
@@ -109,3 +135,22 @@ class Workflow(dl_temporal.BaseWorkflow):
             )
 
         raise NotImplementedError(f"Unexpected result type: {type(result)}")
+
+
+class RaisingWorkflowParams(dl_temporal.BaseWorkflowParams): ...
+
+
+@dl_temporal.define_workflow
+class RaisingWorkflow(dl_temporal.BaseWorkflow):
+    name = "test_raising_workflow"
+    logger = LOGGER
+
+    Params = RaisingWorkflowParams
+    Result = WorkflowResult
+
+    async def run(self, params: RaisingWorkflowParams) -> WorkflowResult:
+        await self.execute_activity(
+            activities.RaisingActivity,
+            activities.RaisingActivity.Params(parent_context=params.parent_context),
+        )
+        raise AssertionError("RaisingActivity must fail the workflow")

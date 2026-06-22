@@ -2,21 +2,20 @@ from __future__ import annotations
 
 import abc
 import asyncio
+from collections.abc import (
+    AsyncIterable,
+    Awaitable,
+    Callable,
+)
 import logging
 from types import TracebackType
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncIterable,
-    Awaitable,
-    Callable,
-    Generic,
-    Optional,
-    TypeVar,
+    Self,
 )
 
 import attr
-from typing_extensions import Self
 
 from dl_core.connection_executors.adapters.adapter_actions.async_base import (
     AsyncDBVersionAdapterAction,
@@ -41,7 +40,6 @@ from dl_core.connection_executors.models.db_adapter_data import (
     DBAdapterQuery,
     RawSchemaInfo,
 )
-
 
 if TYPE_CHECKING:
     from dl_constants.types import (
@@ -82,21 +80,18 @@ class AsyncRawExecutionResult:
                 yield row
 
 
-_CACHE_TV = TypeVar("_CACHE_TV")
-
-
 @attr.s
-class AsyncCache(Generic[_CACHE_TV]):
-    _cache: dict[str, _CACHE_TV] = attr.ib(init=False, factory=dict)
+class AsyncCache[CACHE_TV]:
+    _cache: dict[str, CACHE_TV] = attr.ib(init=False, factory=dict)
     _lock: asyncio.Lock = attr.ib(init=False, factory=asyncio.Lock)
 
-    async def get(self, key: str, generator: Callable[[str], Awaitable[_CACHE_TV]]) -> _CACHE_TV:
+    async def get(self, key: str, generator: Callable[[str], Awaitable[CACHE_TV]]) -> CACHE_TV:
         async with self._lock:
             if key not in self._cache:
                 self._cache[key] = await generator(key)
             return self._cache[key]
 
-    async def clear(self, finalizer: Callable[[_CACHE_TV], Awaitable[None]]) -> None:
+    async def clear(self, finalizer: Callable[[CACHE_TV], Awaitable[None]]) -> None:
         async with self._lock:
             for elem in self._cache.values():
                 await finalizer(elem)
@@ -168,7 +163,7 @@ class AsyncDBAdapter(metaclass=abc.ABCMeta):
         # Redefine this method to enable `execute_typedQueryRaw`
         return AsyncTypedQueryRawActionNotImplemented()
 
-    def get_target_host(self) -> Optional[str]:
+    def get_target_host(self) -> str | None:
         return None
 
     async def test(self) -> None:
@@ -184,7 +179,7 @@ class AsyncDBAdapter(metaclass=abc.ABCMeta):
     async def execute(self, query: DBAdapterQuery) -> AsyncRawExecutionResult:  # TODO: Implement via action
         pass
 
-    async def get_db_version(self, db_ident: DBIdent) -> Optional[str]:
+    async def get_db_version(self, db_ident: DBIdent) -> str | None:
         return await self._async_db_version_action.run_db_version_action(db_ident=db_ident)
 
     async def get_schema_names(self, db_ident: DBIdent) -> list[str]:
@@ -213,9 +208,9 @@ class AsyncDBAdapter(metaclass=abc.ABCMeta):
 
     async def __aexit__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         await self.close()
 

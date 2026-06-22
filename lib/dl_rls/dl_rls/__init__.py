@@ -1,7 +1,7 @@
 from .exc import (
     RLSConfigParsingError,
     RLSError,
-    RLSSubjectNotFound,
+    RLSSubjectNotFoundError,
 )
 from .models import (
     RLS_FAILED_USER_NAME_PREFIX,
@@ -27,13 +27,13 @@ from .utils import (
     rls_uses_real_group_ids,
 )
 
-
 __all__ = [
+    "RLS",
+    "RLS_FAILED_USER_NAME_PREFIX",
     "BaseSubjectResolver",
     "FieldRLSSerializer",
     "FieldRestrictions",
     "NotFoundSubjectResolver",
-    "RLS",
     "RLS2ConfigEntry",
     "RLS2Subject",
     "RLSConfigItem",
@@ -41,8 +41,7 @@ __all__ = [
     "RLSEntry",
     "RLSError",
     "RLSSubject",
-    "RLSSubjectNotFound",
-    "RLS_FAILED_USER_NAME_PREFIX",
+    "RLSSubjectNotFoundError",
     "is_slug",
     "rls_uses_real_group_ids",
 ]

@@ -4,13 +4,12 @@ Auxiliary nodes specific to the forked subquery joining mechanism.
 
 from __future__ import annotations
 
-from enum import Enum
-from typing import (
+from collections.abc import (
     Hashable,
-    Optional,
     Sequence,
-    cast,
 )
+from enum import Enum
+from typing import cast
 
 import dl_formula.core.nodes as nodes
 
@@ -27,7 +26,7 @@ class JoinConditionBase(nodes.FormulaItem):
     autonomous = False
 
     @classmethod
-    def validate_internal_value(cls, internal_value: tuple[Optional[Hashable], ...]) -> None:
+    def validate_internal_value(cls, internal_value: tuple[Hashable | None, ...]) -> None:
         assert not internal_value
 
 
@@ -38,7 +37,7 @@ class SelfEqualityJoinCondition(JoinConditionBase):
     """
 
     __slots__ = ()
-    show_names = JoinConditionBase.show_names + ("expr",)
+    show_names = (*JoinConditionBase.show_names, "expr")
 
     expr: nodes.Child[nodes.FormulaItem] = nodes.Child(0)
 
@@ -47,7 +46,7 @@ class SelfEqualityJoinCondition(JoinConditionBase):
         assert len(children) == 1
 
     @classmethod
-    def make(cls, expr: nodes.FormulaItem, *, meta: Optional[nodes.NodeMeta] = None) -> SelfEqualityJoinCondition:
+    def make(cls, expr: nodes.FormulaItem, *, meta: nodes.NodeMeta | None = None) -> SelfEqualityJoinCondition:
         children = (expr,)
         return cls(*children, meta=meta)
 
@@ -59,7 +58,7 @@ class BinaryJoinCondition(JoinConditionBase):
     """
 
     __slots__ = ()
-    show_names = JoinConditionBase.show_names + ("expr", "fork_expr")
+    show_names = (*JoinConditionBase.show_names, "expr", "fork_expr")
 
     expr: nodes.Child[nodes.FormulaItem] = nodes.Child(0)
     fork_expr: nodes.Child[nodes.FormulaItem] = nodes.Child(1)
@@ -74,7 +73,7 @@ class BinaryJoinCondition(JoinConditionBase):
         expr: nodes.FormulaItem,
         fork_expr: nodes.FormulaItem,
         *,
-        meta: Optional[nodes.NodeMeta] = None,
+        meta: nodes.NodeMeta | None = None,
     ) -> BinaryJoinCondition:
         children = (expr, fork_expr)
         return cls(*children, meta=meta)
@@ -96,7 +95,7 @@ class QueryForkJoiningWithList(QueryForkJoiningBase):
 
     __slots__ = ()
 
-    show_names = QueryForkJoiningBase.show_names + ("condition_list",)
+    show_names = (*QueryForkJoiningBase.show_names, "condition_list")
 
     condition_list: nodes.MultiChild[JoinConditionBase] = nodes.MultiChild(slice(0, None))
 
@@ -105,13 +104,13 @@ class QueryForkJoiningWithList(QueryForkJoiningBase):
         cls,
         condition_list: list[JoinConditionBase],
         *,
-        meta: Optional[nodes.NodeMeta] = None,
+        meta: nodes.NodeMeta | None = None,
     ) -> QueryForkJoiningWithList:
         children = condition_list
         return cls(*children, meta=meta)
 
     @classmethod
-    def validate_internal_value(cls, internal_value: tuple[Optional[Hashable], ...]) -> None:
+    def validate_internal_value(cls, internal_value: tuple[Hashable | None, ...]) -> None:
         assert not internal_value
 
     @property
@@ -123,7 +122,7 @@ class QueryForkJoiningWithList(QueryForkJoiningBase):
 class BfbFilterMutationSpec(nodes.FormulaItem):
     __slots__ = ()
 
-    show_names = nodes.FormulaItem.show_names + ("original", "replacement")
+    show_names = (*nodes.FormulaItem.show_names, "original", "replacement")
 
     original: nodes.Child[nodes.FormulaItem] = nodes.Child(0)
     replacement: nodes.Child[nodes.FormulaItem] = nodes.Child(1)
@@ -134,7 +133,7 @@ class BfbFilterMutationSpec(nodes.FormulaItem):
         original: nodes.FormulaItem,
         replacement: nodes.FormulaItem,
         *,
-        meta: Optional[nodes.NodeMeta] = None,
+        meta: nodes.NodeMeta | None = None,
     ) -> BfbFilterMutationSpec:
         children = (original, replacement)
         return cls(*children, meta=meta)
@@ -143,7 +142,7 @@ class BfbFilterMutationSpec(nodes.FormulaItem):
 class BfbFilterMutationCollectionSpec(nodes.FormulaItem):
     __slots__ = ()
 
-    show_names = nodes.FormulaItem.show_names + ("mutations",)
+    show_names = (*nodes.FormulaItem.show_names, "mutations")
 
     mutations: nodes.MultiChild[BfbFilterMutationSpec] = nodes.MultiChild(slice(0, None))
 
@@ -151,7 +150,7 @@ class BfbFilterMutationCollectionSpec(nodes.FormulaItem):
     def make(
         cls,
         *mutations: BfbFilterMutationSpec,
-        meta: Optional[nodes.NodeMeta] = None,
+        meta: nodes.NodeMeta | None = None,
     ) -> BfbFilterMutationCollectionSpec:
         children = mutations
         return cls(*children, meta=meta)
@@ -166,7 +165,7 @@ class QueryFork(nodes.FormulaItem):
 
     __slots__ = ()
 
-    show_names = nodes.FormulaItem.show_names + ("join_type", "joining", "result_expr", "lod", "bfb_filter_mutations")
+    show_names = (*nodes.FormulaItem.show_names, "join_type", "joining", "result_expr", "lod", "bfb_filter_mutations")
 
     joining: nodes.Child[QueryForkJoiningBase] = nodes.Child(0)
     result_expr: nodes.Child[nodes.FormulaItem] = nodes.Child(1)
@@ -180,10 +179,10 @@ class QueryFork(nodes.FormulaItem):
         join_type: JoinType,
         joining: QueryForkJoiningBase,
         result_expr: nodes.FormulaItem,
-        before_filter_by: Optional[nodes.BeforeFilterBy] = None,
-        lod: Optional[nodes.LodSpecifier] = None,
-        bfb_filter_mutations: Optional[BfbFilterMutationCollectionSpec] = None,
-        meta: Optional[nodes.NodeMeta] = None,
+        before_filter_by: nodes.BeforeFilterBy | None = None,
+        lod: nodes.LodSpecifier | None = None,
+        bfb_filter_mutations: BfbFilterMutationCollectionSpec | None = None,
+        meta: nodes.NodeMeta | None = None,
     ) -> QueryFork:
         if before_filter_by is None:
             before_filter_by = nodes.BeforeFilterBy.make()
@@ -201,7 +200,7 @@ class QueryFork(nodes.FormulaItem):
         assert len(children) == 5
 
     @classmethod
-    def validate_internal_value(cls, internal_value: tuple[Optional[Hashable], ...]) -> None:
+    def validate_internal_value(cls, internal_value: tuple[Hashable | None, ...]) -> None:
         assert len(internal_value) == 1
         assert isinstance(internal_value[0], JoinType)
 
@@ -213,7 +212,7 @@ class QueryFork(nodes.FormulaItem):
 class SubQueryFork(nodes.FormulaItem):
     __slots__ = ()
 
-    show_names = nodes.FormulaItem.show_names + ("result_expr",)
+    show_names = (*nodes.FormulaItem.show_names, "result_expr")
 
     result_expr: nodes.Child[nodes.FormulaItem] = nodes.Child(0)
 

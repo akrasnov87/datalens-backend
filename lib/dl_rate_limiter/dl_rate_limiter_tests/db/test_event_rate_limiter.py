@@ -8,12 +8,11 @@ import redis.asyncio
 
 import dl_rate_limiter
 
-
 DEFAULT_WINDOW_MS = 10000
 
 
 class Timer:
-    def __init__(self):
+    def __init__(self) -> None:
         self._start = time.time()
 
     def get_milliseconds_left(self, milliseconds: float) -> float:

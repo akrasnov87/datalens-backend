@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-)
+from typing import TYPE_CHECKING
 
 import attr
 
@@ -19,7 +16,6 @@ from dl_configs.settings_loaders.loader_env import load_settings_from_env_with_f
 from dl_core.loader import CoreLibraryConfig
 from dl_maintenance.core.common import MaintenanceEnvironmentManagerBase
 
-
 if TYPE_CHECKING:
     from dl_core.connectors.settings.base import ConnectorSettings
     from dl_core.services_registry.sr_factories import SRFactory
@@ -28,7 +24,7 @@ if TYPE_CHECKING:
 @attr.s(kw_only=True)
 class MaintenanceEnvironmentManager(MaintenanceEnvironmentManagerBase):
     _app_settings_cls: type[AppSettings] = attr.ib()
-    _app_factory_cls: Optional[type[SRFactoryBuilder]] = attr.ib(default=None)
+    _app_factory_cls: type[SRFactoryBuilder] | None = attr.ib(default=None)
 
     def get_app_settings(self) -> AppSettings:
         preload_api_lib()
@@ -44,14 +40,13 @@ class MaintenanceEnvironmentManager(MaintenanceEnvironmentManagerBase):
     def get_connector_settings(self) -> dict[str, ConnectorSettings]:
         return {}
 
-    def get_sr_factory(self, ca_data: bytes, is_async_env: bool) -> Optional[SRFactory]:
+    def get_sr_factory(self, ca_data: bytes, is_async_env: bool) -> SRFactory | None:
         assert self._app_factory_cls is not None
         conn_opts_factory = ConnOptionsMutatorsFactory()
         settings = self.get_app_settings()
-        sr_factory = self._app_factory_cls(settings=settings).get_sr_factory(  # type: ignore  # 2024-01-30 # TODO: Unexpected keyword argument "settings" for "SRFactoryBuilder"  [call-arg]
+        return self._app_factory_cls(settings=settings).get_sr_factory(  # type: ignore  # 2024-01-30 # TODO: Unexpected keyword argument "settings" for "SRFactoryBuilder"  [call-arg]
             settings=settings,
             conn_opts_factory=conn_opts_factory,
             connectors_settings=self.get_connector_settings(),
             ca_data=ca_data,
         )
-        return sr_factory

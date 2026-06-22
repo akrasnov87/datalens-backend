@@ -5,9 +5,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
-    Dict,
-    Generic,
-    TypeVar,
 )
 
 from cryptography.fernet import Fernet
@@ -20,9 +17,8 @@ from marshmallow import (
 
 import dl_json
 
-
 if TYPE_CHECKING:
-    from dl_core.us_manager.us_manager import USManagerBase  # noqa
+    from dl_core.us_manager.us_manager import USManagerBase
 
 
 class CtxKey(enum.Enum):
@@ -34,14 +30,11 @@ class CtxKey(enum.Enum):
     ds_conn_type = enum.auto()
 
 
-_TARGET_TV = TypeVar("_TARGET_TV")
-
-
-class BaseStorageSchema(Schema, Generic[_TARGET_TV]):
-    TARGET_CLS: ClassVar[type[_TARGET_TV]]  # type: ignore  # 2024-01-24 # TODO: ClassVar cannot contain type variables  [misc]
+class BaseStorageSchema[TARGET_TV](Schema):
+    TARGET_CLS: ClassVar[type[TARGET_TV]]
 
     @classmethod
-    def get_target_cls(cls) -> type[_TARGET_TV]:
+    def get_target_cls(cls) -> type[TARGET_TV]:
         return cls.TARGET_CLS
 
     @property
@@ -49,14 +42,14 @@ class BaseStorageSchema(Schema, Generic[_TARGET_TV]):
         return self.context[CtxKey.fernet]
 
     @property
-    def usm(self) -> "USManagerBase":
+    def usm(self) -> USManagerBase:
         return self.context[CtxKey.us_manager]
 
     # Lifecycle
-    def pre_process_input_data(self, data: Dict[str, Any]) -> Dict[str, Any]:  # noqa
+    def pre_process_input_data(self, data: dict[str, Any]) -> dict[str, Any]:
         return data
 
-    def post_process_output_data(self, data: Dict[str, Any]) -> Dict[str, Any]:  # noqa
+    def post_process_output_data(self, data: dict[str, Any]) -> dict[str, Any]:
         return data
 
     def push_ctx(self, data: dict) -> None:
@@ -67,11 +60,11 @@ class BaseStorageSchema(Schema, Generic[_TARGET_TV]):
         """Cleanup con"""
         pass
 
-    def to_object(self, data: dict) -> _TARGET_TV:
+    def to_object(self, data: dict) -> TARGET_TV:
         raise NotImplementedError("This schema is does not implement object deserialization")
 
     @pre_load(pass_many=False)
-    def pre_load(self, data, **_):  # type: ignore  # TODO: fix
+    def pre_load(self, data: Any, **_: Any) -> dict[str, Any]:
         normalized_data = self.pre_process_input_data(data)
         # storing unknown fields
         unknown_keys = normalized_data.keys() - self.fields.keys()
@@ -84,15 +77,14 @@ class BaseStorageSchema(Schema, Generic[_TARGET_TV]):
         return normalized_data
 
     @post_load(pass_many=False)
-    def post_load(self, data, **_):  # type: ignore  # TODO: fix
+    def post_load(self, data: Any, **_: Any) -> TARGET_TV:
         obj = self.to_object(data)
         self.pop_ctx(data)
         return obj
 
     @post_dump(pass_many=False)
-    def post_dump(self, data: dict[str, Any], **_) -> dict[str, Any]:  # type: ignore  # TODO: fix
-        normalized_data = self.post_process_output_data(data)
-        return normalized_data
+    def post_dump(self, data: dict[str, Any], **_: Any) -> dict[str, Any]:
+        return self.post_process_output_data(data)
 
 
 class RenderModule:
@@ -100,11 +92,11 @@ class RenderModule:
     loads = dl_json.loads_bytes
 
 
-class DefaultStorageSchema(BaseStorageSchema[_TARGET_TV], Generic[_TARGET_TV]):
+class DefaultStorageSchema[TARGET_TV](BaseStorageSchema[TARGET_TV]):
     class Meta:
         render_module = RenderModule
 
-    def to_object(self, data: dict) -> _TARGET_TV:
+    def to_object(self, data: dict) -> TARGET_TV:
         return self.get_target_cls()(**data)
 
 

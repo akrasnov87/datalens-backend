@@ -1,4 +1,4 @@
-from typing import Iterable
+from collections.abc import Iterable
 
 import attr
 
@@ -9,7 +9,6 @@ from dl_i18n.localizer_base import (
     Translatable,
     TranslationConfig,
 )
-
 
 _LOCALIZATION_CONFIGS: set[TranslationConfig] = set()
 
@@ -39,11 +38,10 @@ class _StringLocalizer:
 def get_localizer(locale: str) -> _StringLocalizer:
     loc_loader = LocalizerLoader(configs=_LOCALIZATION_CONFIGS)
     loc_factory = loc_loader.load()
-    localizer = _StringLocalizer(
+    return _StringLocalizer(
         translatable_localizer=loc_factory.get_for_locale(locale=locale),
         default_domain=DOMAIN,
     )
-    return localizer
 
 
 @attr.s

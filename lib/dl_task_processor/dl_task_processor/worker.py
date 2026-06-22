@@ -1,5 +1,7 @@
 import asyncio
+from collections.abc import Sequence
 from datetime import (
+    UTC,
     datetime,
     timedelta,
 )
@@ -8,9 +10,7 @@ import socket
 import time
 from typing import (
     Any,
-    Optional,
     Protocol,
-    Sequence,
 )
 
 from arq.connections import RedisSettings
@@ -29,22 +29,20 @@ from dl_task_processor.context import BaseContextFabric
 from dl_task_processor.executor import ExecutorFabric
 from dl_task_processor.upstream_worker import Worker
 
-
 LOGGER = logging.getLogger(__name__)
 
 CONTEXT_KEY = "bi_context"
 
 
 class WorkerMetricsSenderProtocol(Protocol):
-    async def send(self, timestamp: float, metrics: dict[str, Any]) -> None:
-        ...
+    async def send(self, timestamp: float, metrics: dict[str, Any]) -> None: ...
 
 
 class DLArqWorker(Worker):
     def __init__(
         self,
         health_check_record_ttl: SecondsTimedelta,
-        metrics_sender: Optional[WorkerMetricsSenderProtocol] = None,
+        metrics_sender: WorkerMetricsSenderProtocol | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -61,7 +59,7 @@ class DLArqWorker(Worker):
         pending_tasks = sum(not t.done() for t in self.tasks.values())
         queued = await self.pool.zcard(self.queue_name)
         info = (
-            f"{datetime.now():%b-%d %H:%M:%S} j_complete={self.jobs_complete} j_failed={self.jobs_failed} "
+            f"{datetime.now(UTC):%b-%d %H:%M:%S} j_complete={self.jobs_complete} j_failed={self.jobs_failed} "
             f"j_retried={self.jobs_retried} j_ongoing={pending_tasks} queued={queued}"
         )
         await self.pool.psetex(self.health_check_key, int(self.health_check_record_ttl * 1000), info.encode())
@@ -75,13 +73,13 @@ class DLArqWorker(Worker):
         if self._metrics_sender is not None:
             await self._metrics_sender.send(
                 timestamp=now_ts,
-                metrics=dict(
-                    j_complete=self.jobs_complete,
-                    j_failed=self.jobs_failed,
-                    j_retried=self.jobs_retried,
-                    j_ongoing=pending_tasks,
-                    queued=queued,
-                ),
+                metrics={
+                    "j_complete": self.jobs_complete,
+                    "j_failed": self.jobs_failed,
+                    "j_retried": self.jobs_retried,
+                    "j_ongoing": pending_tasks,
+                    "queued": queued,
+                },
             )
 
 
@@ -109,7 +107,7 @@ class ArqWorker:
     _context_fab: BaseContextFabric = attr.ib()
     _redis_settings: RedisSettings = attr.ib()
     _worker_settings: WorkerSettings = attr.ib()
-    _metrics_sender: Optional[WorkerMetricsSenderProtocol] = attr.ib(default=None)
+    _metrics_sender: WorkerMetricsSenderProtocol | None = attr.ib(default=None)
     _arq_worker: DLArqWorker = attr.ib(default=None)
     _cron_tasks: Sequence[CronTask] = attr.ib(factory=list)
 
@@ -183,7 +181,7 @@ class HealthChecker:
         if not result:
             raise ValueError("Health check unsuccessful")
 
-    async def wait_for_ok(self, timeout: Optional[int] = None, cooldown: int = 1) -> None:
+    async def wait_for_ok(self, timeout: int | None = None, cooldown: int = 1) -> None:
         # you should use it only in tests
         start = time.monotonic()
         while (timeout is None) or (time.monotonic() - start < timeout):
@@ -211,8 +209,8 @@ class ArqWorkerTestWrapper:
         try:
             await self._worker.stop()
         except asyncio.exceptions.CancelledError:
-            pass
+            LOGGER.info("Cancelled while stopping arq worker", exc_info=True)
         try:
             await asyncio.gather(self._task)
         except:
-            pass
+            LOGGER.info("Error while awaiting arq worker task on stop", exc_info=True)

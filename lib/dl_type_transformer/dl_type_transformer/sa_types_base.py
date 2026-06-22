@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Callable,
-)
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from dl_type_transformer.native_type import (
     GenericNativeType,
     LengthedNativeType,
 )
-
 
 if TYPE_CHECKING:
     from sqlalchemy.types import TypeEngine

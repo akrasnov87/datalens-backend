@@ -10,14 +10,12 @@ import os
 from pathlib import Path
 from typing import (
     Any,
-    Optional,
     TypeVar,
 )
 
 import attr
 from frozendict import frozendict
 from tomlkit import inline_table
-
 
 _CLONABLE_TV = TypeVar("_CLONABLE_TV", bound="_Clonable")
 
@@ -60,7 +58,7 @@ class ReqPackageSpec(_Clonable):
 
 @attr.s(frozen=True)
 class PypiReqPackageSpec(ReqPackageSpec):
-    version: Optional[str] = attr.ib(kw_only=True)
+    version: str | None = attr.ib(kw_only=True)
 
     def pretty(self) -> str:
         extra = ""
@@ -73,7 +71,7 @@ class PypiReqPackageSpec(ReqPackageSpec):
 
     def get_exact_version(self) -> str:
         if not self.is_exact_version():
-            raise ValueError(f"{str(self)} does not have an exact version")
+            raise ValueError(f"{self!s} does not have an exact version")
         assert self.version is not None
         return self.version[2:]
 
@@ -83,7 +81,7 @@ class PypiReqPackageSpec(ReqPackageSpec):
         return f'{self.package_name} = "{self.version}"'
 
     def to_toml_value(self) -> Any:
-        return self.version if self.version else "*"
+        return self.version or "*"
 
 
 @attr.s(frozen=True)

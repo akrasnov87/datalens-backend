@@ -1,21 +1,21 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import Callable
 import functools
 import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
-    Generic,
     NamedTuple,
-    Optional,
+    Self,
+    TypedDict,
     TypeVar,
-    Union,
 )
 
 import attr
+import marshmallow as ma
 import sqlalchemy as sa
 from sqlalchemy.engine.default import DefaultDialect
 
@@ -24,7 +24,7 @@ from dl_cache_engine.primitives import (
     DataKeyPart,
     LocalKeyRepresentation,
 )
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DashSQLQueryType,
     DataSourceRole,
@@ -35,6 +35,7 @@ from dl_constants.enums import (
     RawSQLLevel,
     UserDataType,
     is_raw_sql_level_dashsql_allowed,
+    is_raw_sql_level_readwrite_allowed,
     is_raw_sql_level_subselect_allowed,
     is_raw_sql_level_template_allowed,
 )
@@ -51,12 +52,22 @@ from dl_core.base_models import (
 )
 from dl_core.connection_executors.adapters.common_base import get_dialect_for_conn_type
 from dl_core.connection_models import (
+    DataSourceTemplateDisabledText,
     DBIdent,
     PageIdent,
     SchemaIdent,
 )
 from dl_core.connectors.settings.base import ConnectorSettings
-from dl_core.exc import InvalidRequestError
+from dl_core.connectors.settings.mixins import (
+    DirectSQLSettingsMixin,
+    TemplateNameSettingsMixin,
+)
+from dl_core.exc import (
+    InvalidRequestError,
+    QuerySettingForbiddenError,
+    QuerySettingNotAllowedError,
+    QuerySettingsNotSupportedError,
+)
 from dl_core.i18n.localizer import Translatable
 from dl_core.us_entry import (
     BaseAttrsDataModel,
@@ -74,16 +85,23 @@ from dl_type_transformer.type_transformer import (
 from dl_utils.aio import await_sync
 from dl_utils.utils import DataKey
 
-
 if TYPE_CHECKING:
     from dl_core.connection_executors import SyncConnExecutorBase
     from dl_core.connection_models.common_models import TableIdent
     from dl_core.services_registry import ServicesRegistry
     from dl_core.us_manager.us_manager import USManagerBase
+    from dl_core.us_manager.us_manager_async import AsyncUSManager
     from dl_core.us_manager.us_manager_sync import SyncUSManager
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+class DataSourceTemplateDisabledTextDict(TypedDict):
+    """Translated availability message stored on a ``DataSourceTemplate``."""
+
+    title: str
+    description: str
 
 
 class DataSourceTemplate(NamedTuple):
@@ -95,24 +113,40 @@ class DataSourceTemplate(NamedTuple):
     connection_id: str
     # type-specific
     parameters: dict
-    tab_title: Optional[str] = None
-    form: Optional[list[dict[str, Any]]] = None
+    tab_title: str | None = None
+    form: list[dict[str, Any]] | None = None
     disabled: bool = False
+    # Translated message describing the template's availability (why it is disabled, or
+    # that it can be added). None for templates with no message, e.g. listed db-table
+    # sources (mirrors the optional tab_title / form fields).
+    disabled_text: DataSourceTemplateDisabledTextDict | None = None
 
     def get_param_hash(self) -> str:
-        from dl_core import data_source  # noqa
+        from dl_core import data_source
 
         return data_source.get_parameters_hash(
             source_type=self.source_type,
             connection_id=self.connection_id,
             **self.parameters,
+            manual=False,
         )
+
+
+def _resolve_disabled_text(
+    localizer: Localizer,
+    disabled_text: DataSourceTemplateDisabledText,
+) -> DataSourceTemplateDisabledTextDict:
+    return DataSourceTemplateDisabledTextDict(
+        title=localizer.translate(disabled_text.title),
+        description=localizer.translate(disabled_text.description),
+    )
 
 
 def make_table_datasource_template(
     connection_id: str,
     source_type: DataSourceType,
     localizer: Localizer,
+    disabled_text: DataSourceTemplateDisabledText,
     disabled: bool = False,
     template_enabled: bool = False,
     title: str = "Table",
@@ -176,6 +210,7 @@ def make_table_datasource_template(
         source_type=source_type,
         form=form,
         disabled=disabled,
+        disabled_text=_resolve_disabled_text(localizer, disabled_text),
         group=[],
         connection_id=connection_id,
         parameters={},
@@ -187,6 +222,7 @@ def make_subselect_datasource_template(
     source_type: DataSourceType,
     localizer: Localizer,
     disabled: bool,
+    disabled_text: DataSourceTemplateDisabledText,
     template_enabled: bool = False,
     title: str = "SQL",
     field_doc_key: str = "ANY_SUBSELECT/subsql",
@@ -207,6 +243,7 @@ def make_subselect_datasource_template(
             },
         ],
         disabled=disabled,
+        disabled_text=_resolve_disabled_text(localizer, disabled_text),
         group=[],
         connection_id=connection_id,
         parameters={},
@@ -231,8 +268,7 @@ class QueryTypeInfo:
         # FIXME: This is a temporary hack until we start using real texts here
         label = self.query_type.name
         label = label.replace("_", " ")
-        label = " ".join([word.capitalize() for word in label.split()])
-        return label
+        return " ".join([word.capitalize() for word in label.split()])
 
 
 @attr.s(frozen=True)
@@ -241,6 +277,7 @@ class ConnectionOptions:
     allow_dataset_usage: bool = attr.ib(kw_only=True)
     allow_typed_query_usage: bool = attr.ib(kw_only=True)
     allow_typed_query_raw_usage: bool = attr.ib(kw_only=True)
+    allow_pagination_usage: bool = attr.ib(kw_only=True)
     query_types: list[QueryTypeInfo] = attr.ib(kw_only=True)
 
 
@@ -248,6 +285,7 @@ class ConnectionOptions:
 class ListingOptions:
     supports_source_search: bool = attr.ib(kw_only=True)
     supports_source_pagination: bool = attr.ib(kw_only=True)
+    supports_query_pagination: bool = attr.ib(kw_only=True)
     supports_db_name_listing: bool = attr.ib(kw_only=True)
     db_name_required_for_search: bool = attr.ib(kw_only=True)
     db_name_label: str | None = attr.ib(kw_only=True, default=None)
@@ -261,8 +299,8 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
     scope: ClassVar[str] = "connection"  # type: ignore  # TODO: fix
 
     conn_type: ConnectionType
-    source_type: ClassVar[Optional[DataSourceType]] = None
-    allowed_source_types: ClassVar[Optional[frozenset[DataSourceType]]] = None
+    source_type: ClassVar[DataSourceType | None] = None
+    allowed_source_types: ClassVar[frozenset[DataSourceType] | None] = None
     allow_cache: ClassVar[bool] = False
     allow_export: ClassVar[bool] = False
     is_always_internal_source: ClassVar[bool] = False
@@ -272,31 +310,50 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
     supports_source_pagination: ClassVar[bool] = False
     supports_db_name_listing: ClassVar[bool] = False
     db_name_required_for_search: ClassVar[bool] = False
+    supports_query_pagination: ClassVar[bool] = False
+
+    is_virtual: ClassVar[bool] = False
+
+    @classmethod
+    def sync_create_virtual(
+        cls,
+        connection_id: str,
+        us_manager: SyncUSManager,
+    ) -> Self:
+        raise NotImplementedError(f"{cls} does not support sync virtual creation")
+
+    @classmethod
+    async def async_create_virtual(
+        cls,
+        connection_id: str,
+        us_manager: AsyncUSManager,
+    ) -> Self:
+        raise NotImplementedError(f"{cls} does not support async virtual creation")
 
     _preview_conn = None
 
     def __init__(
         self,
-        uuid: Optional[str] = None,
-        data: Optional[dict] = None,
-        entry_key: Optional[EntryLocation] = None,
-        type_: Optional[str] = None,
-        meta: Optional[dict] = None,
-        annotation: Optional[dict[str, Any]] = None,
-        is_locked: Optional[bool] = None,
-        is_favorite: Optional[bool] = None,
-        permissions_mode: Optional[str] = None,
-        initial_permissions: Optional[str] = None,
-        permissions: Optional[dict[str, bool]] = None,
-        full_permissions: Optional[dict[str, bool]] = None,
-        links: Optional[dict] = None,
+        uuid: str | None = None,
+        data: dict | BaseAttrsDataModel | None = None,
+        entry_key: EntryLocation | None = None,
+        type_: str | None = None,
+        meta: dict | None = None,
+        annotation: dict[str, Any] | None = None,
+        is_locked: bool | None = None,
+        is_favorite: bool | None = None,
+        permissions_mode: str | None = None,
+        initial_permissions: str | None = None,
+        permissions: dict[str, bool] | None = None,
+        full_permissions: dict[str, bool] | None = None,
+        links: dict | None = None,
         hidden: bool = False,
         data_strict: bool = True,
         migration_status: MigrationStatus = MigrationStatus.non_migrated,
-        entry_op_mode: Optional[OperationsMode] = None,
+        entry_op_mode: OperationsMode | None = None,
         *,
         us_manager: USManagerBase,
-    ):
+    ) -> None:
         super().__init__(
             uuid=uuid,
             data=data,
@@ -334,9 +391,9 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
 
     @attr.s(kw_only=True)
     class DataModel(ConnectionDataModelBase):
-        table_name: Optional[str] = attr.ib(default=None)
-        sample_table_name: Optional[str] = attr.ib(default=None)
-        name: Optional[str] = attr.ib(default=None)
+        table_name: str | None = attr.ib(default=None)
+        sample_table_name: str | None = attr.ib(default=None)
+        name: str | None = attr.ib(default=None)
         schema_version: str = attr.ib(default="1")
 
     @property
@@ -356,7 +413,7 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
         return frozenset()
 
     @property
-    def conn_ref(self) -> Optional[ConnectionRef]:
+    def conn_ref(self) -> ConnectionRef | None:
         if self.uuid is not None:
             return DefaultConnectionRef(conn_id=self.uuid)
 
@@ -371,7 +428,27 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
         return False
 
     @property
+    def subselect_disabled_text(self) -> DataSourceTemplateDisabledText:
+        # Availability message for a freeform source template, paired with the same
+        # ``is_subselect_allowed`` condition that drives its ``disabled`` flag: an
+        # explanation when manual / freeform source creation is forbidden, or a
+        # confirmation that it is available otherwise.
+        if self.is_subselect_allowed:
+            return DataSourceTemplateDisabledText(
+                title=Translatable("source_templates-enabled-subselect-title"),
+                description=Translatable("source_templates-enabled-subselect-description"),
+            )
+        return DataSourceTemplateDisabledText(
+            title=Translatable("source_templates-disabled-subselect-title"),
+            description=Translatable("source_templates-disabled-subselect-description"),
+        )
+
+    @property
     def is_dashsql_allowed(self) -> bool:
+        return False
+
+    @property
+    def is_readwrite_allowed(self) -> bool:
         return False
 
     @property
@@ -385,6 +462,10 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
     @property
     def is_datasource_template_allowed(self) -> bool:
         return False
+
+    @property
+    def template_name(self) -> str | None:
+        return None
 
     @property
     def is_typed_query_raw_allowed(self) -> bool:
@@ -403,6 +484,36 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
         if isinstance(self.data, ConnCacheableDataModelMixin):
             return self.data.cache_invalidation_throttling_interval_sec is not None
         return False
+
+    @property
+    def is_query_settings_enabled(self) -> bool:
+        return False
+
+    @property
+    def query_settings_allowed_names(self) -> frozenset[str] | None:
+        """Whitelist of allowed setting names. None = unrestricted, empty = all forbidden."""
+        return frozenset()
+
+    @property
+    def query_settings_forbidden_names(self) -> frozenset[str]:
+        """Setting names that are always forbidden regardless of whitelist."""
+        return frozenset()
+
+    def validate_query_settings(self, query_settings: dict[str, str]) -> None:
+        if not query_settings:
+            return
+
+        if not self.is_query_settings_enabled:
+            raise QuerySettingsNotSupportedError()
+
+        forbidden_names = self.query_settings_forbidden_names
+        allowed_names = self.query_settings_allowed_names
+
+        for key in query_settings:
+            if key in forbidden_names:
+                raise QuerySettingForbiddenError(f"Setting '{key}' is forbidden and cannot be set")
+            if allowed_names is not None and key not in allowed_names:
+                raise QuerySettingNotAllowedError(f"Setting '{key}' is not allowed and cannot be set")
 
     def as_dict(self, short=False):  # type: ignore  # TODO: fix
         resp = super().as_dict(short=short)
@@ -432,11 +543,11 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
     @classmethod
     def create_from_dict(
         cls: type[_CB_TV],
-        data_dict: Union[dict, BaseAttrsDataModel],
-        ds_key: Union[EntryLocation, str, None] = None,
-        type_: Optional[str] = None,
-        meta: Optional[dict] = None,
-        annotation: Optional[dict[str, Any]] = None,
+        data_dict: dict | BaseAttrsDataModel,
+        ds_key: EntryLocation | str | None = None,
+        type_: str | None = None,
+        meta: dict | None = None,
+        annotation: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> _CB_TV:
         if meta is None:
@@ -463,8 +574,8 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
     def update_data_source(
         self,
         id: str,
-        role: Optional[DataSourceRole] = None,
-        raw_schema: Optional[list] = None,
+        role: DataSourceRole | None = None,
+        raw_schema: list | None = None,
         remove_raw_schema: bool = False,
         **parameters: dict[str, Any],
     ) -> None:
@@ -479,7 +590,7 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
         # A safe default:
         return []
 
-    def get_data_source_local_templates(self) -> Optional[list[DataSourceTemplate]]:
+    def get_data_source_local_templates(self) -> list[DataSourceTemplate] | None:
         """
         A list of available data sources that are stored in the metadata or
         code, i.e. don't require querying the actual database.
@@ -569,6 +680,7 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
         return ListingOptions(
             supports_source_search=cls.supports_source_search,
             supports_source_pagination=cls.supports_source_pagination,
+            supports_query_pagination=cls.supports_query_pagination,
             supports_db_name_listing=cls.supports_db_name_listing,
             db_name_required_for_search=cls.db_name_required_for_search,
             db_name_label=cls.get_db_name_label(localizer=localizer),
@@ -584,16 +696,16 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
     async def validate_new_data(
         self,
         services_registry: ServicesRegistry,
-        changes: Optional[dict] = None,
-        original_version: Optional[ConnectionBase] = None,
+        changes: dict | None = None,
+        original_version: ConnectionBase | None = None,
     ) -> None:
         """Override point for subclasses"""
 
     def validate_new_data_sync(
         self,
         services_registry: ServicesRegistry,
-        changes: Optional[dict] = None,
-        original_version: Optional[ConnectionBase] = None,
+        changes: dict | None = None,
+        original_version: ConnectionBase | None = None,
     ) -> None:
         """Convenience wrapper"""
         return await_sync(
@@ -604,11 +716,11 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
             )
         )
 
-    def check_for_notifications(self) -> list[Optional[NotificationReportingRecord]]:
+    def check_for_notifications(self) -> list[NotificationReportingRecord | None]:
         return []
 
     def get_import_warnings_list(self, localizer: Localizer) -> list[dict]:
-        CODE_PREFIX = "NOTIF.WB_IMPORT.CONN."
+        code_prefix = "NOTIF.WB_IMPORT.CONN."
         warnings = []
         with_fake_creds = False
         for data_key in self.data.get_secret_keys():
@@ -618,30 +730,30 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
                 break
         if with_fake_creds:
             warnings.append(
-                dict(
-                    message=localizer.translate(Translatable("notif_check-creds")),
-                    level=NotificationLevel.info,
-                    code=CODE_PREFIX + "CHECK_CREDENTIALS",
-                )
+                {
+                    "message": localizer.translate(Translatable("notif_check-creds")),
+                    "level": NotificationLevel.info,
+                    "code": code_prefix + "CHECK_CREDENTIALS",
+                }
             )
         return warnings
 
     def get_export_warnings_list(self, localizer: Localizer) -> list[dict]:
-        CODE_PREFIX = "NOTIF.WB_EXPORT.CONN."
+        code_prefix = "NOTIF.WB_EXPORT.CONN."
         warnings = []
         if self.data.get_secret_keys():
             warnings.append(
-                dict(
-                    message=localizer.translate(Translatable("notif_check-creds")),
-                    level=NotificationLevel.info,
-                    code=CODE_PREFIX + "CHECK_CREDENTIALS",
-                )
+                {
+                    "message": localizer.translate(Translatable("notif_check-creds")),
+                    "level": NotificationLevel.info,
+                    "code": code_prefix + "CHECK_CREDENTIALS",
+                }
             )
         return warnings
 
     def get_cache_key_part(self) -> LocalKeyRepresentation:
         local_key_rep = LocalKeyRepresentation()
-        local_key_rep = local_key_rep.multi_extend(
+        return local_key_rep.multi_extend(
             DataKeyPart(
                 part_type="connection_id",
                 part_content=self.uuid,
@@ -651,7 +763,6 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
                 part_content=self.revision_id,
             ),
         )
-        return local_key_rep
 
     def get_supported_query_type_infos(self) -> frozenset[QueryTypeInfo]:
         return frozenset({QueryTypeInfo(query_type=DashSQLQueryType.generic_query)})
@@ -663,6 +774,7 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
             allow_dataset_usage=self.is_dataset_allowed,
             allow_typed_query_usage=self.is_typed_query_allowed,
             allow_typed_query_raw_usage=self.is_typed_query_raw_allowed,
+            allow_pagination_usage=self.supports_query_pagination,
             query_types=query_type_info_list,
         )
 
@@ -684,7 +796,7 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
 
     @property
     @abc.abstractmethod
-    def cache_ttl_sec_override(self) -> Optional[int]:
+    def cache_ttl_sec_override(self) -> int | None:
         pass
 
     @property
@@ -694,7 +806,7 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
 
         disabled_types = (os.environ.get("DL_NONLOCKED_CACHE_CONN_TYPES") or "").split(",")
         result = self.conn_type.name not in disabled_types
-        LOGGER.debug(f"use_locked_cache = {self.conn_type.name!r} not in {disabled_types!r} = {result!r}")
+        LOGGER.debug("use_locked_cache = %r not in %r = %r", self.conn_type.name, disabled_types, result)
         return result
 
     def test(self, conn_executor_factory: Callable[[ConnectionBase], SyncConnExecutorBase]) -> None:
@@ -704,7 +816,7 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
     def get_schema_names(
         self,
         conn_executor_factory: Callable[[ConnectionBase], SyncConnExecutorBase],
-        db_name: Optional[str] = None,
+        db_name: str | None = None,
     ) -> list[str]:
         conn_executor = conn_executor_factory(self)
         return conn_executor.get_schema_names(DBIdent(db_name))
@@ -721,9 +833,11 @@ class ConnectionBase(USEntry, metaclass=abc.ABCMeta):
         conn_executor = conn_executor_factory(self)
         return conn_executor.get_tables(
             SchemaIdent(db_name=db_name, schema_name=schema_name),
-            PageIdent(search_text=search_text, limit=limit, offset=offset)
-            if search_text or offset or limit is not None
-            else None,
+            (
+                PageIdent(search_text=search_text, limit=limit, offset=offset)
+                if search_text or offset or limit is not None
+                else None
+            ),
         )
 
 
@@ -750,10 +864,39 @@ class RawSqlLevelConnectionMixin(ConnectionBase):
 
         return is_raw_sql_level_dashsql_allowed(self._raw_sql_level)
 
+    @property
+    def is_readwrite_allowed(self) -> bool:
+        if not self.allow_dashsql:
+            return False
+
+        return is_raw_sql_level_readwrite_allowed(self._raw_sql_level)
+
+    def is_directsql_enabled(self, services_registry: ServicesRegistry) -> bool:
+        connector_settings = services_registry.get_connectors_settings(self.conn_type)
+        if not isinstance(connector_settings, DirectSQLSettingsMixin):
+            return False
+        return connector_settings.ENABLE_DIRECTSQL
+
+    async def validate_new_data(
+        self,
+        services_registry: ServicesRegistry,
+        changes: dict | None = None,
+        original_version: ConnectionBase | None = None,
+    ) -> None:
+        await super().validate_new_data(
+            services_registry=services_registry,
+            changes=changes,
+            original_version=original_version,
+        )
+        if not isinstance(self.data, ConnRawSqlLevelDataModelMixin):
+            return
+        if self.data.raw_sql_level == RawSQLLevel.readwrite and not self.is_directsql_enabled(services_registry):
+            raise ma.ValidationError("The 'readwrite' raw SQL level is not allowed for this connector.")
+
 
 class ConnectionSQL(RawSqlLevelConnectionMixin, ConnectionBase):
     has_schema: ClassVar[bool] = False
-    default_schema_name: ClassVar[Optional[str]] = None
+    default_schema_name: ClassVar[str | None] = None
 
     @attr.s(kw_only=True)
     class DataModel(
@@ -761,22 +904,22 @@ class ConnectionSQL(RawSqlLevelConnectionMixin, ConnectionBase):
         ConnRawSqlLevelDataModelMixin,
         ConnectionBase.DataModel,
     ):
-        host: Optional[str] = attr.ib(default=None)
-        port: Optional[int] = attr.ib(default=None)
-        db_name: Optional[str] = attr.ib(default=None)
-        username: Optional[str] = attr.ib(default=None)
-        password: Optional[str] = attr.ib(repr=secrepr, default=None)
+        host: str | None = attr.ib(default=None)
+        port: int | None = attr.ib(default=None)
+        db_name: str | None = attr.ib(default=None)
+        username: str | None = attr.ib(default=None)
+        password: str | None = attr.ib(repr=secrepr, default=None)
 
         @classmethod
         def get_secret_keys(cls) -> set[DataKey]:
             return {DataKey(parts=("password",))}
 
     @property
-    def cache_ttl_sec_override(self) -> Optional[int]:
+    def cache_ttl_sec_override(self) -> int | None:
         return self.data.cache_ttl_sec
 
     @property
-    def db_name(self) -> Optional[str]:
+    def db_name(self) -> str | None:
         return self.data.db_name
 
     @property
@@ -797,13 +940,13 @@ class ConnectionSQL(RawSqlLevelConnectionMixin, ConnectionBase):
         # has db_name, so just list tables
         if not self.has_schema:
             return [
-                dict(table_name=tid.table_name) for tid in self.get_tables(conn_executor_factory=conn_executor_factory)
+                {"table_name": tid.table_name} for tid in self.get_tables(conn_executor_factory=conn_executor_factory)
             ]
 
         assert self.has_schema
         schemas = self.get_schema_names(conn_executor_factory=conn_executor_factory)
         return [
-            dict(schema_name=schema_name, table_name=tid.table_name)
+            {"schema_name": schema_name, "table_name": tid.table_name}
             for schema_name in schemas
             for tid in self.get_tables(conn_executor_factory=conn_executor_factory, schema_name=schema_name)
         ]
@@ -846,7 +989,7 @@ class ConnectionSQL(RawSqlLevelConnectionMixin, ConnectionBase):
 
 class ClassicConnectionSQL(ConnectionSQL):
     @property
-    def password(self) -> Optional[str]:
+    def password(self) -> str | None:
         return self.data.password
 
     def parse_multihosts(self) -> tuple[str, ...]:
@@ -856,7 +999,7 @@ class ClassicConnectionSQL(ConnectionSQL):
 CONNECTOR_SETTINGS_TV = TypeVar("CONNECTOR_SETTINGS_TV", bound=ConnectorSettings)
 
 
-def _get_connector_settings(
+def _get_connector_settings[CONNECTOR_SETTINGS_TV: ConnectorSettings](
     usm: USManagerBase,
     conn_type: ConnectionType,
     settings_type: type[CONNECTOR_SETTINGS_TV],
@@ -874,7 +1017,7 @@ def _get_connector_settings(
     return connector_settings
 
 
-class ConnectionSettingsMixin(ConnectionBase, Generic[CONNECTOR_SETTINGS_TV], metaclass=abc.ABCMeta):
+class ConnectionSettingsMixin[CONNECTOR_SETTINGS_TV: ConnectorSettings](ConnectionBase, metaclass=abc.ABCMeta):
     """Connector type specific data is loaded from dl_configs.connectors_settings"""
 
     settings_type: type[CONNECTOR_SETTINGS_TV]
@@ -886,6 +1029,22 @@ class ConnectionSettingsMixin(ConnectionBase, Generic[CONNECTOR_SETTINGS_TV], me
     @classmethod
     def _get_connector_settings(cls, usm: SyncUSManager) -> CONNECTOR_SETTINGS_TV:
         return _get_connector_settings(usm, cls.conn_type, cls.settings_type)
+
+
+TEMPLATE_NAMED_CONNECTOR_SETTINGS_TV = TypeVar(
+    "TEMPLATE_NAMED_CONNECTOR_SETTINGS_TV",
+    bound=TemplateNameSettingsMixin,
+)
+
+
+class ConnectionTemplateNameMixin[TEMPLATE_NAMED_CONNECTOR_SETTINGS_TV: TemplateNameSettingsMixin](
+    ConnectionSettingsMixin[TEMPLATE_NAMED_CONNECTOR_SETTINGS_TV],  # type: ignore[type-var]
+):
+    """Connection mixin for connectors whose settings include a TEMPLATE_NAME field."""
+
+    @property
+    def template_name(self) -> str:
+        return self._connector_settings.TEMPLATE_NAME
 
 
 class HiddenDatabaseNameMixin(ConnectionSQL):
@@ -921,5 +1080,5 @@ class UnknownConnection(ConnectionBase):
         raise NotImplementedError
 
     @property
-    def cache_ttl_sec_override(self) -> Optional[int]:
+    def cache_ttl_sec_override(self) -> int | None:
         return 0

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from dl_api_commons.base_models import TenantDef
 from dl_api_connector.form_config.models.api_schema import (
     FormActionApiSchema,
@@ -14,9 +12,9 @@ from dl_api_connector.form_config.models.base import (
     ConnectionFormMode,
 )
 from dl_api_connector.form_config.models.common import CommonFieldName
-import dl_api_connector.form_config.models.rows as C
+from dl_api_connector.form_config.models.rows import CacheTTLRow
 from dl_api_connector.form_config.models.shortcuts.rows import RowConstructor
-from dl_constants.enums import RawSQLLevel
+from dl_constants import RawSQLLevel
 from dl_core.connectors.settings.base import ConnectorSettings
 
 from dl_connector_mssql.api.connection_info import MSSQLConnectionInfoProvider
@@ -26,10 +24,11 @@ from dl_connector_mssql.core.settings import MSSQLConnectorSettings
 class MSSQLConnectionFormFactory(ConnectionFormFactory):
     def get_form_config(
         self,
-        connector_settings: Optional[ConnectorSettings],
-        tenant: Optional[TenantDef],
+        connector_settings: ConnectorSettings | None,
+        tenant: TenantDef | None,
     ) -> ConnectionForm:
-        assert connector_settings is not None and isinstance(connector_settings, MSSQLConnectorSettings)
+        assert connector_settings is not None
+        assert isinstance(connector_settings, MSSQLConnectorSettings)
 
         rc = RowConstructor(localizer=self._localizer)
 
@@ -49,9 +48,13 @@ class MSSQLConnectionFormFactory(ConnectionFormFactory):
                 [
                     *common_api_schema_items,
                     FormFieldApiSchema(name=CommonFieldName.cache_ttl_sec, nullable=True),
-                    FormFieldApiSchema(name=CommonFieldName.cache_invalidation_throttling_interval_sec, nullable=True)
-                    if is_invalidation_cache_enabled
-                    else None,
+                    (
+                        FormFieldApiSchema(
+                            name=CommonFieldName.cache_invalidation_throttling_interval_sec, nullable=True
+                        )
+                        if is_invalidation_cache_enabled
+                        else None
+                    ),
                     FormFieldApiSchema(name=CommonFieldName.raw_sql_level),
                     FormFieldApiSchema(name=CommonFieldName.data_export_forbidden),
                 ]
@@ -88,7 +91,7 @@ class MSSQLConnectionFormFactory(ConnectionFormFactory):
                     rc.db_name_row(),
                     rc.username_row(),
                     rc.password_row(self.mode),
-                    C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec) if not is_invalidation_cache_enabled else None,
+                    CacheTTLRow(name=CommonFieldName.cache_ttl_sec) if not is_invalidation_cache_enabled else None,
                     rc.raw_sql_level_row_v2(raw_sql_levels=raw_sql_levels),
                     *(rc.cache_rows() if is_invalidation_cache_enabled else []),
                     rc.collapse_advanced_settings_row(),

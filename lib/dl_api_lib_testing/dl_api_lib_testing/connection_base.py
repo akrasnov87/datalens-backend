@@ -1,10 +1,10 @@
 import abc
+from collections.abc import Generator
 import contextlib
 import json
 from typing import (
     Any,
     ClassVar,
-    Generator,
 )
 import uuid
 
@@ -13,7 +13,7 @@ import pytest
 
 from dl_api_client.dsmaker.api.http_sync_base import SyncHttpClientBase
 from dl_api_lib_testing.base import ApiTestBase
-from dl_constants.enums import ConnectionType
+from dl_constants import ConnectionType
 from dl_core_testing.database import (
     Db,
     DbTable,
@@ -54,11 +54,11 @@ class ConnectionTestBase(ApiTestBase, DbServiceFixtureTextClass):
 
     @pytest.fixture(scope="class")
     def common_connection_params(self, description: str) -> dict:
-        return dict(
-            description=description,
-        )
+        return {
+            "description": description,
+        }
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def enriched_connection_params(self, connection_params: dict, common_connection_params: dict) -> dict:
         return common_connection_params | connection_params
 
@@ -66,7 +66,7 @@ class ConnectionTestBase(ApiTestBase, DbServiceFixtureTextClass):
     def edit_connection_params_case(self) -> EditConnectionParamsCase | None:
         return None
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def saved_connection_id(
         self,
         control_api_sync_client: SyncHttpClientBase,
@@ -103,7 +103,7 @@ class ConnectionTestBase(ApiTestBase, DbServiceFixtureTextClass):
 
         yield conn_id
 
-        control_api_sync_client.delete("/api/v1/connections/{}".format(conn_id))
+        control_api_sync_client.delete(f"/api/v1/connections/{conn_id}")
 
     @pytest.fixture(scope="class")
     def sample_table(self, db: Db) -> DbTable:

@@ -4,13 +4,12 @@ import abc
 from typing import (
     Any,
     ClassVar,
-    Optional,
 )
 
 import aiohttp
 import attr
 
-from dl_constants.enums import IndexKind
+from dl_constants import IndexKind
 from dl_core import exc
 from dl_core.connection_executors.models.db_adapter_data import RawIndexInfo
 from dl_core.connection_models import TableIdent
@@ -39,10 +38,10 @@ class CHYTConnLineConstructor(BaseClickHouseConnLineConstructor):
     def _get_dsn_params(
         self,
         safe_db_symbols: tuple[str, ...] = (),
-        db_name: Optional[str] = None,
-        standard_auth: Optional[bool] = True,
+        db_name: str | None = None,
+        standard_auth: bool | None = True,
     ) -> dict:
-        new_safe_symbols = safe_db_symbols + ("*",)
+        new_safe_symbols = (*safe_db_symbols, "*")
         return super()._get_dsn_params(safe_db_symbols=new_safe_symbols, db_name=db_name, standard_auth=standard_auth)
 
 
@@ -97,23 +96,25 @@ class BaseCHYTAdapter(BaseClickHouseAdapter, abc.ABC):
         host: str,
         table_path: str,
         secret_auth_headers: dict[str, str],
-    ) -> Optional[RawIndexInfo]:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
+    ) -> RawIndexInfo | None:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(
                 make_url(
                     protocol="https",
                     host=host,
                     port=443,
                     path="/api/v3/get",
                 ),
-                params=dict(path=f"{table_path}/@schema"),
+                params={"path": f"{table_path}/@schema"},
                 headers={
                     **secret_auth_headers,
                     "accept": "application/json",
                 },
-            ) as resp:
-                resp.raise_for_status()
-                resp_js = await resp.json()
+            ) as resp,
+        ):
+            resp.raise_for_status()
+            resp_js = await resp.json()
 
         sorting_columns = tuple(
             col_js["name"] for col_js in resp_js["$value"] if isinstance(col_js.get("sort_order"), str)
@@ -125,15 +126,14 @@ class BaseCHYTAdapter(BaseClickHouseAdapter, abc.ABC):
                 unique=resp_js["$attributes"]["unique_keys"],
                 kind=IndexKind.table_sorting,
             )
-        else:
-            return None
+        return None
 
     @abc.abstractmethod
     async def _get_yt_table_index_info(
         self,
         table_path: str,
         secret_auth_headers: dict[str, str],  # Strange name to prevent leaking to Sentry
-    ) -> Optional[RawIndexInfo]:
+    ) -> RawIndexInfo | None:
         raise NotImplementedError()
 
     @abc.abstractmethod
@@ -164,6 +164,7 @@ class CHYTAdapter(BaseCHYTAdapter):
         self,
         table_path: str,
         secret_auth_headers: dict[str, str],
-    ) -> Optional[RawIndexInfo]:
-        assert isinstance(table_path, str) and table_path.startswith("//"), "Incorrect YT table path"
+    ) -> RawIndexInfo | None:
+        assert isinstance(table_path, str), "Incorrect YT table path"
+        assert table_path.startswith("//"), "Incorrect YT table path"
         return await self._fetch_yt_sorting_columns(self._target_dto.host, table_path, secret_auth_headers)

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Callable,
+    Sequence,
+)
 import logging
 import os
 import re
 from typing import (
     Any,
-    Callable,
     ClassVar,
     Concatenate,
-    Sequence,
 )
 
 import flask
@@ -23,17 +25,13 @@ from dl_api_lib import (
 )
 from dl_api_lib.schemas.tools import prepare_schema_context
 from dl_api_lib.service_registry.service_registry import ApiServiceRegistry
-from dl_constants.enums import (
+from dl_constants import (
     NotificationLevel,
     OperationsMode,
 )
-from dl_constants.exc import (
-    DEFAULT_ERR_CODE_API_PREFIX,
-    GLOBAL_ERR_PREFIX,
-)
+from dl_constants.exc import DEFAULT_GLOBAL_ERR_CODE_API_PREFIX
 from dl_core.flask_utils.us_manager_middleware import USManagerFlaskMiddleware
 from dl_core.us_manager.us_manager_sync import SyncUSManager
-
 
 PROFILE_REQUESTS = os.environ.get("PROFILE_REQUESTS", "")
 PROFILE_REQ_CLASSES = {v for v in set(os.environ.get("PROFILE_REQ_CLASSES", "").split(",")) if v}
@@ -49,25 +47,21 @@ LOGGER = logging.getLogger(__name__)
 # PROFILE_REQ_PATH_RE="/api/v1/datasets/njJYHhj8oikj/versions/draft/result"
 
 
-def _profile_request_check(*args, **kwargs) -> bool:  # type: ignore  # TODO: fix
+def _profile_request_check(*args: Any, **kwargs: Any) -> bool:
     """
     Check whether request handler should be profiled with current settings:
     - ``PROFILE_PATH_RE``: limit profiling only to requests with path matching the given regex
     """
-    if PROFILE_REQ_PATH_RE:
-        if not re.match(PROFILE_REQ_PATH_RE, flask.request.path):
-            return False
-
-    return True
+    return not PROFILE_REQ_PATH_RE or re.match(PROFILE_REQ_PATH_RE, flask.request.path) is not None
 
 
 def wrap_export_import_exception(
-    func: Callable[Concatenate[BIResource, ...], dict | tuple[list | dict, int]]
+    func: Callable[Concatenate[BIResource, ...], dict | tuple[list | dict, int]],
 ) -> Callable[Concatenate[BIResource, ...], dict | tuple[list | dict, int]]:
     def wrapper(self: BIResource, *args: Any, **kwargs: Any) -> dict | tuple[list | dict, int]:
         export_import_errors = (  # exceptions which error codes are be covered by UI error handling
-            exc.BadConnectionType,
-            exc.UnsupportedForEntityType,
+            exc.BadConnectionTypeError,
+            exc.UnsupportedForEntityTypeError,
             exc.WorkbookExportError,
             exc.WorkbookImportError,
         )
@@ -75,15 +69,15 @@ def wrap_export_import_exception(
         try:
             return func(self, *args, **kwargs)
         except export_import_errors as e:
-            LOGGER.error("Caught exception in import-export wrapper", exc_info=True)
+            LOGGER.exception("Caught exception in import-export wrapper")
             notifications = [
-                dict(
-                    message=e.message,
-                    level=NotificationLevel.critical,
-                    code=self._make_api_err_code(e.err_code),
-                )
+                {
+                    "message": e.message,
+                    "level": NotificationLevel.critical,
+                    "code": self._make_api_err_code(e.err_code),
+                }
             ]
-            return dict(notifications=notifications)
+            return {"notifications": notifications}
 
     return wrapper
 
@@ -98,19 +92,19 @@ class BIResourceMeta(type(Resource)):  # type: ignore  # TODO: fix
     """
 
     @staticmethod
-    def _get_future_class_attr(bases, attrs, attr_name):  # type: ignore  # TODO: fix
+    def _get_future_class_attr(bases: tuple[type, ...], attrs: dict[str, Any], attr_name: str) -> Any:
         """Get attribute of future class described by ``bases`` and ``attrs``"""
         if attr_name in attrs:
             # attribute is redefined in new class
             return attrs[attr_name]
-        else:
-            # attribute is inherited from one of the base classes
-            # (i.e. the first one in `bases` with this attribute)
-            for base in bases:
-                if hasattr(base, attr_name):
-                    return getattr(base, attr_name)
+        # attribute is inherited from one of the base classes
+        # (i.e. the first one in `bases` with this attribute)
+        for base in bases:
+            if hasattr(base, attr_name):
+                return getattr(base, attr_name)
+        return None
 
-    def __new__(mcs, name, bases, attrs):  # type: ignore  # TODO: fix
+    def __new__(mcs, name: str, bases: tuple[type, ...], attrs: dict[str, Any]) -> type:
         profile_methods = mcs._get_future_class_attr(bases, attrs, "profile_methods")
         if PROFILE_REQ_METHODS:
             profile_methods = set(profile_methods) & PROFILE_REQ_METHODS
@@ -142,13 +136,7 @@ class BIResource(Resource, metaclass=BIResourceMeta):
 
     @classmethod
     def _make_api_err_code(cls, raw_code: Sequence[str]) -> str:
-        return ".".join(
-            (
-                GLOBAL_ERR_PREFIX,
-                DEFAULT_ERR_CODE_API_PREFIX,
-                *raw_code,
-            )
-        )
+        return ".".join((*DEFAULT_GLOBAL_ERR_CODE_API_PREFIX, *raw_code))
 
     @classmethod
     def get_current_rci(cls) -> RequestContextInfo:

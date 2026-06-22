@@ -1,7 +1,4 @@
-from typing import (
-    Collection,
-    Optional,
-)
+from collections.abc import Collection
 
 import attr
 
@@ -9,7 +6,6 @@ import dl_formula_ref as package
 from dl_formula_ref.plugins.base.plugin import FormulaRefPlugin
 from dl_formula_ref.plugins.registration import FORMULA_REF_PLUGIN_REG
 from dl_utils.entrypoints import EntrypointClassManager
-
 
 _PLUGIN_EP_GROUP = f"{package.__name__}.plugins"
 
@@ -28,7 +24,7 @@ def _register_plugin(plugin_cls: type[FormulaRefPlugin]) -> None:
     FORMULA_REF_PLUGIN_REG.register_plugin(plugin_cls)
 
 
-def register_all_plugins(plugin_ep_names: Optional[Collection[str]] = None) -> None:
+def register_all_plugins(plugin_ep_names: Collection[str] | None = None) -> None:
     for ep_name, plugin_cls in sorted(get_all_formula_ref_plugins().items()):
         if plugin_ep_names is not None and ep_name not in plugin_ep_names:
             continue

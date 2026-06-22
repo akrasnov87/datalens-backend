@@ -1,9 +1,8 @@
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DataSourceType,
     SourceBackendType,
 )
-
 
 BACKEND_TYPE_METRICA_API = SourceBackendType.declare("METRICA_API")
 CONNECTION_TYPE_METRICA_API = ConnectionType.declare("metrika_api")  # Note the K in the value

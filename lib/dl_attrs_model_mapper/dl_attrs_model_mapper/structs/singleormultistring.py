@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Sequence,
-)
+from collections.abc import Sequence
+from typing import Any
 
 
 class SingleOrMultiString:
@@ -18,7 +16,7 @@ class SingleOrMultiString:
         self._is_single = is_single
 
     def __repr__(self) -> str:
-        return f"SingleOrMultiString({repr(self._value)}, is_single={repr(self._is_single)})"
+        return f"SingleOrMultiString({self._value!r}, is_single={self._is_single!r})"
 
     @property
     def is_single(self) -> bool:

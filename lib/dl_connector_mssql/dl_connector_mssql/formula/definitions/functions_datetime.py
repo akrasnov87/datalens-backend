@@ -14,7 +14,6 @@ from dl_formula.definitions.literals import un_literal
 
 from dl_connector_mssql.formula.constants import MssqlDialect as D
 
-
 V = TranslationVariant.make
 
 
@@ -112,13 +111,11 @@ DEFINITIONS_DATETIME = [
                 D.MSSQLSRV,
                 lambda date, firstday: (
                     (
-                        (
-                            sa.func.DATEDIFF(raw_sql("DAY"), EPOCH_START_S, date)
-                            - (EPOCH_START_DOW + base.norm_fd(firstday) - 1)
-                        )
-                        % 7
-                        + 1
+                        sa.func.DATEDIFF(raw_sql("DAY"), EPOCH_START_S, date)
+                        - (EPOCH_START_DOW + base.norm_fd(firstday) - 1)
                     )
+                    % 7
+                    + 1
                 ),
             ),
         ]

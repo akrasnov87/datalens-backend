@@ -7,7 +7,6 @@ from dl_formula.core.dialect import StandardDialect as D
 from dl_formula_ref.localization import get_gettext
 from dl_i18n.localizer_base import Translatable
 
-
 _ = get_gettext()
 
 EXAMPLE_TITLE = _("Example")
@@ -123,6 +122,7 @@ class StyledDialect(NamedTuple):
             item = item.name
         if isinstance(item, str):
             return getattr(self, item)
+        return None
 
 
 # These should be filled from plugins

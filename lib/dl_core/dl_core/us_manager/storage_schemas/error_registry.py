@@ -3,7 +3,7 @@ from __future__ import annotations
 from marshmallow import fields as ma_fields
 from marshmallow_oneofschema import OneOfSchema
 
-from dl_constants.enums import (
+from dl_constants import (
     ComponentErrorLevel,
     ComponentType,
 )
@@ -30,7 +30,7 @@ class GenericComponentErrorPackSchema(DefaultStorageSchema):
 class ComponentErrorPackSchema(OneOfSchema):
     type_field = "type"
     type_field_remove = False
-    type_schemas = {
+    type_schemas = {  # noqa: RUF012
         k.name: v
         for k, v in {
             ComponentType.data_source: GenericComponentErrorPackSchema,
@@ -38,6 +38,9 @@ class ComponentErrorPackSchema(OneOfSchema):
             ComponentType.avatar_relation: GenericComponentErrorPackSchema,
             ComponentType.field: GenericComponentErrorPackSchema,
             ComponentType.obligatory_filter: GenericComponentErrorPackSchema,
+            ComponentType.extract_filter: GenericComponentErrorPackSchema,
+            ComponentType.extract_sorting: GenericComponentErrorPackSchema,
+            ComponentType.extract_properties: GenericComponentErrorPackSchema,
         }.items()
     }
 

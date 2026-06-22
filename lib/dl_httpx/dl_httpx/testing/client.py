@@ -1,9 +1,9 @@
 import asyncio
-from typing import (
-    Any,
+from collections.abc import (
     Awaitable,
     Callable,
 )
+from typing import Any
 
 import attrs
 

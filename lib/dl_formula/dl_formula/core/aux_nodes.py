@@ -4,12 +4,11 @@ Non-"natural" nodes that can be used to facilitate translation, validation, slic
 
 from __future__ import annotations
 
-from typing import (
+from collections.abc import (
     Hashable,
-    Optional,
     Sequence,
-    cast,
 )
+from typing import cast
 
 import dl_formula.core.nodes as nodes
 
@@ -18,7 +17,7 @@ class ErrorNode(nodes.Null):
     """Node for setting up an error inside a formula to be raised by the translator"""
 
     __slots__ = ()
-    show_names = nodes.FormulaItem.show_names + ("err_code", "message")
+    show_names = (*nodes.FormulaItem.show_names, "err_code", "message")
 
     @property
     def err_code(self) -> tuple[str, ...]:
@@ -34,7 +33,7 @@ class ErrorNode(nodes.Null):
         *,
         err_code: tuple[str, ...],
         message: str,
-        meta: Optional[nodes.NodeMeta] = None,
+        meta: nodes.NodeMeta | None = None,
     ) -> ErrorNode:
         children = ()
         internal_value = (err_code, message)
@@ -45,7 +44,7 @@ class ErrorNode(nodes.Null):
         assert not children
 
     @classmethod
-    def validate_internal_value(cls, internal_value: tuple[Optional[Hashable], ...]) -> None:
+    def validate_internal_value(cls, internal_value: tuple[Hashable | None, ...]) -> None:
         assert len(internal_value) == 2
         assert isinstance(internal_value[0], tuple)
         assert isinstance(internal_value[1], str)

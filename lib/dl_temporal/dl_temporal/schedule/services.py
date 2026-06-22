@@ -1,9 +1,7 @@
+from collections.abc import Sequence
 import datetime
 import logging
-from typing import (
-    ClassVar,
-    Sequence,
-)
+from typing import ClassVar
 
 import attrs
 import temporalio.client
@@ -13,7 +11,6 @@ import dl_temporal.base as base
 import dl_temporal.client as client
 from dl_temporal.schedule.config import TemporalSchedulesDynConfig
 import dl_temporal.temporal.workflows as temporal_workflows
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -70,7 +67,7 @@ class ScheduleSyncService:
                 LOGGER.info("Deleting stale schedule: %s", entry.id)
                 try:
                     await self.temporal_client.delete_schedule(entry.id)
-                except client.NotFound:
+                except client.NotFoundError:
                     LOGGER.debug("Stale schedule %s was already deleted", entry.id)
 
     async def _upsert_schedule(

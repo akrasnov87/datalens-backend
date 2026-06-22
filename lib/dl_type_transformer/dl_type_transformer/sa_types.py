@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-from typing import (
-    Callable,
-    Optional,
-)
+from collections.abc import Callable
 
 from sqlalchemy.types import TypeEngine
 
-from dl_constants.enums import SourceBackendType
+from dl_constants import SourceBackendType
 from dl_type_transformer.native_type import GenericNativeType
-
 
 SQLALCHEMY_TYPES: dict[tuple[SourceBackendType, GenericNativeType], Callable[[GenericNativeType], TypeEngine]] = {}
 
@@ -17,7 +13,7 @@ SQLALCHEMY_TYPES: dict[tuple[SourceBackendType, GenericNativeType], Callable[[Ge
 def make_sa_type(
     backend_type: SourceBackendType,
     native_type: GenericNativeType,
-    nullable: Optional[bool] = None,
+    nullable: bool | None = None,
 ) -> TypeEngine:
     if nullable is not None:
         # For a type without `nullable`, specifies it.

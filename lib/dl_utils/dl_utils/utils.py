@@ -1,12 +1,9 @@
+from collections.abc import Iterable
 from enum import Enum
 import functools
 from itertools import islice
 import operator
-from typing import (
-    Any,
-    Iterable,
-    TypeVar,
-)
+from typing import Any
 import uuid
 
 import attr
@@ -75,10 +72,9 @@ class AddressableData:
                     raise ValueError(
                         f"Cannot create nested objects for key {key.parts!r}: value is not a dict (got {type(data).__name__})"
                     )
-                else:
-                    raise ValueError(
-                        f"Cannot create nested objects for key {key.parts!r}: intermediate value at {prev_part!r} is not a dict (got {type(data).__name__})"
-                    )
+                raise ValueError(
+                    f"Cannot create nested objects for key {key.parts!r}: intermediate value at {prev_part!r} is not a dict (got {type(data).__name__})"
+                )
 
             data[part] = data.get(part, {})
             data = data[part]
@@ -157,10 +153,7 @@ class AddressableData:
         return result
 
 
-T = TypeVar("T")
-
-
-def batched(iterable: Iterable[T], n: int) -> Iterable[Iterable[T]]:
+def batched[T](iterable: Iterable[T], n: int) -> Iterable[Iterable[T]]:
     if n < 1:
         raise ValueError("n must be at least one")
     it = iter(iterable)
@@ -185,10 +178,7 @@ def join_in_chunks(pieces: Iterable[str], sep: str, max_len: int) -> Iterable[st
     yield result
 
 
-_ENUM_TV = TypeVar("_ENUM_TV", bound=Enum)
-
-
-def enum_not_none(val: _ENUM_TV | None) -> _ENUM_TV:
+def enum_not_none[ENUM_TV: Enum](val: ENUM_TV | None) -> ENUM_TV:
     assert val is not None
     return val
 
@@ -247,5 +237,4 @@ def make_uuid_from_parts(current: str, parent: str | None = None) -> str:
         cutted_parent = parent[:cutted_half_len] + cutted_replace + parent[-cutted_half_len:]
         parent = cutted_parent
 
-    result = parent + uuid_sep + current
-    return result
+    return parent + uuid_sep + current

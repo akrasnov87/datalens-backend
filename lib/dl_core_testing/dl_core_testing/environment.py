@@ -1,19 +1,26 @@
 from __future__ import annotations
 
+from importlib.resources import files
 import logging
 import os
 import time
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-)
+from typing import TYPE_CHECKING
 
 import requests
 
+from dl_constants.api_constants import DLHeadersCommon
+from dl_core.us_manager.dynamic_token_factory import DynamicUSMasterTokenFactory
 from dl_core_testing.configuration import UnitedStorageConfiguration
 from dl_db_testing.loader import load_db_testing_lib
 import dl_logging
 from dl_utils.wait import wait_for
+
+try:
+    _TEST_DYNAMIC_AUTH_PRIVATE_KEY: str | None = (
+        files("dl_core_testing") / "keys" / "dynamic_us_master_token_private_key.pem"
+    ).read_text()
+except (FileNotFoundError, OSError):
+    _TEST_DYNAMIC_AUTH_PRIVATE_KEY = None
 
 
 if TYPE_CHECKING:
@@ -50,59 +57,73 @@ def _wait_for_pg(dsn: str, timeout: int = 300, interval: float = 1.0) -> None:
         else:
             if res == [(0.5,)]:
                 return
-            else:
-                raise Exception("Unexpected result", res)
+            raise Exception("Unexpected result", res)
 
 
 def is_docker_host_ssh() -> bool:
     docker_host = os.environ.get("DOCKER_HOST", "")
-    use_ssh_client = docker_host.startswith("ssh://")
-    return use_ssh_client
+    return docker_host.startswith("ssh://")
 
 
 def make_docker_cli(timeout: int = 300) -> DockerClient:
     import docker
 
-    docker_cli = docker.from_env(timeout=timeout, use_ssh_client=is_docker_host_ssh())
-    return docker_cli
+    return docker.from_env(timeout=timeout, use_ssh_client=is_docker_host_ssh())
 
 
 def restart_container(container_name: str) -> None:
     docker_cli = make_docker_cli()
-    container = docker_cli.containers.list(filters=dict(name=container_name), all=True)[0]
+    container = docker_cli.containers.list(filters={"name": container_name}, all=True)[0]
     container.restart()
 
 
 def run_cmd_in_containers_by_label(label: str, cmd: list[str]) -> None:
     docker_cli = make_docker_cli()
     containers = docker_cli.containers.list(
-        filters=dict(label=[f"datalens.ci.service={label}"]),
+        filters={"label": [f"datalens.ci.service={label}"]},
     )
     for container in containers:
-        LOGGER.debug(f"Running command {cmd} in container {container.name}")
+        LOGGER.debug("Running command %s in container %s", cmd, container.name)
         container.exec_run(cmd, socket=is_docker_host_ssh())
 
 
 def restart_container_by_label(label: str, compose_project: str) -> None:
     docker_cli = make_docker_cli()
     container = docker_cli.containers.list(
-        filters=dict(
-            label=[
+        filters={
+            "label": [
                 f"datalens.ci.service={label}",
                 f"com.docker.compose.project={compose_project}",
             ]
-        ),
+        },
         all=True,
     )[0]
     container.restart()
 
 
+def _get_dynamic_us_auth_headers(us_master_token: str | None = None) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if _TEST_DYNAMIC_AUTH_PRIVATE_KEY is not None:
+        factory = DynamicUSMasterTokenFactory(
+            private_key=_TEST_DYNAMIC_AUTH_PRIVATE_KEY,
+            token_lifetime_sec=3600,
+            min_ttl_sec=900.0,
+        )
+        ctx = factory.get_auth_context(us_master_token=us_master_token)
+        headers[DLHeadersCommon.US_DYNAMIC_MASTER_TOKEN.value] = ctx.us_dynamic_master_token
+        if ctx.us_master_token is not None:
+            headers[DLHeadersCommon.US_MASTER_TOKEN.value] = ctx.us_master_token
+    elif us_master_token is not None:
+        headers[DLHeadersCommon.US_MASTER_TOKEN.value] = us_master_token
+    return headers
+
+
 def prepare_united_storage(
     *,
     us_host: str,
-    us_master_token: str,
+    us_master_token: str | None = None,
     tenant_id: str = "common",
-    us_pg_dsn: Optional[str] = None,
+    us_pg_dsn: str | None = None,
     force: bool = False,
 ) -> None:
     if not force and not os.environ.get("CLEAR_US_DATABASE", ""):
@@ -113,25 +134,25 @@ def prepare_united_storage(
         LOGGER.debug("prepare_united_storage: wait for pg-us to be up...")
         _wait_for_pg(us_pg_dsn)
 
-    headers = {
-        "X-US-Master-Token": us_master_token,
+    headers: dict[str, str] = {
         "X-DL-TenantId": tenant_id,
+        **_get_dynamic_us_auth_headers(us_master_token),
     }
 
     def _wait_for_us() -> tuple[bool, str]:
         try:
-            with requests.Session() as reqr:
-                resp = reqr.get(f"{us_host}/ping-db", headers=headers)
+            with requests.Session() as session:
+                resp = session.get(f"{us_host}/ping-db", headers=headers)
                 resp.raise_for_status()
 
                 return True, ""
         except Exception as e:
-            logging.exception("_wait_for_us failed with exception")
+            LOGGER.exception("_wait_for_us failed with exception")
             return False, str(e)
 
     max_wait_time = 160.0
     wait_pause = 0.5
-    LOGGER.debug(f"prepare_united_storage: waiting for up to {max_wait_time}s for US to respond with ok...")
+    LOGGER.debug("prepare_united_storage: waiting for up to %ss for US to respond with ok...", max_wait_time)
     wait_for("US startup", condition=_wait_for_us, timeout=max_wait_time, interval=wait_pause)
 
     LOGGER.debug("prepare_united_storage: done.")

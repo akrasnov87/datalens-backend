@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
-from typing import Optional
+from typing import Any
 
 from flask.testing import FlaskClient
 import werkzeug
+from werkzeug.test import TestResponse
 
 from dl_api_commons.tracing import get_current_tracing_headers
 
@@ -24,13 +25,13 @@ class FlaskTestClient(FlaskClient):
         """To split US directories for different users to prevent permissions issues"""
         raise NotImplementedError()
 
-    def get_default_headers(self) -> dict[str, Optional[str]]:
+    def get_default_headers(self) -> dict[str, str | None]:
         return {}
 
     def post_process_response(self, resp) -> None:  # type: ignore  # TODO: fix
         pass
 
-    def open(self, *args, **kw):  # type: ignore  # TODO: fix
+    def open(self, *args: Any, **kw: Any) -> TestResponse:
         kw["headers"] = {**self.get_default_headers(), **kw.get("headers", {}), **get_current_tracing_headers()}
         kw["headers"] = {key: val for key, val in kw["headers"].items() if val}
         resp = super().open(*args, **kw)

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import (
     TYPE_CHECKING,
     Any,
-    Mapping,
 )
 
 from marshmallow import (
@@ -44,8 +44,11 @@ from dl_api_client.dsmaker.primitives import (
     DateTimeParameterValue,
     DateTimeTZParameterValue,
     DefaultParameterValueConstraint,
+    DefaultWhereClause,
     DirectJoinPart,
     EqualsParameterValueConstraint,
+    ExtractProperties,
+    FilterField,
     FloatParameterValue,
     FormulaJoinPart,
     GenericDateTimeParameterValue,
@@ -57,6 +60,7 @@ from dl_api_client.dsmaker.primitives import (
     NotEqualsParameterValueConstraint,
     NullParameterValueConstraint,
     ObligatoryFilter,
+    OrderField,
     ParameterValue,
     RangeParameterValueConstraint,
     RegexParameterValueConstraint,
@@ -71,7 +75,7 @@ from dl_api_client.dsmaker.primitives import (
     WhereClause,
 )
 from dl_api_connector.api_schema.top_level import USEntryAnnotationMixin
-from dl_constants.enums import (
+from dl_constants import (
     AggregationFunction,
     BinaryJoinOperator,
     CacheInvalidationMode,
@@ -80,11 +84,14 @@ from dl_constants.enums import (
     ComponentType,
     ConditionPartCalcMode,
     DataSourceType,
+    ExtractMode,
+    ExtractStatus,
     FieldType,
     JoinConditionType,
     JoinType,
     ManagedBy,
     NotificationLevel,
+    OrderDirection,
     ParameterValueConstraintType,
     RLSPatternType,
     RLSSubjectType,
@@ -97,7 +104,6 @@ from dl_rls.models import (
     RLSEntry,
     RLSSubject,
 )
-
 
 if TYPE_CHECKING:
     from dl_api_client.dsmaker.primitives import JoinPart
@@ -181,7 +187,7 @@ class ArrayFloatValueSchema(DefaultSchema[ArrayFloatParameterValue]):
 class ValueSchema(OneOfSchemaWithDumpLoadHooks):
     CONTEXT_KEY = "bi_value_type"
     type_field = "type"
-    type_schemas = {
+    type_schemas = {  # noqa: RUF012
         UserDataType.string.name: StringValueSchema,
         UserDataType.integer.name: IntegerValueSchema,
         UserDataType.float.name: FloatValueSchema,
@@ -261,7 +267,7 @@ class CollectionParameterValueConstraintSchema(DefaultSchema[CollectionParameter
 
 class ParameterValueConstraintSchema(OneOfSchema):
     type_field = "type"
-    type_schemas = {
+    type_schemas = {  # noqa: RUF012
         ParameterValueConstraintType.null.name: NullParameterValueConstraintSchema,
         ParameterValueConstraintType.all.name: NullParameterValueConstraintSchema,
         ParameterValueConstraintType.range.name: RangeParameterValueConstraintSchema,
@@ -406,7 +412,7 @@ class ConditionPartGenericSchema(OneOfSchema):
 
     type_field_remove = False
     type_field = "calc_mode"
-    type_schemas = {
+    type_schemas = {  # noqa: RUF012
         ConditionPartCalcMode.direct.name: ConditionPartDirectSchema,
         ConditionPartCalcMode.formula.name: ConditionPartFormulaSchema,
         ConditionPartCalcMode.result_field.name: ConditionPartResultFieldSchema,
@@ -474,6 +480,53 @@ class RLS2ConfigEntrySchema(DefaultSchema[RLSEntry]):
     allowed_value = ma_fields.String(dump_default=None, load_default=None)
     pattern_type = ma_fields.Enum(RLSPatternType, load_default=RLSPatternType.value)
     subject = ma_fields.Nested(RLSSubjectSchema, required=True)
+
+
+class DefaultWhereClauseSchema(DefaultSchema[DefaultWhereClause]):
+    TARGET_CLS = DefaultWhereClause
+
+    operation = ma_fields.Enum(WhereClauseOperation, required=True)
+    values = ma_fields.List(ma_fields.String(), required=True)
+
+
+class FilterFieldSchema(DefaultSchema[FilterField]):
+    TARGET_CLS = FilterField
+
+    id = ma_fields.String(required=True)
+    field_guid = ma_fields.String(required=True)
+    filters = ma_fields.Nested(DefaultWhereClauseSchema, many=True, load_default=list, dump_default=list)
+
+    # Allow send & receive to/from server
+    valid = ma_fields.Boolean()
+
+
+class OrderFieldSchema(DefaultSchema[OrderField]):
+    TARGET_CLS = OrderField
+
+    id = ma_fields.String(required=True)
+    field_guid = ma_fields.String(required=True)
+    direction = ma_fields.Enum(OrderDirection, load_default=OrderDirection.asc, dump_default=OrderDirection.asc)
+
+    # Allow send & receive to/from server
+    valid = ma_fields.Boolean()
+
+
+class ExtractPropertiesSchema(DefaultSchema[ExtractProperties]):
+    TARGET_CLS = ExtractProperties
+
+    mode = ma_fields.Enum(ExtractMode, load_default=ExtractMode.disabled)
+    status = ma_fields.Enum(ExtractStatus, load_default=ExtractStatus.disabled)
+
+    filters = ma_fields.Nested(FilterFieldSchema, many=True, load_default=list)
+    sorting = ma_fields.Nested(OrderFieldSchema, many=True, load_default=list)
+
+    errors = ma_fields.List(ma_fields.String, load_default=list)
+    last_completed = ma_fields.Integer(load_default=0)
+
+    data_dataset_revision = ma_fields.String(allow_none=True)
+
+    # Allow send & receive to/from server
+    valid = ma_fields.Boolean()
 
 
 class CacheInvalidationErrorSchema(DefaultSchema[CacheInvalidationError]):
@@ -560,6 +613,15 @@ class DatasetContentInternalSchema(DefaultSchema[Dataset], USEntryAnnotationMixi
     template_enabled = ma_fields.Boolean(dump_default=False, load_default=False)
     data_export_forbidden = ma_fields.Boolean(dump_default=False, load_default=False)
     cache_invalidation_source = ma_fields.Nested(CacheInvalidationSourceSchema)
+    query_settings = ma_fields.Dict(
+        keys=ma_fields.String(),
+        values=ma_fields.String(),
+        required=False,
+        load_default=dict,
+        dump_default=dict,
+    )
+
+    extract = ma_fields.Nested(ExtractPropertiesSchema, load_default=ExtractProperties, dump_default=ExtractProperties)
 
     @post_load
     def validate_rls2(self, item: dict[str, Any], *args: Any, **kwargs: Any) -> dict[str, Any]:

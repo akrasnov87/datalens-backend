@@ -1,12 +1,11 @@
 import abc
+from collections.abc import Mapping
 import datetime
 import logging
-from typing import Mapping
 
 import attrs
 
 import dl_settings
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -29,12 +28,10 @@ class MetadataProvider(abc.ABC):
         pass
 
 
-class MetadataProviderSettings(dl_settings.TypedBaseSettings):
-    ...
+class MetadataProviderSettings(dl_settings.TypedBaseSettings): ...
 
 
-class EmptyMetadataProviderSettings(MetadataProviderSettings):
-    ...
+class EmptyMetadataProviderSettings(MetadataProviderSettings): ...
 
 
 MetadataProviderSettings.register("empty", EmptyMetadataProviderSettings)

@@ -10,7 +10,6 @@ import pytest_asyncio
 import dl_api_commons.aio.middlewares as dl_api_commons_aio_middlewares
 import dl_auth_native
 
-
 AiohttpHandler = typing.Callable[[aiohttp_web.Request], typing.Awaitable[aiohttp_web.Response]]
 
 
@@ -59,7 +58,7 @@ async def test_default(
 ) -> None:
     token_decoder.decode.return_value = dl_auth_native.Payload(
         user_id="test_user_id",
-        expires_at=datetime.datetime.now(),
+        expires_at=datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
     response = await aiohttp_test_client.get(
         "/",
@@ -68,7 +67,7 @@ async def test_default(
         },
     )
 
-    assert token_decoder.decode.called_once_with("token")
+    token_decoder.decode.assert_called_once_with("token")
     assert response.status == 200
 
 
@@ -111,6 +110,6 @@ async def test_invalid_token(
         },
     )
 
-    assert token_decoder.decode.called_once_with("token")
+    token_decoder.decode.assert_called_once_with("token")
     assert response.status == 401
     assert await response.text() == "401: Invalid user access token: Invalid token"

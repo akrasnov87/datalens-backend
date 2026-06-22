@@ -2,20 +2,21 @@ from __future__ import annotations
 
 import abc
 import asyncio
+from collections.abc import (
+    Callable,
+    Sequence,
+)
 import functools
 import itertools
 import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Optional,
-    Sequence,
     TypeVar,
+    final,
 )
 
 import attr
-from typing_extensions import final
 
 from dl_api_commons.base_models import RequestContextInfo
 from dl_core.connection_executors import (
@@ -30,7 +31,7 @@ from dl_core.connection_models import (
 from dl_core.services_registry.entity_checker import EntityUsageChecker
 from dl_core.us_connection_base import ConnectionBase
 from dl_core.utils import FutureRef
-
+from dl_utils.aio import get_thread_loop
 
 if TYPE_CHECKING:
     from dl_core.connection_executors import (
@@ -87,7 +88,7 @@ _RESULT_TV = TypeVar("_RESULT_TV")
 def ensure_env(async_env: bool = True) -> Callable[[Callable[..., _RESULT_TV]], Callable[..., _RESULT_TV]]:
     def real_deco(wrapped: Callable[..., _RESULT_TV]) -> Callable[..., _RESULT_TV]:
         @functools.wraps(wrapped)
-        def wrapper(self: "BaseClosableExecutorFactory", *args: Any, **kwargs: Any) -> _RESULT_TV:
+        def wrapper(self: BaseClosableExecutorFactory, *args: Any, **kwargs: Any) -> _RESULT_TV:
             if self._async_env != async_env:
                 meth_env = "async" if async_env else "sync"
                 factory_env = "async" if self._async_env else "sync"
@@ -110,7 +111,7 @@ class ConnExecutorRecipe:
     conn_dto: ConnDTO
     connect_options: ConnectOptions
     exec_mode: ExecutionMode
-    rqe_data: Optional[RemoteQueryExecutorData]
+    rqe_data: RemoteQueryExecutorData | None
     conn_hosts_pool: Sequence[str] = attr.ib(kw_only=True, converter=tuple)
     ca_data: bytes
 
@@ -128,13 +129,13 @@ class BaseClosableExecutorFactory(ConnExecutorFactory, metaclass=abc.ABCMeta):
     @attr.s(frozen=True, auto_attribs=True)
     class _CECreationResult:
         async_ce: AsyncConnExecutorBase
-        sync_wrapper: Optional[SyncWrapperForAsyncConnExecutor]
+        sync_wrapper: SyncWrapperForAsyncConnExecutor | None
 
     _map_recipe_created_ce_pair: dict[ConnExecutorRecipe, list[_CECreationResult]] = attr.ib(init=False, factory=dict)
 
     _async_env: bool = attr.ib()
     _services_registry_ref: FutureRef[ServicesRegistry] = attr.ib()
-    _entity_usage_checker: Optional[EntityUsageChecker] = attr.ib(default=None, kw_only=True)
+    _entity_usage_checker: EntityUsageChecker | None = attr.ib(default=None, kw_only=True)
 
     @property
     def req_ctx_info(self) -> RequestContextInfo:
@@ -173,8 +174,7 @@ class BaseClosableExecutorFactory(ConnExecutorFactory, metaclass=abc.ABCMeta):
         async_ce = self._cook_conn_executor(recipe, with_tpe=not with_sync_wrapper)
         sync_wrapper = (
             SyncWrapperForAsyncConnExecutor(
-                # TODO CONSIDER: May be move to arguments
-                loop=asyncio.get_event_loop(),
+                loop=get_thread_loop(),
                 async_conn_executor=async_ce,
             )
             if with_sync_wrapper

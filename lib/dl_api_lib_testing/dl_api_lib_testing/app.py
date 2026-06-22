@@ -1,5 +1,3 @@
-from typing import Optional
-
 import attr
 import flask
 
@@ -21,7 +19,7 @@ from dl_api_lib.app_settings import (
 from dl_api_lib.connector_availability.base import ConnectorAvailabilityConfig
 from dl_cache_engine.primitives import CacheTTLConfig
 from dl_configs.enums import RequiredService
-from dl_constants.enums import (
+from dl_constants import (
     RLSSubjectType,
     USAuthMode,
 )
@@ -36,6 +34,7 @@ from dl_core.services_registry.inst_specific_sr import (
     InstallationSpecificServiceRegistryFactory,
 )
 from dl_core.services_registry.rqe_caches import RQECachesSetting
+from dl_core.us_manager.dynamic_token_factory import DynamicUSMasterTokenFactory
 from dl_core.utils import FutureRef
 from dl_core_testing.app_test_workarounds import TestEnvManagerFactory
 import dl_retrier
@@ -117,22 +116,22 @@ class TestingSRFactoryBuilder(SRFactoryBuilder[AppSettings]):
         self,
         settings: AppSettings,
         ca_data: bytes,
-    ) -> Optional[InstallationSpecificServiceRegistryFactory]:
+    ) -> InstallationSpecificServiceRegistryFactory | None:
         return TestingServiceRegistryFactory()
 
-    def _get_entity_usage_checker(self, settings: AppSettings) -> Optional[EntityUsageChecker]:
+    def _get_entity_usage_checker(self, settings: AppSettings) -> EntityUsageChecker | None:
         return None
 
     def _get_bleeding_edge_users(self, settings: AppSettings) -> tuple[str, ...]:
         return ()
 
-    def _get_rqe_caches_settings(self, settings: AppSettings) -> Optional[RQECachesSetting]:
+    def _get_rqe_caches_settings(self, settings: AppSettings) -> RQECachesSetting | None:
         return None
 
-    def _get_default_cache_ttl_settings(self, settings: AppSettings) -> Optional[CacheTTLConfig]:
+    def _get_default_cache_ttl_settings(self, settings: AppSettings) -> CacheTTLConfig | None:
         return None
 
-    def _get_connector_availability(self, settings: AppSettings) -> Optional[ConnectorAvailabilityConfig]:
+    def _get_connector_availability(self, settings: AppSettings) -> ConnectorAvailabilityConfig | None:
         return settings.CONNECTOR_AVAILABILITY if isinstance(settings, ControlApiAppSettings) else None
 
 
@@ -142,7 +141,7 @@ class TestingControlApiAppFactory(ControlApiAppFactory[ControlApiAppSettings], T
     def set_up_environment(
         self,
         app: flask.Flask,
-        testing_app_settings: Optional[ControlApiAppTestingsSettings] = None,
+        testing_app_settings: ControlApiAppTestingsSettings | None = None,
     ) -> ControlApiEnvSetupResult:
         us_auth_mode: USAuthMode
         TrustAuthService(
@@ -156,8 +155,7 @@ class TestingControlApiAppFactory(ControlApiAppFactory[ControlApiAppSettings], T
 
         us_auth_mode = USAuthMode.master if us_auth_mode_override is None else us_auth_mode_override
 
-        result = ControlApiEnvSetupResult(us_auth_mode=us_auth_mode)
-        return result
+        return ControlApiEnvSetupResult(us_auth_mode=us_auth_mode)
 
 
 class TestingDataApiAppFactory(DataApiAppFactory[DataApiAppSettings], TestingSRFactoryBuilder):
@@ -201,12 +199,22 @@ class TestingDataApiAppFactory(DataApiAppFactory[DataApiAppSettings], TestingSRF
             ),
         ]
 
-        common_us_kw = dict(
-            us_base_url=self._settings.US_BASE_URL,
-            crypto_keys_config=self._settings.CRYPTO_KEYS_CONFIG,
-            ca_data=ca_data,
-            retry_policy_factory=dl_retrier.RetryPolicyFactory.from_settings(self._settings.US_CLIENT.RETRY_POLICY),
-        )
+        dynamic_token_factory: DynamicUSMasterTokenFactory | None = None
+        if self._settings.US_CLIENT.DYNAMIC_AUTH_PRIVATE_KEY is not None:
+            dynamic_token_factory = DynamicUSMasterTokenFactory(
+                private_key=self._settings.US_CLIENT.DYNAMIC_AUTH_PRIVATE_KEY,
+                token_lifetime_sec=self._settings.US_CLIENT.DYNAMIC_AUTH_TOKEN_LIFETIME_SEC,
+                min_ttl_sec=self._settings.US_CLIENT.DYNAMIC_AUTH_MIN_TTL_SEC,
+            )
+
+        common_us_kw = {
+            "us_base_url": self._settings.US_BASE_URL,
+            "crypto_keys_config": self._settings.CRYPTO_KEYS_CONFIG,
+            "ca_data": ca_data,
+            "retry_policy_factory": dl_retrier.RetryPolicyFactory.from_settings(self._settings.US_CLIENT.RETRY_POLICY),
+            "dynamic_token_factory": dynamic_token_factory,
+            "master_token_authorization_enabled": self._settings.US_CLIENT.MASTER_TOKEN_AUTHORIZATION_ENABLED,
+        }
 
         usm_middleware_list = [
             service_us_manager_middleware(
@@ -222,10 +230,8 @@ class TestingDataApiAppFactory(DataApiAppFactory[DataApiAppSettings], TestingSRF
             ),
         ]
 
-        result = DataApiEnvSetupResult(
+        return DataApiEnvSetupResult(
             auth_mw_list=auth_mw_list,
             sr_middleware_list=sr_middleware_list,
             usm_middleware_list=usm_middleware_list,
         )
-
-        return result

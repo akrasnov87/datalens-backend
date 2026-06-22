@@ -1,10 +1,6 @@
+from collections.abc import Generator
 import contextlib
 import datetime
-from typing import (
-    Generator,
-    Optional,
-    Union,
-)
 
 from frozendict import frozendict
 import pytest
@@ -52,16 +48,16 @@ class YqlDbDispenser(FormulaDbDispenser):
 class YQLDbEvaluator(DbEvaluator):
     def eval(  # type: ignore  # 2024-01-29 # TODO: Function is missing a return type annotation  [no-untyped-def]
         self,
-        formula: Union[str, Formula],
-        from_: Optional[ClauseElement] = None,
+        formula: str | Formula,
+        from_: ClauseElement | None = None,
         where: str | Formula | None = None,
         many: bool = False,
-        other_fields: Optional[dict] = None,
-        order_by: Optional[list[str | Formula]] = None,
-        group_by: Optional[list[str | Formula]] = None,
+        other_fields: dict | None = None,
+        order_by: list[str | Formula] | None = None,
+        group_by: list[str | Formula] | None = None,
         first: bool = False,
         required_scopes: int = Scope.EXPLICIT_USAGE,
-        field_types: Optional[dict[str, DataType]] = None,
+        field_types: dict[str, DataType] | None = None,
     ):
         result = super().eval(
             formula=formula,
@@ -89,25 +85,25 @@ class YQLTestBase(FormulaConnectorTestBase):
     db_dispenser = YqlDbDispenser()
 
     # YDB-specific field types for formula testing
-    YDB_FIELD_TYPES = {
-        "integer_value": DataType.INTEGER,
-        "timestamp_value": DataType.DATETIME,  # YDB TIMESTAMP maps to DATETIME in formula system
-        "datetime_value": DataType.DATETIME,
-    }
+    YDB_FIELD_TYPES = frozendict(
+        {
+            "integer_value": DataType.INTEGER,
+            "timestamp_value": DataType.DATETIME,  # YDB TIMESTAMP maps to DATETIME in formula system
+            "datetime_value": DataType.DATETIME,
+        }
+    )
 
     @pytest.fixture(scope="class")
     def db_url(self) -> str:
         return DB_CONFIGURATIONS[self.dialect]
 
     @pytest.fixture(scope="class")
-    def ydb_data_table(self, dbe: DbEvaluator, table_schema_name: Optional[str]) -> Generator[sa.Table, None, None]:
+    def ydb_data_table(self, dbe: DbEvaluator, table_schema_name: str | None) -> Generator[sa.Table, None, None]:
         with self.make_ydb_data_table(dbe=dbe, table_schema_name=table_schema_name) as table:
             yield table
 
     @contextlib.contextmanager
-    def make_ydb_data_table(
-        self, dbe: DbEvaluator, table_schema_name: Optional[str]
-    ) -> Generator[sa.Table, None, None]:
+    def make_ydb_data_table(self, dbe: DbEvaluator, table_schema_name: str | None) -> Generator[sa.Table, None, None]:
         db = dbe.db
         table_spec = self.generate_table_spec(table_name_prefix="ydb_test_table")
 
@@ -163,28 +159,27 @@ class YQLTestBase(FormulaConnectorTestBase):
         finally:
             dbe.db.drop_table(table)
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def ydb_data_table_field_types(self) -> dict[str, DataType]:
         return {**FIELD_TYPES, **self.YDB_FIELD_TYPES}
 
     @pytest.fixture(scope="class")
     def engine_params(self) -> dict:
-        return dict(
-            connect_args=frozendict(
-                dict(
-                    host=test_config.CoreConnectionSettings.HOST,
-                    port=test_config.CoreConnectionSettings.PORT,
-                    protocol="grpc",
-                )
+        return {
+            "connect_args": frozendict(
+                {
+                    "host": test_config.CoreConnectionSettings.HOST,
+                    "port": test_config.CoreConnectionSettings.PORT,
+                    "protocol": "grpc",
+                }
             ),
-        )
+        }
 
     @pytest.fixture(scope="class")
     def dbe(self, db_config: FormulaDbConfig) -> DbEvaluator:
         db = self.db_dispenser.get_database(db_config)
-        dbe = YQLDbEvaluator(
+        return YQLDbEvaluator(
             db=db,
             attempts=self.eval_attempts,
             retry_on_exceptions=self.retry_on_exceptions,
         )
-        return dbe

@@ -6,14 +6,13 @@ import sqlalchemy as sa
 import ydb_sqlalchemy.sqlalchemy as ydb_sa
 
 from dl_api_lib_testing.configuration import ApiTestEnvironmentConfiguration
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_core_testing.configuration import CoreTestEnvironmentConfiguration
 import dl_sqlalchemy_ydb.dialect
 import dl_sqlalchemy_ydb.dialect as ydb_dialect
 from dl_testing.containers import get_test_container_hostport
 
 from dl_connector_ydb.formula.constants import YqlDialect as D
-
 
 # Infra settings
 CORE_TEST_CONFIG = CoreTestEnvironmentConfiguration(
@@ -32,7 +31,7 @@ CERT_PROVIDER_URL = f"http://{get_test_container_hostport('db-ydb', fallback_por
 
 def fetch_ca_certificate() -> str:
     uri = f"{CERT_PROVIDER_URL}/ca.pem"
-    response = requests.get(uri)
+    response = requests.get(uri, timeout=30)
     assert response.status_code == 200, response.text
 
     return response.text
@@ -97,7 +96,7 @@ COLUMN_TABLE_SCHEMA = (
     ("some_datetime", UserDataType.genericdatetime, ydb_dialect.YqlDateTime),
     ("some_timestamp", UserDataType.genericdatetime, ydb_dialect.YqlTimestamp),
 )
-_COLUMN_TABLE_SCHEMA_COLUMNS = set(col[0] for col in COLUMN_TABLE_SCHEMA)
+_COLUMN_TABLE_SCHEMA_COLUMNS = {col[0] for col in COLUMN_TABLE_SCHEMA}
 
 SA_TYPE_TO_YDB_TYPE_NAME = {
     # Integer

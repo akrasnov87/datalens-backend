@@ -12,7 +12,6 @@ from dl_api_commons.flask.required_resources import (
 )
 import dl_auth_native.middlewares.base as middlewares_base
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -34,14 +33,29 @@ class FlaskMiddleware(middlewares_base.BaseMiddleware):
 
         if RequiredResourceCommon.SKIP_AUTH in required_resources:
             LOGGER.info("Auth was skipped due to SKIP_AUTH flag in target view")
-            return None
+            return
+
+        if RequiredResourceCommon.ONLY_SERVICES_ALLOWED in required_resources:
+            LOGGER.info("Using service auth flow due to ONLY_SERVICES_ALLOWED flag in target view")
+            service_token_header = flask.request.headers.get(self._service_auth_header_key)
+
+            try:
+                self._service_auth(service_token_header)
+            except self.UnauthorizedError as exc:
+                LOGGER.warning("Service auth unauthorized: %s", exc.message)
+                raise werkzeug_exceptions.Unauthorized(description=exc.message) from exc
+            except self.ForbiddenError as exc:
+                LOGGER.warning("Service auth forbidden: %s", exc.message)
+                raise werkzeug_exceptions.Forbidden(description=exc.message) from exc
+
+            return
 
         user_access_token_header = flask.request.headers.get(self._user_access_header_key)
 
         try:
             auth_result = self._auth(user_access_token_header)
-        except self.Unauthorized as exc:
-            LOGGER.info(f"Unauthorized: {exc.message}")
+        except self.UnauthorizedError as exc:
+            LOGGER.info("Unauthorized: %s", exc.message)
             raise werkzeug_exceptions.Unauthorized(description=exc.message) from exc
 
         temp_rci = dl_api_commons_flask_rci.ReqCtxInfoMiddleware.get_temp_rci()
@@ -53,7 +67,7 @@ class FlaskMiddleware(middlewares_base.BaseMiddleware):
             )
         )
 
-        return None
+        return
 
 
 __all__ = [

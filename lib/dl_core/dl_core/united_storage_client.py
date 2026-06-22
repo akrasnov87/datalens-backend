@@ -1,9 +1,12 @@
 import abc
+from collections.abc import (
+    Generator,
+    Iterable,
+)
 from contextlib import contextmanager
 from datetime import (
     datetime,
     timedelta,
-    timezone,
 )
 from json.decoder import JSONDecodeError
 import logging
@@ -12,8 +15,6 @@ import time
 from typing import (
     Any,
     ClassVar,
-    Generator,
-    Iterable,
     NamedTuple,
     cast,
 )
@@ -30,30 +31,29 @@ from dl_api_commons.logging import RequestObfuscator
 from dl_api_commons.retrier.requests import RequestsPolicyRetrier
 from dl_api_commons.tracing import get_current_tracing_headers
 from dl_api_commons.utils import (
-    get_retriable_requests_session,
+    get_requests_session,
     stringify_dl_cookies,
     stringify_dl_headers,
 )
 import dl_auth
+from dl_constants import (
+    USEntryBranch,
+    USEntryMode,
+)
 from dl_constants.api_constants import (
     DLCookies,
     DLHeaders,
     DLHeadersCommon,
 )
 from dl_core.base_models import EntryLocation
-from dl_core.enums import (
-    USApiType,
-    USEntryBranch,
-    USEntryMode,
-)
+from dl_core.enums import USApiType
 import dl_core.exc as exc
 import dl_retrier
-
 
 LOGGER = logging.getLogger(__name__)
 
 
-class USClientHTTPExceptionWrapper(Exception):
+class USClientHTTPExceptionWrapperError(Exception):
     pass
 
 
@@ -174,6 +174,19 @@ class USAuthContextMaster(USAuthContextPrivateBase):
         }
 
 
+@attr.s(frozen=True, kw_only=True)
+class USAuthContextPrivateOSS(USAuthContextPrivateBase):
+    us_dynamic_master_token: str = attr.ib(repr=False)
+
+    def get_outbound_headers(self, include_tenancy: bool = True) -> dict[DLHeaders, str]:
+        outbound_headers: dict[DLHeaders, str] = {
+            DLHeadersCommon.US_DYNAMIC_MASTER_TOKEN: self.us_dynamic_master_token,
+        }
+        if self.us_master_token is not None:  # TODO: Remove after US migration to SA authorization DLPROJECTS-500
+            outbound_headers[DLHeadersCommon.US_MASTER_TOKEN] = self.us_master_token
+        return outbound_headers
+
+
 @attr.s(frozen=True)
 class USAuthContextNoAuth(USAuthContextBase):
     DEFAULT_TENANT = TenantCommon()
@@ -262,29 +275,25 @@ class UStorageClientBase:
         def json(self) -> dict:
             pass
 
-    ERROR_MAP: list[tuple[int, re.Pattern | None, type[exc.USReqException]]] = [
-        (400, re.compile("Validation error"), exc.USValidationException),
-        (400, None, exc.USBadRequestException),
-        (403, None, exc.USAccessDeniedException),
-        (403, re.compile("Workbook isolation interruption"), exc.USWorkbookIsolationInterruptionException),
-        (404, None, exc.USObjectNotFoundException),
-        (409, re.compile("The entry already exists"), exc.USAlreadyExistsException),
-        (409, re.compile("Incorrect entryId for embed"), exc.USIncorrectEntryIdForEmbed),
-        (409, None, exc.USIncorrectTenantIdException),
-        (423, None, exc.USLockUnacquiredException),
-        (451, None, exc.USReadOnlyModeEnabledException),
+    ERROR_MAP: tuple[tuple[int, re.Pattern | None, type[exc.USReqError]], ...] = (
+        (400, re.compile("Validation error"), exc.USValidationError),
+        (400, None, exc.USBadRequestError),
+        (403, None, exc.USAccessDeniedError),
+        (403, re.compile("Workbook isolation interruption"), exc.USWorkbookIsolationInterruptionError),
+        (404, None, exc.USObjectNotFoundError),
+        (409, re.compile("The entry already exists"), exc.USAlreadyExistsError),
+        (409, re.compile("Incorrect entryId for embed"), exc.USIncorrectEntryIdForEmbedError),
+        (409, None, exc.USIncorrectTenantIdError),
+        (423, None, exc.USLockUnacquiredError),
+        (451, None, exc.USReadOnlyModeEnabledError),
         (530, None, exc.USPermissionCheckError),
-    ]
-
-    RequestData = NamedTuple(
-        "RequestData",
-        [
-            ("method", str),
-            ("relative_url", str),
-            ("params", dict[str, str] | None),
-            ("json", dict | None),
-        ],
     )
+
+    class RequestData(NamedTuple):
+        method: str
+        relative_url: str
+        params: dict[str, str] | None
+        json: dict | None
 
     def __init__(
         self,
@@ -369,9 +378,6 @@ class UStorageClientBase:
 
     @staticmethod
     def parse_datetime(dt: str) -> datetime:
-        # TODO: remove after migrating to python 3.11 or above
-        if dt[-1] == "Z":
-            return datetime.fromisoformat(dt.removesuffix("Z")).replace(tzinfo=timezone.utc)
         return datetime.fromisoformat(dt)
 
     @staticmethod
@@ -390,7 +396,7 @@ class UStorageClientBase:
         prefix = self.prefix
         if audit_mode and prefix == USApiType.v1.value:
             prefix = USApiType.audit.value
-        return "/".join(map(lambda s: s.strip("/"), (self.host, prefix, relative_url)))
+        return "/".join(s.strip("/") for s in (self.host, prefix, relative_url))
 
     @staticmethod
     def _log_request_start(request_data: RequestData) -> None:
@@ -426,26 +432,27 @@ class UStorageClientBase:
             )
         try:
             response.raise_for_status()
-        except USClientHTTPExceptionWrapper as http_err_ex_wrapper:
+        except USClientHTTPExceptionWrapperError as http_err_ex_wrapper:
             http_err_ex = cast(Exception | None, http_err_ex_wrapper.__cause__)
 
             message: str | None = response.json().get("message")
             for status_code, error_regex, exc_cls in cls.ERROR_MAP:
-                if response.status_code == status_code:
-                    if error_regex is None or message is not None and error_regex.match(message):
-                        raise exc_cls(orig_exc=http_err_ex) from http_err_ex_wrapper
+                if response.status_code == status_code and (
+                    error_regex is None or (message is not None and error_regex.match(message))
+                ):
+                    raise exc_cls(orig_exc=http_err_ex) from http_err_ex_wrapper
 
-            raise exc.USReqException(orig_exc=http_err_ex) from http_err_ex_wrapper
+            raise exc.USReqError(orig_exc=http_err_ex) from http_err_ex_wrapper
 
         try:
             return response.json()
         except JSONDecodeError as ex:
             LOGGER.info("Got http status %s with invalid json %s from US", response.status_code, response.content)
-            raise exc.USInvalidResponse from ex
+            raise exc.USInvalidResponseError from ex
 
     def _raise_for_disabled_interactions(self) -> None:
         if self._disabled:
-            raise exc.USInteractionDisabled("Interaction with US is forbidden")
+            raise exc.USInteractionDisabledError("Interaction with US is forbidden")
 
     @contextmanager
     def interaction_disabled(self) -> Generator[None, None, None]:
@@ -467,7 +474,7 @@ class UStorageClientBase:
         annotation: dict[str, Any] | None = None,
         data: dict[str, Any] | None = None,
         type_: str | None = None,
-        hidden: bool | None = None,
+        hidden: bool = False,
         links: dict[str, Any] | None = None,
         mode: USEntryMode = USEntryMode.publish,
         unversioned_data: dict[str, Any] | None = None,
@@ -524,7 +531,7 @@ class UStorageClientBase:
 
         return cls.RequestData(
             method="get",
-            relative_url="/entries/{}".format(entry_id),
+            relative_url=f"/entries/{entry_id}",
             params=params,
             json=None,
         )
@@ -533,7 +540,7 @@ class UStorageClientBase:
     def _req_data_move_entry(cls, entry_id: str, destination: str) -> RequestData:
         return cls.RequestData(
             method="post",
-            relative_url="/entries/{}/move".format(entry_id),
+            relative_url=f"/entries/{entry_id}/move",
             params=None,
             json={"destination": destination},
         )
@@ -548,7 +555,7 @@ class UStorageClientBase:
         annotation: dict[str, Any] | None = None,
         mode: USEntryMode = USEntryMode.publish,
         lock: str | None = None,
-        hidden: bool | None = None,
+        hidden: bool = False,
         links: dict[str, Any] | None = None,
         update_revision: bool | None = None,
     ) -> RequestData:
@@ -574,7 +581,7 @@ class UStorageClientBase:
             json_data["annotation"] = annotation
         return cls.RequestData(
             method="post",
-            relative_url="/entries/{}".format(entry_id),
+            relative_url=f"/entries/{entry_id}",
             params=None,
             json=json_data,
         )
@@ -584,7 +591,7 @@ class UStorageClientBase:
         params = None
         if lock is not None:
             params = {"lockToken": lock}
-        return cls.RequestData(method="delete", relative_url="/entries/{}".format(entry_id), params=params, json=None)
+        return cls.RequestData(method="delete", relative_url=f"/entries/{entry_id}", params=params, json=None)
 
     @classmethod
     def _req_data_iter_entries(
@@ -600,14 +607,14 @@ class UStorageClientBase:
         created_at_from: float = 0,
         limit: int | None = None,
     ) -> RequestData:
-        req_params: dict[Any, Any] = dict(scope=scope, includeData=int(include_data))
+        req_params: dict[Any, Any] = {"scope": scope, "includeData": int(include_data)}
         if entry_type:
             req_params.update(type=entry_type)
         meta = meta or {}
         if meta:
-            req_params.update({"meta[{}]".format(k): v for k, v in meta.items()})
+            req_params.update({f"meta[{k}]": v for k, v in meta.items()})
         if creation_time:
-            req_params.update({"creationTime[{}]".format(k): v for k, v in creation_time.items()})
+            req_params.update({f"creationTime[{k}]": v for k, v in creation_time.items()})
         if ids:
             req_params["ids"] = ids
         if limit:
@@ -646,12 +653,12 @@ class UStorageClientBase:
         if force is not None:
             params.update(force=force)
 
-        return cls.RequestData(method="post", relative_url="/locks/{}".format(entry_id), params=None, json=params)
+        return cls.RequestData(method="post", relative_url=f"/locks/{entry_id}", params=None, json=params)
 
     @classmethod
     def _req_data_release_lock(cls, entry_id: str, lock: str) -> RequestData:
         return cls.RequestData(
-            method="delete", relative_url="/locks/{}".format(entry_id), params={"lockToken": lock}, json=None
+            method="delete", relative_url=f"/locks/{entry_id}", params={"lockToken": lock}, json=None
         )
 
     @classmethod
@@ -659,12 +666,12 @@ class UStorageClientBase:
         return cls.RequestData(
             method="get",
             relative_url="/navigation",
-            params=dict(
-                page=str(page_idx),
-                pageSize=str(page_size),
-                path=us_path,
-                includePermissionsInfo="false",
-            ),
+            params={
+                "page": str(page_idx),
+                "pageSize": str(page_size),
+                "path": us_path,
+                "includePermissionsInfo": "false",
+            },
             json=None,
         )
 
@@ -672,7 +679,7 @@ class UStorageClientBase:
     def _req_data_entry_revisions(cls, entry_id: str) -> RequestData:
         return cls.RequestData(
             method="get",
-            relative_url="/entries/{}/revisions".format(entry_id),
+            relative_url=f"/entries/{entry_id}/revisions",
             params=None,
             json=None,
         )
@@ -684,7 +691,7 @@ class UStorageClient(UStorageClientBase):
             self,
             request: requests.PreparedRequest,
             request_data: UStorageClientBase.RequestData,
-        ):
+        ) -> None:
             self.req = request
             self._request_data = request_data
 
@@ -705,7 +712,7 @@ class UStorageClient(UStorageClientBase):
             return self._request_data.json
 
     class ResponseAdapter(UStorageClientBase.ResponseAdapter):
-        def __init__(self, response: requests.Response, request_data: "UStorageClient.RequestData"):
+        def __init__(self, response: requests.Response, request_data: "UStorageClient.RequestData") -> None:
             self.resp = response
             self._req_adapter = UStorageClient.RequestAdapter(response.request, request_data)
 
@@ -732,7 +739,7 @@ class UStorageClient(UStorageClientBase):
             try:
                 self.resp.raise_for_status()
             except HTTPError as http_error:
-                raise USClientHTTPExceptionWrapper(str(http_error)) from http_error
+                raise USClientHTTPExceptionWrapperError(str(http_error)) from http_error
 
         def json(self) -> dict:
             return self.resp.json()
@@ -761,7 +768,7 @@ class UStorageClient(UStorageClientBase):
             context_rpc_authorization_id=context_rpc_authorization_id
         )
 
-        self._session = get_retriable_requests_session()
+        self._session = get_requests_session()
         self._session.headers.update(self._default_headers)
         self._session.cookies.update(self._cookies)
 
@@ -814,7 +821,7 @@ class UStorageClient(UStorageClientBase):
         data: dict[str, Any] | None = None,
         unversioned_data: dict[str, Any] | None = None,
         type_: str | None = None,
-        hidden: bool | None = None,
+        hidden: bool = False,
         links: dict[str, Any] | None = None,
         mode: USEntryMode = USEntryMode.publish,
         **kwargs: Any,
@@ -874,7 +881,7 @@ class UStorageClient(UStorageClientBase):
         meta: dict[str, str] | None = None,
         annotation: dict[str, Any] | None = None,
         lock: str | None = None,
-        hidden: bool | None = None,
+        hidden: bool = False,
         links: dict[str, Any] | None = None,
         update_revision: bool | None = None,
         mode: USEntryMode = USEntryMode.publish,
@@ -1008,7 +1015,7 @@ class UStorageClient(UStorageClientBase):
                 lock = resp["lockToken"]
                 LOGGER.info('Acquired lock "%s" for object "%s"', lock, entry_id)
                 return lock
-            except exc.USLockUnacquiredException:
+            except exc.USLockUnacquiredError:
                 if wait_timeout and time.time() - start_ts < wait_timeout:
                     time.sleep(0.25)
                 else:
@@ -1020,7 +1027,7 @@ class UStorageClient(UStorageClientBase):
                 self._req_data_release_lock(entry_id, lock=lock),
                 retry_policy_name="release_lock",
             )
-        except exc.USReqException:
+        except exc.USReqError:
             LOGGER.exception('Unable to release lock "%s"', lock)
 
     def get_entries_info_in_path(self, us_path: str) -> list[dict[str, Any]]:

@@ -1,9 +1,10 @@
+import builtins
 import logging
 from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
-    Type,
+    Self,
     TypeVar,
     cast,
 )
@@ -11,11 +12,9 @@ from typing import (
 import pydantic
 import pydantic._internal._model_construction as pydantic_model_construction
 import pydantic_core
-from typing_extensions import Self
 
 import dl_pydantic.base as base
 import dl_pydantic.exceptions as exceptions
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -42,8 +41,8 @@ def _merge_dict_keys(data: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(target, dict) or not isinstance(source, dict):
             raise ValueError("Can't merge non-dict")
 
-        target_keys = {key for key in target}
-        source_keys = {key for key in source}
+        target_keys = set(target)
+        source_keys = set(source)
 
         if target_keys & source_keys:
             raise ValueError(f"Can't merge duplicated keys: {target_keys & source_keys}")
@@ -54,13 +53,14 @@ def _merge_dict_keys(data: dict[str, Any]) -> dict[str, Any]:
 
 
 class TypedMeta(pydantic_model_construction.ModelMetaclass):
-    def __init__(cls, name: str, bases: tuple[type, ...], attrs: dict[str, Any]):
-        cls._classes: dict[str, type["TypedBaseModel"]] = {}
-        cls._unknown_class: type["TypedBaseModel"] | None = None
+    def __init__(self, name: str, bases: tuple[type, ...], attrs: dict[str, Any]) -> None:
+        self._classes: dict[str, type[TypedBaseModel]] = {}
+        self._unknown_class: type[TypedBaseModel] | None = None
+        self._unset_class: type[TypedBaseModel] | None = None
 
     @property
-    def classes(cls) -> dict[str, type["TypedBaseModel"]]:
-        return cls._classes
+    def classes(self) -> dict[str, type["TypedBaseModel"]]:
+        return self._classes
 
 
 class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
@@ -71,7 +71,7 @@ class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
     type: str
 
     @classmethod
-    def register(cls, name: str, class_: Type) -> None:  # noqa: UP006
+    def register(cls, name: str, class_: builtins.type) -> None:
         if name in cls._classes:
             if cls._classes[name] is class_:
                 LOGGER.warning("Class %s(type=%s) already registered: %s", cls.__name__, name, class_)
@@ -86,7 +86,7 @@ class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
         LOGGER.debug("Registered %s(type=%s): %s", cls.__name__, name, class_)
 
     @classmethod
-    def register_unknown(cls, class_: Type) -> None:  # noqa: UP006
+    def register_unknown(cls, class_: builtins.type) -> None:
         if cls._unknown_class is not None:
             raise ValueError("Unknown class already registered")
 
@@ -97,6 +97,17 @@ class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
         LOGGER.debug("Registered unknown for %s: %s", cls.__name__, class_)
 
     @classmethod
+    def register_unset(cls, class_: builtins.type) -> None:
+        if cls._unset_class is not None:
+            raise ValueError("Unset class already registered")
+
+        if not issubclass(class_, cls):
+            raise ValueError(f"Class '{class_}' must be subclass of {cls}")
+
+        cls._unset_class = class_
+        LOGGER.debug("Registered unset for %s: %s", cls.__name__, class_)
+
+    @classmethod
     def _prepare_data(cls, data: dict[str, Any]) -> dict[str, Any]:
         return data
 
@@ -104,7 +115,7 @@ class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
     def _get_class_name(cls, data: dict[str, Any]) -> str:
         type_key = cls.type_key()
         if type_key not in data:
-            raise ValueError(f"Data must contain '{type_key}' key")
+            raise exceptions.UnsetTypeError(f"Data must contain '{type_key}' key")
 
         data_type = data[type_key]
 
@@ -113,7 +124,7 @@ class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
             if registered_type.lower() == data_type_lower:
                 return registered_type
 
-        raise exceptions.UnknownTypeException(f"Unknown type: {data_type}")
+        raise exceptions.UnknownTypeError(f"Unknown type: {data_type}")
 
     @classmethod
     def factory(cls, data: Any) -> Self:
@@ -125,7 +136,11 @@ class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
 
         try:
             class_name = cls._get_class_name(data)
-        except exceptions.UnknownTypeException as exc:
+        except exceptions.UnsetTypeError as exc:
+            if cls._unset_class is None:
+                raise exc
+            class_ = cls._unset_class
+        except exceptions.UnknownTypeError as exc:
             if cls._unknown_class is None:
                 raise exc
             class_ = cls._unknown_class
@@ -167,7 +182,7 @@ class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
                 result[key] = value
                 continue
 
-            elif isinstance(value, dict):
+            if isinstance(value, dict):
                 if type_key in value:
                     raise ValueError(f"Data must not contain '{type_key}' key, dict key is already used as type")
                 value[type_key] = key
@@ -177,7 +192,7 @@ class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
 
             try:
                 result_cls = cls.factory(value)
-            except exceptions.UnknownTypeException:
+            except exceptions.UnknownTypeError:
                 LOGGER.error("Skipping unknown type '%s' in dict_with_type_key_factory for %s", key, cls.__name__)
                 continue
 
@@ -209,8 +224,7 @@ class TypedBaseModel(base.BaseModel, metaclass=TypedMeta):
         return cls.model_fields["type"].alias or "type"
 
 
-class TypedBaseSchema(TypedBaseModel, base.BaseSchema):
-    ...
+class TypedBaseSchema(TypedBaseModel, base.BaseSchema): ...
 
 
 TypedBaseSchemaT = TypeVar("TypedBaseSchemaT", bound=TypedBaseSchema)

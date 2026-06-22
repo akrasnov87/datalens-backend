@@ -1,6 +1,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import (
+    Callable,
+    Collection,
+    Generator,
+    Iterable,
+    Sequence,
+    Set,
+)
 from contextlib import contextmanager
 from functools import (
     partial,
@@ -9,20 +17,14 @@ from functools import (
 from itertools import chain
 import logging
 from typing import (
-    AbstractSet,
-    Callable,
-    Collection,
-    Generator,
-    Iterable,
-    Optional,
     Protocol,
-    Sequence,
-    Union,
     overload,
 )
 import uuid
 
-from dl_constants.enums import (
+from frozendict import frozendict
+
+from dl_constants import (
     AggregationFunction,
     BinaryJoinOperator,
     CalcMode,
@@ -117,7 +119,6 @@ from dl_query_processing.enums import ProcessingStage
 import dl_query_processing.exc
 from dl_utils.utils import enum_not_none
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -131,18 +132,20 @@ class FieldProcessingStageManager:
     """
 
     default_type_on_error = DEFAULT_DATA_TYPE
-    save_type_stages = {
-        ProcessingStage.substitution,
-        ProcessingStage.aggregation,
-        ProcessingStage.final,
-    }
+    save_type_stages = frozenset(
+        {
+            ProcessingStage.substitution,
+            ProcessingStage.aggregation,
+            ProcessingStage.final,
+        }
+    )
 
-    def __init__(self, columns: ColumnRegistry, inspect_env: InspectionEnvironment):
+    def __init__(self, columns: ColumnRegistry, inspect_env: InspectionEnvironment) -> None:
         self._columns = columns
         self._inspect_env = inspect_env
 
         self._errors: dict[str, dict[ProcessingStage, list[FormulaErrorCtx]]] = defaultdict(lambda: defaultdict(list))
-        self._exprs: dict[str, dict[ProcessingStage, Optional[formula_nodes.Formula]]] = defaultdict(
+        self._exprs: dict[str, dict[ProcessingStage, formula_nodes.Formula | None]] = defaultdict(
             lambda: defaultdict(lambda: None)
         )
         self._data_types: dict[str, dict[ProcessingStage, DataType]] = defaultdict(
@@ -171,7 +174,7 @@ class FieldProcessingStageManager:
     def get_errors(
         self,
         field: BIField,
-        stage: Union[ProcessingStage, Iterable[ProcessingStage], None] = None,
+        stage: ProcessingStage | Iterable[ProcessingStage] | None = None,
     ) -> list[FormulaErrorCtx]:
         """Return errors from cache for the given field (and type)."""
 
@@ -194,7 +197,7 @@ class FieldProcessingStageManager:
         if stage in self.save_type_stages:
             self._data_types[field.guid][stage] = self._get_formula_obj_data_type(formula_obj)
 
-    def get_result(self, field: BIField, stage: ProcessingStage) -> Optional[formula_nodes.Formula]:
+    def get_result(self, field: BIField, stage: ProcessingStage) -> formula_nodes.Formula | None:
         return self._exprs[field.guid][stage]
 
     def get_data_type(self, field: BIField, stage: ProcessingStage) -> DataType:
@@ -210,7 +213,7 @@ class FieldProcessingStageManager:
         if errors:
             raise dl_query_processing.exc.FormulaHandlingError(*errors, stage=stage, field=field)
 
-    def clear(self, field: BIField, stage: Optional[ProcessingStage] = None) -> None:
+    def clear(self, field: BIField, stage: ProcessingStage | None = None) -> None:
         """Clear error cache for the given field (and type)."""
 
         if stage is not None:
@@ -245,34 +248,37 @@ class FieldProcessingStageManager:
                     pass_on_errors = []
                 if pass_on_errors:
                     LOGGER.error(
-                        f"Formula handling errors found on stage {stage.name} "
-                        f"for field {field.title!r} ({field.guid}): "
-                        f"{[str(e) for e in pass_on_errors]}"
+                        "Formula handling errors found on stage %s for field %r (%s): %s",
+                        stage.name,
+                        field.title,
+                        field.guid,
+                        [str(e) for e in pass_on_errors],
                     )
                 raise dl_query_processing.exc.FormulaHandlingError(*pass_on_errors, stage=stage, field=field) from err
 
 
 class StageProcCallable(Protocol):
-    def __call__(self, field: BIField, collect_errors: bool = False) -> formula_nodes.Formula:
-        ...
+    def __call__(self, field: BIField, collect_errors: bool = False) -> formula_nodes.Formula: ...
 
 
-# https://github.com/python/typing/discussions/1040
-# and all of this just for the positional argument...
 class StageProcType(Protocol):
-    def __call__(_, self: FormulaCompiler, field: BIField, collect_errors: bool = False) -> formula_nodes.Formula:
-        ...
+    def __call__(
+        self,
+        compiler: FormulaCompiler,
+        /,
+        field: BIField,
+        collect_errors: bool = False,
+    ) -> formula_nodes.Formula: ...
 
     @overload
-    def __get__(self, obj: FormulaCompiler, objtype: type[FormulaCompiler] | None = None) -> StageProcCallable:
-        ...
+    def __get__(self, obj: FormulaCompiler, objtype: type[FormulaCompiler] | None = None) -> StageProcCallable: ...
 
     @overload
-    def __get__(self, obj: None, objtype: type[FormulaCompiler] | None = None) -> StageProcCallable:
-        ...
+    def __get__(self, obj: None, objtype: type[FormulaCompiler] | None = None) -> StageProcCallable: ...
 
-    def __get__(self, obj: FormulaCompiler | None, objtype: type[FormulaCompiler] | None = None) -> StageProcCallable:
-        ...
+    def __get__(
+        self, obj: FormulaCompiler | None, objtype: type[FormulaCompiler] | None = None
+    ) -> StageProcCallable: ...
 
 
 def implements_stage(stage: ProcessingStage) -> Callable[[StageProcType], StageProcType]:
@@ -286,7 +292,7 @@ def implements_stage(stage: ProcessingStage) -> Callable[[StageProcType], StageP
 
     def decorator(func: StageProcType) -> StageProcType:
         @wraps(func)
-        def wrapper(self: "FormulaCompiler", field: BIField, collect_errors: bool = False) -> formula_nodes.Formula:
+        def wrapper(self: FormulaCompiler, field: BIField, collect_errors: bool = False) -> formula_nodes.Formula:
             # First check the error cache
             if not collect_errors:
                 # Error collection is disabled, so we can just raise the first error we encounter
@@ -303,13 +309,13 @@ def implements_stage(stage: ProcessingStage) -> Callable[[StageProcType], StageP
                     try:
                         formula_obj = func(self, field, collect_errors)
                     except Exception:
-                        LOGGER.debug(f"Stage {stage.name} failed for field {field.title!r} ({field.guid})")
+                        LOGGER.debug("Stage %s failed for field %r (%s)", stage.name, field.title, field.guid)
                         raise
                 assert formula_obj is not None
                 self._stage_manager.set_result(formula_obj, field=field, stage=stage)
             return formula_obj
 
-        return wrapper
+        return wrapper  # type: ignore[return-value]  # 26.05.2026 mypy bump 1.20.2
 
     return decorator
 
@@ -345,22 +351,26 @@ _ALLOWED_PARAMETER_TYPES = {
 
 
 class FormulaCompiler:
-    _agg_functions = {
-        AggregationFunction.countunique: "countd",
-        AggregationFunction.count: "count",
-        AggregationFunction.sum: "sum",
-        AggregationFunction.avg: "avg",
-        AggregationFunction.max: "max",
-        AggregationFunction.min: "min",
-    }
-    _join_condition_operators = {
-        BinaryJoinOperator.eq: "_==",
-        BinaryJoinOperator.ne: "_!=",
-        BinaryJoinOperator.gt: ">",
-        BinaryJoinOperator.gte: ">=",
-        BinaryJoinOperator.lt: "<",
-        BinaryJoinOperator.lte: "<=",
-    }
+    _agg_functions = frozendict(
+        {
+            AggregationFunction.countunique: "countd",
+            AggregationFunction.count: "count",
+            AggregationFunction.sum: "sum",
+            AggregationFunction.avg: "avg",
+            AggregationFunction.max: "max",
+            AggregationFunction.min: "min",
+        }
+    )
+    _join_condition_operators = frozendict(
+        {
+            BinaryJoinOperator.eq: "_==",
+            BinaryJoinOperator.ne: "_!=",
+            BinaryJoinOperator.gt: ">",
+            BinaryJoinOperator.gte: ">=",
+            BinaryJoinOperator.lt: "<",
+            BinaryJoinOperator.lte: "<=",
+        }
+    )
 
     def __init__(
         self,
@@ -372,13 +382,13 @@ class FormulaCompiler:
         filter_ids: Collection[str] = (),
         order_by_specs: Sequence[OrderByFieldSpec] = (),
         mock_among_dimensions: bool = False,  # mock dimensions for AMONG clauses (in validation mode)
-        inspect_env: Optional[InspectionEnvironment] = None,
+        inspect_env: InspectionEnvironment | None = None,
         suppress_double_aggregations: bool = True,
         allow_nested_window_functions: bool = False,
         parameter_value_specs: Sequence[ParameterValueSpec] = (),
-        field_wrappers: Optional[dict[str, SelectWrapperSpec]] = None,
+        field_wrappers: dict[str, SelectWrapperSpec] | None = None,
         validate_aggregations: bool = True,
-    ):
+    ) -> None:
         self._fields = FieldRegistry()
         self._columns = columns
         self._formula_parser = formula_parser
@@ -432,7 +442,7 @@ class FormulaCompiler:
                 self.uncache_field(field=field)
         self._columns.unregister_avatar(avatar_id=avatar_id)
 
-    def uncache_field(self, field: BIField, visited_guids: AbstractSet[str] = frozenset()) -> None:
+    def uncache_field(self, field: BIField, visited_guids: Set[str] = frozenset()) -> None:
         """Clear all field-related caches and caches of dependent fields too"""
 
         if field.guid in visited_guids:
@@ -484,7 +494,7 @@ class FormulaCompiler:
             try:
                 av_column = self._columns.get_avatar_column(avatar_id=avatar_id, name=field.source)
             except formula_exc.FormulaError:
-                LOGGER.warning(f"Unknown column {field.source} for avatar {avatar_id}")
+                LOGGER.warning("Unknown column %s for avatar %s", field.source, avatar_id)
             else:
                 if av_column.column.has_auto_aggregation:
                     # Better to check this property in the column, than in the field
@@ -523,7 +533,7 @@ class FormulaCompiler:
         self,
         field: BIField,
         collect_errors: bool = False,
-    ) -> tuple[Optional[formula_nodes.Formula], list[FormulaErrorCtx]]:
+    ) -> tuple[formula_nodes.Formula | None, list[FormulaErrorCtx]]:
         """Attempt to parse formula. If `collect_errors`"""
 
         formula = field.formula
@@ -546,14 +556,11 @@ class FormulaCompiler:
     def _is_field_recursive(self, field: BIField) -> bool:
         """Check whether field is recursive or not"""
 
-        def _has_recursion(for_guid: str, visited_guids: AbstractSet[str] = frozenset()) -> bool:
+        def _has_recursion(for_guid: str, visited_guids: Set[str] = frozenset()) -> bool:
             if for_guid in visited_guids:
                 return True
             visited_guids |= frozenset([for_guid])
-            for child in self._field_dependencies[for_guid]:
-                if _has_recursion(child, visited_guids):
-                    return True
-            return False
+            return any(_has_recursion(child, visited_guids) for child in self._field_dependencies[for_guid])
 
         return _has_recursion(field.guid)
 
@@ -642,8 +649,7 @@ class FormulaCompiler:
 
             to_substitute[field_node_idx] = sub_node
 
-        formula_obj = formula_obj.substitute_batch(to_substitute)
-        return formula_obj
+        return formula_obj.substitute_batch(to_substitute)
 
     def _generate_formula_obj_for_formula_field(
         self,
@@ -732,9 +738,10 @@ class FormulaCompiler:
         func_list = used_func_calls(formula_obj)
         required_dims: list[formula_nodes.FormulaItem] = []
         for func in func_list:
-            if isinstance(func, formula_nodes.WindowFuncCall):
-                if isinstance(func.grouping, formula_nodes.WindowGroupingAmong):
-                    required_dims.extend(func.grouping.dim_list)
+            if isinstance(func, formula_nodes.WindowFuncCall) and isinstance(
+                func.grouping, formula_nodes.WindowGroupingAmong
+            ):
+                required_dims.extend(func.grouping.dim_list)
 
         return required_dims
 
@@ -767,9 +774,7 @@ class FormulaCompiler:
 
         # Only measures can contain BFB clauses
         title_id_map = {f.title: f.guid for f in self._fields}
-        formula_obj = apply_mutations(formula_obj, mutations=[RemapBfbMutation(name_mapping=title_id_map)])
-
-        return formula_obj
+        return apply_mutations(formula_obj, mutations=[RemapBfbMutation(name_mapping=title_id_map)])
 
     def _apply_function_by_name(self, formula_obj: formula_nodes.Formula, func_name: str) -> formula_nodes.Formula:
         """Apply a single-argument function to given expression"""
@@ -829,7 +834,7 @@ class FormulaCompiler:
         self,
         formula_obj: formula_nodes.Formula,
         current_dtype: DataType,
-        cast: Optional[UserDataType],
+        cast: UserDataType | None,
     ) -> formula_nodes.Formula:
         """Apply a type cast to given expression"""
 
@@ -843,7 +848,7 @@ class FormulaCompiler:
         self,
         formula_obj: formula_nodes.Formula,
         current_dtype: DataType,
-        cast: Optional[UserDataType],
+        cast: UserDataType | None,
     ) -> formula_nodes.Formula:
         return self._apply_cast(formula_obj=formula_obj, current_dtype=current_dtype, cast=cast)
 
@@ -963,18 +968,20 @@ class FormulaCompiler:
         try:
             self._compile_field_formula(field, collect_errors=True)
         except formula_exc.FormulaError:
-            pass  # ignore errors
+            # Errors are collected via collect_errors=True and surfaced through get_field_errors;
+            # this preparation step itself is best-effort.
+            LOGGER.info("Formula preparation failed for field %s, ignoring", field.guid)
 
     def get_field_validity(self, field: BIField) -> bool:
         """Return boolean flag indicating whether the field is valid."""
         return not self.get_field_errors(field)
 
-    def get_field_initial_data_type(self, field: BIField) -> Optional[UserDataType]:
+    def get_field_initial_data_type(self, field: BIField) -> UserDataType | None:
         """Return automatically determined data type of given field before cast and aggregation"""
         self._require_field_formula_preparation(field)
         return self._stage_manager.get_user_type(field=field, stage=ProcessingStage.substitution)
 
-    def get_field_final_data_type(self, field: BIField) -> Optional[UserDataType]:
+    def get_field_final_data_type(self, field: BIField) -> UserDataType | None:
         """
         Return automatically determined user data type (``UserDataType``)
         of given field after cast and aggregation
@@ -982,7 +989,7 @@ class FormulaCompiler:
         self._require_field_formula_preparation(field)
         return self._stage_manager.get_user_type(field=field, stage=ProcessingStage.aggregation)
 
-    def get_field_final_formula_data_type(self, field: BIField) -> Optional[DataType]:
+    def get_field_final_formula_data_type(self, field: BIField) -> DataType | None:
         """
         Return automatically determined formula data type (``DataType``)
         of given field after cast and aggregation
@@ -1043,7 +1050,7 @@ class FormulaCompiler:
                 raise ValueError(f"Invalid part calc_mode {part.calc_mode}")
 
             # JOINs over aggregated fields are not supported yet
-            if new_field and field.has_auto_aggregation or not new_field and field.type == FieldType.MEASURE:
+            if (new_field and field.has_auto_aggregation) or (not new_field and field.type == FieldType.MEASURE):
                 raise dl_query_processing.exc.DatasetError("Joining over aggregated expressions is not supported")
 
             return field
@@ -1080,11 +1087,11 @@ class FormulaCompiler:
             result = formula_nodes.Binary.make(name="and", left=result, right=compile_condition(condition=condition))
         formula_obj = formula_nodes.Formula.make(expr=result)
 
-        left_avatar_id: Optional[AvatarId] = relation.left_avatar_id
+        left_avatar_id: AvatarId | None = relation.left_avatar_id
         if relation.managed_by == ManagedBy.feature:
             left_avatar_id = None
 
-        formula_info = CompiledJoinOnFormulaInfo(
+        return CompiledJoinOnFormulaInfo(
             formula_obj=formula_obj,
             avatar_ids=self._columns.get_used_avatar_ids_for_formula_obj(formula_obj),
             original_field_id=None,
@@ -1093,22 +1100,20 @@ class FormulaCompiler:
             join_type=relation.join_type,
             alias=None,
         )
-        return formula_info
 
     def compile_field_formula(
         self,
         field: BIField,
         collect_errors: bool = False,
-        original_field_id: Optional[str] = None,
+        original_field_id: str | None = None,
     ) -> CompiledFormulaInfo:
         formula_obj = self._compile_field_formula(field=field, collect_errors=collect_errors)
-        formula_info = CompiledFormulaInfo(
+        return CompiledFormulaInfo(
             formula_obj=formula_obj,
             avatar_ids=self._columns.get_used_avatar_ids_for_formula_obj(formula_obj),
             alias=field.guid,
             original_field_id=original_field_id or field.guid,
         )
-        return formula_info
 
     def make_formula_field(self, formula: str) -> BIField:
         field = BIField.make(
@@ -1145,18 +1150,16 @@ class FormulaCompiler:
     def compile_text_formula(self, formula: str, collect_errors: bool = False) -> CompiledFormulaInfo:
         field = self.make_formula_field(formula=formula)
         formula_obj = self._compile_field_formula(field=field, collect_errors=collect_errors)
-        formula_info = CompiledFormulaInfo(
+        return CompiledFormulaInfo(
             formula_obj=formula_obj,
             avatar_ids=self._columns.get_used_avatar_ids_for_formula_obj(formula_obj),
             alias=field.guid,
             original_field_id=None,
         )
-        return formula_info
 
     def get_formula_errors(self, formula: str) -> list[FormulaErrorCtx]:
         field = self.make_formula_field(formula=formula)
-        errors = self.get_field_errors(field)
-        return errors
+        return self.get_field_errors(field)
 
     def field_has_auto_aggregation(self, field: BIField) -> bool:
         try:

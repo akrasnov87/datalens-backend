@@ -3,7 +3,6 @@ import dl_formula.definitions.operators_unary as base
 
 from dl_connector_snowflake.formula.constants import SnowFlakeDialect as D
 
-
 V = TranslationVariant.make
 
 
@@ -14,7 +13,7 @@ DEFINITIONS_UNARY = [
     base.UnaryIsFalseDateTime.for_dialect(D.SNOWFLAKE),
     base.UnaryIsFalseBoolean(
         variants=[
-            V(D.SNOWFLAKE, lambda x: x == False),  # noqa: E712
+            V(D.SNOWFLAKE, lambda x: x == False),
         ]
     ),
     # istrue
@@ -23,7 +22,7 @@ DEFINITIONS_UNARY = [
     base.UnaryIsTrueDateTime.for_dialect(D.SNOWFLAKE),
     base.UnaryIsTrueBoolean(
         variants=[
-            V(D.SNOWFLAKE, lambda x: x == True),  # noqa: E712
+            V(D.SNOWFLAKE, lambda x: x == True),
         ]
     ),
     # neg

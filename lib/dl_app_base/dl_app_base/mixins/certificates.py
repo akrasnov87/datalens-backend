@@ -1,6 +1,5 @@
 import logging
 import ssl
-from typing import Generic
 
 import pydantic
 
@@ -8,7 +7,6 @@ import dl_app_base.base as base
 import dl_app_base.singleton as singleton
 import dl_configs
 import dl_settings
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -21,13 +19,11 @@ class CertificatesAppSettingsMixin(base.BaseAppSettings):
     CERTIFICATES: CertificatesSettings = pydantic.Field(default_factory=CertificatesSettings)
 
 
-class CertificatesAppMixin(base.BaseApp):
-    ...
+class CertificatesAppMixin(base.BaseApp): ...
 
 
-class CertificatesAppFactoryMixin(
-    base.BaseAppFactory[base.AppType],
-    Generic[base.AppType],
+class CertificatesAppFactoryMixin[AppType: base.BaseApp](
+    base.BaseAppFactory[AppType],
 ):
     settings: CertificatesAppSettingsMixin
 

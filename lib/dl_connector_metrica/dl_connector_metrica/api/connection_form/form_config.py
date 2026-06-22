@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import abc
-from typing import (
-    ClassVar,
-    Optional,
-)
+from typing import ClassVar
 
 from dl_api_commons.base_models import TenantDef
 from dl_api_connector.form_config.models.api_schema import (
@@ -21,7 +18,12 @@ from dl_api_connector.form_config.models.common import (
     CommonFieldName,
     OAuthApplication,
 )
-import dl_api_connector.form_config.models.rows as C
+from dl_api_connector.form_config.models.rows import (
+    CustomizableRow,
+    InputRowItem,
+    LabelRowItem,
+    OAuthTokenRow,
+)
 from dl_api_connector.form_config.models.rows.base import FormRow
 from dl_api_connector.form_config.models.shortcuts.rows import RowConstructor
 from dl_core.connectors.settings.base import ConnectorSettings
@@ -59,7 +61,7 @@ class MetricaLikeBaseFormFactory(ConnectionFormFactory, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def _counter_row(self, manual_input: bool, connector_settings: ConnectorSettings) -> CounterRow | C.CustomizableRow:
+    def _counter_row(self, manual_input: bool, connector_settings: ConnectorSettings) -> CounterRow | CustomizableRow:
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -76,14 +78,14 @@ class MetricaLikeBaseFormFactory(ConnectionFormFactory, metaclass=abc.ABCMeta):
 
     def get_form_config(
         self,
-        connector_settings: Optional[ConnectorSettings],
-        tenant: Optional[TenantDef],
+        connector_settings: ConnectorSettings | None,
+        tenant: TenantDef | None,
     ) -> ConnectionForm:
         assert connector_settings is not None
         rc = RowConstructor(localizer=self._localizer)
 
         oauth_token_row = (
-            C.OAuthTokenRow(
+            OAuthTokenRow(
                 name=CommonFieldName.token,
                 fake_value="******" if self.mode == ConnectionFormMode.edit else None,
                 application=self.oauth_application,
@@ -157,17 +159,17 @@ class MetricaAPIConnectionFormFactory(MetricaLikeBaseFormFactory):
 
     def _counter_row(
         self, manual_input: bool, connector_settings: ConnectorSettings
-    ) -> MetricaCounterRowItem | C.CustomizableRow:
+    ) -> MetricaCounterRowItem | CustomizableRow:
         return (
             MetricaCounterRowItem(
                 name=MetricaFieldName.counter_id,
                 allow_manual_input=manual_input,
             )
             if not self._is_backend_driven_form(connector_settings)
-            else C.CustomizableRow(
+            else CustomizableRow(
                 items=[
-                    C.LabelRowItem(text=self._localizer.translate(Translatable("field_counter-id-metrica"))),
-                    C.InputRowItem(
+                    LabelRowItem(text=self._localizer.translate(Translatable("field_counter-id-metrica"))),
+                    InputRowItem(
                         name=MetricaFieldName.counter_id,
                         width="l",
                         placeholder=self._localizer.translate(Translatable("placeholder_counter-id-metrica")),
@@ -198,17 +200,17 @@ class AppMetricaAPIConnectionFormFactory(MetricaLikeBaseFormFactory):
 
     def _counter_row(
         self, manual_input: bool, connector_settings: ConnectorSettings
-    ) -> AppMetricaCounterRowItem | C.CustomizableRow:
+    ) -> AppMetricaCounterRowItem | CustomizableRow:
         return (
             AppMetricaCounterRowItem(
                 name=MetricaFieldName.counter_id,
                 allow_manual_input=manual_input,
             )
             if not self._is_backend_driven_form(connector_settings)
-            else C.CustomizableRow(
+            else CustomizableRow(
                 items=[
-                    C.LabelRowItem(text=self._localizer.translate(Translatable("field_counter-id-appmetrica"))),
-                    C.InputRowItem(
+                    LabelRowItem(text=self._localizer.translate(Translatable("field_counter-id-appmetrica"))),
+                    InputRowItem(
                         name=MetricaFieldName.counter_id,
                         width="l",
                         placeholder=self._localizer.translate(Translatable("placeholder_counter-id-appmetrica")),

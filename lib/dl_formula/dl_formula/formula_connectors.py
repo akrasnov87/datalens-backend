@@ -1,7 +1,4 @@
-from typing import (
-    Collection,
-    Optional,
-)
+from collections.abc import Collection
 
 import attr
 
@@ -9,7 +6,6 @@ import dl_formula as package
 from dl_formula.connectors.base.connector import FormulaConnector
 from dl_formula.connectors.registration import CONN_REG_FORMULA
 from dl_utils.entrypoints import EntrypointClassManager
-
 
 _CONNECTOR_EP_GROUP = f"{package.__name__}.connectors"
 
@@ -19,7 +15,7 @@ class FormulaConnectorEntrypointManager(EntrypointClassManager[FormulaConnector]
     entrypoint_group_name = attr.ib(init=False, default=_CONNECTOR_EP_GROUP)
 
 
-def _get_all_ep_connectors(ep_filter: Optional[Collection[str]] = None) -> dict[str, type[FormulaConnector]]:
+def _get_all_ep_connectors(ep_filter: Collection[str] | None = None) -> dict[str, type[FormulaConnector]]:
     ep_mgr = FormulaConnectorEntrypointManager()
     return ep_mgr.get_all_ep_classes(ep_filter)
 
@@ -28,6 +24,6 @@ def load_all_connectors() -> None:
     _get_all_ep_connectors()
 
 
-def register_all_connectors(connector_ep_names: Optional[Collection[str]] = None) -> None:
+def register_all_connectors(connector_ep_names: Collection[str] | None = None) -> None:
     for _ep_name, connector_cls in sorted(_get_all_ep_connectors(connector_ep_names).items()):
         CONN_REG_FORMULA.register_connector(connector_cls)

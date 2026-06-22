@@ -1,7 +1,4 @@
-from typing import (
-    Optional,
-    Sequence,
-)
+from collections.abc import Sequence
 
 import attr
 from sqlalchemy.sql.selectable import Select
@@ -19,7 +16,7 @@ class TableReference:
 @attr.s
 class FormulaContext:
     formula: nodes.Formula = attr.ib(kw_only=True)
-    alias: Optional[str] = attr.ib(kw_only=True)
+    alias: str | None = attr.ib(kw_only=True)
 
 
 @attr.s

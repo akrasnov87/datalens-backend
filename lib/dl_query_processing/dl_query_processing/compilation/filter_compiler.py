@@ -1,18 +1,17 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import datetime
 import logging
 from typing import (
     Any,
-    Callable,
     ClassVar,
-    Optional,
+    Self,
 )
 
 import attr
-from typing_extensions import Self
 
-from dl_constants.enums import WhereClauseOperation
+from dl_constants import WhereClauseOperation
 from dl_core.fields import BIField
 from dl_formula.core.datatype import DataType
 import dl_formula.core.nodes as formula_nodes
@@ -33,7 +32,6 @@ from dl_query_processing.compilation.specs import (
 )
 import dl_query_processing.exc
 from dl_query_processing.utils.datetime import parse_datetime
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -59,7 +57,7 @@ ARRAY_LEN_OPS = {
 
 @attr.s(frozen=True)
 class FilterDefinition:
-    arg_cnt: Optional[int] = attr.ib(kw_only=True)
+    arg_cnt: int | None = attr.ib(kw_only=True)
     callable: Callable[..., formula_nodes.FormulaItem] = attr.ib(kw_only=True)
 
 
@@ -75,7 +73,7 @@ class FilterParams:
     data_type: DataType
     field_cast_type: DataType
     arg_cast_type: DataType
-    filter_args: Optional[list] = None
+    filter_args: list | None = None
 
     def clone(self, **updates: Any) -> Self:
         """Convenience method so that callers don't need to know about `attr`"""
@@ -148,15 +146,15 @@ class FilterFormulaCompiler:
         self,
         field: BIField,
         operation: WhereClauseOperation,
-        filter_args: Optional[list] = None,
-        original_field_id: Optional[str] = None,
+        filter_args: list | None = None,
+        original_field_id: str | None = None,
         anonymous: bool = False,
     ) -> CompiledFormulaInfo:
         field_formula_obj = self._formula_compiler.compile_field_formula(field, collect_errors=False).formula_obj
 
         data_type = self._formula_compiler.get_field_final_formula_data_type(field=field)
         assert data_type is not None
-        LOGGER.info(f"Filtered field {field.title!r} has data type {data_type.name} and is a {field.type.name}")
+        LOGGER.info("Filtered field %r has data type %s and is a %s", field.title, data_type.name, field.type.name)
 
         filter_params = FilterParams(
             field=field,
@@ -176,7 +174,11 @@ class FilterFormulaCompiler:
         arg_cast_type = mangled_filter_params.arg_cast_type
 
         LOGGER.info(
-            f"Will cast field {field.title!r} to {field_cast_type.name} " f"and {filter_args!r} to {arg_cast_type.name}"
+            "Will cast field %r to %s and %r to %s",
+            field.title,
+            field_cast_type.name,
+            filter_args,
+            arg_cast_type.name,
         )
         if field_cast_type != data_type:
             field_formula_obj = self._formula_compiler.apply_cast_to_formula(
@@ -233,18 +235,17 @@ class FilterFormulaCompiler:
         if anonymous:
             original_field_id = None
 
-        formula_info = CompiledFormulaInfo(
+        return CompiledFormulaInfo(
             formula_obj=formula_obj,
             avatar_ids=self._formula_compiler._columns.get_used_avatar_ids_for_formula_obj(formula_obj),  # FIXME
             original_field_id=original_field_id,
             alias=None,
         )
-        return formula_info
 
     def compile_filter_formula(
         self,
         filter_spec: FilterFieldSpec,
-        original_field_id: Optional[str] = None,
+        original_field_id: str | None = None,
     ) -> CompiledFormulaInfo:
         """
         Prepare a filter expression for given ``field_id`` using given filter ``operation``.
@@ -267,7 +268,7 @@ class FilterFormulaCompiler:
     def compile_source_column_filter_formula(
         self,
         source_column_filter_spec: FilterSourceColumnSpec,
-        original_field_id: Optional[str] = None,
+        original_field_id: str | None = None,
     ) -> CompiledFormulaInfo:
         """
         Prepare a formula based on a source column filter spec
@@ -399,5 +400,4 @@ class MainFilterFormulaCompiler(FilterFormulaCompiler):
     def _custom_filter_cast(self, filter_params: FilterParams) -> FilterParams:
         filter_params = self._mangle_containment_filter(filter_params)
         filter_params = self._mangle_array_filter(filter_params)
-        filter_params = self._mangle_date_filter(filter_params)
-        return filter_params
+        return self._mangle_date_filter(filter_params)

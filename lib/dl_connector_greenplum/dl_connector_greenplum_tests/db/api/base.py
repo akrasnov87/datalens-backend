@@ -6,7 +6,7 @@ from dl_api_lib_testing.configuration import ApiTestEnvironmentConfiguration
 from dl_api_lib_testing.connection_base import ConnectionTestBase
 from dl_api_lib_testing.data_api_base import StandardizedDataApiTestBase
 from dl_api_lib_testing.dataset_base import DatasetTestBase
-from dl_constants.enums import RawSQLLevel
+from dl_constants import RawSQLLevel
 from dl_core_testing.database import DbTable
 from dl_core_testing.testcases.service_base import ServiceFixtureTextClass
 
@@ -75,13 +75,13 @@ class GP7DashSQLConnectionTest(GreenplumDashSQLConnectionTestMixin, GP7Connectio
 class GreenplumDatasetTestBaseMixin(DatasetTestBase):
     @pytest.fixture(scope="class")
     def dataset_params(self, sample_table: DbTable) -> dict:
-        return dict(
-            source_type=SOURCE_TYPE_GP_TABLE.name,
-            parameters=dict(
-                db_name=sample_table.db.name,
-                table_name=sample_table.name,
-            ),
-        )
+        return {
+            "source_type": SOURCE_TYPE_GP_TABLE.name,
+            "parameters": {
+                "db_name": sample_table.db.name,
+                "table_name": sample_table.name,
+            },
+        }
 
 
 class GP6DatasetTestBase(GP6ConnectionTestBase, GreenplumDatasetTestBaseMixin):

@@ -1,9 +1,6 @@
+from collections.abc import Sequence
 import logging
-from typing import (
-    ClassVar,
-    Optional,
-    Sequence,
-)
+from typing import ClassVar
 
 import attr
 
@@ -16,7 +13,6 @@ from dl_query_processing.multi_query.tools import (
     build_requirement_subtree,
 )
 from dl_query_processing.utils.name_gen import PrefixedIdGen
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -51,7 +47,7 @@ class SplitterMultiQueryMutator(MultiQueryMutatorBase):
 
                 # Iterate over the whole multi-query object each time
                 # because we don't know, how its structure has been changed
-                multi_query_patch: Optional[CompiledMultiQueryPatch] = None
+                multi_query_patch: CompiledMultiQueryPatch | None = None
                 for query in multi_query.iter_queries():
                     # Skip queries that have already been handled
                     if query.id in skip_queries:

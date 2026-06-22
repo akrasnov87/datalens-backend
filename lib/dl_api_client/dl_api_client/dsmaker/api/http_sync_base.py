@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import Mapping
 from http import HTTPStatus
 import json
 import time
-from typing import (
-    Mapping,
-    Optional,
-)
 
 import attr
 
@@ -20,7 +17,7 @@ from dl_api_client.dsmaker.primitives import Dataset
 class ClientResponse:
     status_code: int = attr.ib(kw_only=True)
     data: bytes = attr.ib(kw_only=True)
-    _json: Optional[dict] = attr.ib(kw_only=True)
+    _json: dict | None = attr.ib(kw_only=True)
 
     @property
     def json(self) -> dict:
@@ -35,12 +32,12 @@ class SyncHttpClientBase(abc.ABC):
         url: str,
         method: str,
         headers: dict,
-        data: Optional[str] = None,
-        content_type: Optional[str] = None,
+        data: str | None = None,
+        content_type: str | None = None,
     ) -> ClientResponse:
         raise NotImplementedError
 
-    def _strtict_dict(self, d: Optional[dict]) -> dict:
+    def _strtict_dict(self, d: dict | None) -> dict:
         if d is None:
             d = {}
         assert d is not None
@@ -49,9 +46,9 @@ class SyncHttpClientBase(abc.ABC):
     def post(
         self,
         url: str,
-        headers: Optional[dict] = None,
-        data: Optional[str] = None,
-        content_type: Optional[str] = None,
+        headers: dict | None = None,
+        data: str | None = None,
+        content_type: str | None = None,
     ) -> ClientResponse:
         return self.open(
             url=url,
@@ -64,9 +61,9 @@ class SyncHttpClientBase(abc.ABC):
     def put(
         self,
         url: str,
-        headers: Optional[dict] = None,
-        data: Optional[str] = None,
-        content_type: Optional[str] = None,
+        headers: dict | None = None,
+        data: str | None = None,
+        content_type: str | None = None,
     ) -> ClientResponse:
         return self.open(
             url=url,
@@ -76,10 +73,10 @@ class SyncHttpClientBase(abc.ABC):
             content_type=content_type,
         )
 
-    def get(self, url: str, headers: Optional[dict] = None) -> ClientResponse:
+    def get(self, url: str, headers: dict | None = None) -> ClientResponse:
         return self.open(url=url, method="get", headers=self._strtict_dict(headers))
 
-    def delete(self, url: str, headers: Optional[dict] = None) -> ClientResponse:
+    def delete(self, url: str, headers: dict | None = None) -> ClientResponse:
         return self.open(url=url, method="delete", headers=self._strtict_dict(headers))
 
 
@@ -95,12 +92,12 @@ class SyncHttpApiBase(ApiBase):
         self,
         url: str,
         method: str,
-        data: Optional[dict] = None,
-        headers: Optional[dict] = None,
-        lock_timeout: int = None,  # type: ignore  # 2024-01-24 # TODO: Incompatible default for argument "lock_timeout" (default has type "None", argument has type "int")  [assignment]
+        data: dict | None = None,
+        headers: dict | None = None,
+        lock_timeout: int | None = None,
     ) -> ClientResponse:
-        data_str: Optional[str] = None
-        content_type: Optional[str] = None
+        data_str: str | None = None
+        content_type: str | None = None
         if method not in ("get", "delete") and data is not None:
             content_type = "application/json"
             data_str = json.dumps(data)

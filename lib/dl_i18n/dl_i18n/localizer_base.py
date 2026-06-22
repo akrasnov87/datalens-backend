@@ -1,18 +1,14 @@
 from collections import defaultdict
+from collections.abc import Iterable
 import gettext
 import logging
-from typing import (
-    Iterable,
-    Optional,
-)
 
 import attr
 
 from dl_i18n.exc import (
-    UnknownDomain,
-    UnknownLocale,
+    UnknownDomainError,
+    UnknownLocaleError,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -51,30 +47,30 @@ class _GNULocalizer:
 
 
 class Localizer:
-    def __init__(self, localizers: Iterable[_GNULocalizer]):
+    def __init__(self, localizers: Iterable[_GNULocalizer]) -> None:
         self._localizers = {}
         for localizer in localizers:
             self._localizers[localizer.domain] = localizer
 
     def translate(self, message: Translatable) -> str:
         if message.domain not in self._localizers:
-            raise UnknownDomain(f"Unknown domain {message.domain}")
+            raise UnknownDomainError(f"Unknown domain {message.domain}")
         return self._localizers[message.domain].translate(message)
 
 
 class LocalizerFactory:
-    def __init__(self, localizers: Iterable[_GNULocalizer]):
+    def __init__(self, localizers: Iterable[_GNULocalizer]) -> None:
         self._localizers: dict[str, list[_GNULocalizer]] = defaultdict(list)
         for localizer in localizers:
             self._localizers[localizer.locale].append(localizer)
 
-    def get_for_locale(self, locale: str, fallback: Optional[Localizer] = None) -> Localizer:
+    def get_for_locale(self, locale: str, fallback: Localizer | None = None) -> Localizer:
         localizers = self._localizers.get(locale)
         if localizers is None:
             LOGGER.info("Unknown locale %s", locale)
             if fallback:
                 return fallback
-            raise UnknownLocale(f"Unknown locale {locale}")
+            raise UnknownLocaleError(f"Unknown locale {locale}")
         return Localizer(localizers)
 
 
@@ -94,7 +90,7 @@ class LocalizerLoader:
                 )
                 assert isinstance(gnu_localizer, gettext.GNUTranslations)
             except FileNotFoundError as e:
-                raise UnknownDomain(f"Unknown domain {config.domain}") from e
+                raise UnknownDomainError(f"Unknown domain {config.domain}") from e
             localizers.append(
                 _GNULocalizer(
                     domain=config.domain,

@@ -1,14 +1,11 @@
 # Commented due to attr.resolve_types() does not work with classes declared in non-global context
 # from __future__ import annotations
+from collections.abc import Callable
 import enum
 import json
 from os import path
 import tempfile
-from typing import (
-    Any,
-    Callable,
-    Optional,
-)
+from typing import Any
 
 import attr
 import pytest
@@ -17,7 +14,7 @@ import shortuuid
 from dl_configs.settings_loaders.common import SDict
 from dl_configs.settings_loaders.fallback_cfg_resolver import ConstantFallbackConfigResolver
 from dl_configs.settings_loaders.loader_env import (
-    ConfigFieldMissing,
+    ConfigFieldMissingError,
     EnvSettingsLoader,
 )
 from dl_configs.settings_loaders.meta_definition import (
@@ -30,7 +27,7 @@ from dl_configs.settings_loaders.settings_obj_base import SettingsBase
 def load_settings(
     env: SDict,
     settings_type: type[SettingsBase],
-    key_prefix: Optional[str] = None,
+    key_prefix: str | None = None,
     fallback_env: Any = None,
 ) -> Any:
     fallback_cfg_resolver = ConstantFallbackConfigResolver(fallback_env)
@@ -45,7 +42,7 @@ def load_settings(
 def perform_loader_env_check(
     env: SDict,
     expected_settings: Any,
-    key_prefix: Optional[str] = None,
+    key_prefix: str | None = None,
     fallback_env: Any = None,
 ) -> None:
     actual_settings = load_settings(
@@ -74,18 +71,18 @@ def test_simple_scalars_loading():
 
     perform_loader_env_check(
         key_prefix="DL",
-        env=dict(
-            DL_A="123",
-            DL_B="abc",
-            DL_C="1.2",
-            DL_BOOL_0="0",
-            DL_BOOL_1="1",
-            DL_BOOL_PY_TRUE="True",
-            DL_BOOL_PY_FALSE="False",
-            DL_BOOL_TRUE="true",
-            DL_BOOL_FALSE="false",
-            DL_Z="""{"a": "b"}""",
-        ),
+        env={
+            "DL_A": "123",
+            "DL_B": "abc",
+            "DL_C": "1.2",
+            "DL_BOOL_0": "0",
+            "DL_BOOL_1": "1",
+            "DL_BOOL_PY_TRUE": "True",
+            "DL_BOOL_PY_FALSE": "False",
+            "DL_BOOL_TRUE": "true",
+            "DL_BOOL_FALSE": "false",
+            "DL_Z": """{"a": "b"}""",
+        },
         expected_settings=SomeSettings(
             a=123,
             b="abc",
@@ -96,7 +93,7 @@ def test_simple_scalars_loading():
             bool_py_false=False,
             bool_true=True,
             bool_false=False,
-            z=dict(a="b"),
+            z={"a": "b"},
         ),
     )
 
@@ -107,7 +104,8 @@ def test_map_loading_simple():
         m: dict[str, str] = s_attrib("M_MAP")
 
     perform_loader_env_check(
-        dict(M_MAP_k1="val11", M_MAP_k2="val22"), expected_settings=SettingsMapStrStr(m=dict(k1="val11", k2="val22"))
+        {"M_MAP_k1": "val11", "M_MAP_k2": "val22"},
+        expected_settings=SettingsMapStrStr(m={"k1": "val11", "k2": "val22"}),
     )
 
 
@@ -121,11 +119,11 @@ def test_map_loading_nested():
         nested: Nested = s_attrib("NESTED")
 
     perform_loader_env_check(
-        env=dict(
-            NESTED_M_MAP_k1="val11",
-            NESTED_M_MAP_k2="val22",
-        ),
-        expected_settings=SettingsMapStrStr(nested=Nested(m=dict(k1="val11", k2="val22"))),
+        env={
+            "NESTED_M_MAP_k1": "val11",
+            "NESTED_M_MAP_k2": "val22",
+        },
+        expected_settings=SettingsMapStrStr(nested=Nested(m={"k1": "val11", "k2": "val22"})),
     )
 
 
@@ -135,11 +133,11 @@ def test_map_loading_int():
         m: dict[str, int] = s_attrib("M_MAP")
 
     perform_loader_env_check(
-        env=dict(
-            M_MAP_k1="11",
-            M_MAP_k2="22",
-        ),
-        expected_settings=SettingsMapStrStr(m=dict(k1=11, k2=22)),
+        env={
+            "M_MAP_k1": "11",
+            "M_MAP_k2": "22",
+        },
+        expected_settings=SettingsMapStrStr(m={"k1": 11, "k2": 22}),
     )
 
 
@@ -148,7 +146,7 @@ def test_map_loading_empty():
     class SettingsMapStrStr(SettingsBase):
         m: dict[str, int] = s_attrib("M_MAP", missing_factory=dict)
 
-    perform_loader_env_check(env=dict(), expected_settings=SettingsMapStrStr(m={}))
+    perform_loader_env_check(env={}, expected_settings=SettingsMapStrStr(m={}))
 
 
 def test_composite_loading():
@@ -166,11 +164,11 @@ def test_composite_loading():
     class SomeSettings(SettingsBase):
         a: int = s_attrib("a")
         nested: NestedSettings = s_attrib("nested")
-        nullable_nested: Optional[NestedSettings] = s_attrib("nullable_nested", missing=None)
+        nullable_nested: NestedSettings | None = s_attrib("nullable_nested", missing=None)
 
     perform_loader_env_check(
         key_prefix=None,
-        env=dict(A="1", NESTED_N1="11", NESTED_N2="12", NESTED_NESTED_PARAM_1="1"),
+        env={"A": "1", "NESTED_N1": "11", "NESTED_N2": "12", "NESTED_NESTED_PARAM_1": "1"},
         expected_settings=SomeSettings(
             a=1,
             nested=NestedSettings(n1=11, n2=12, nested=SuperNestedSettings(param_1=True)),
@@ -188,13 +186,13 @@ def test_scalar_defaults():
     class SomeSettings(SettingsBase):
         a: int = s_attrib("a", fallback_cfg_key="THE_A")
         b: int = s_attrib("b", fallback_cfg_key="THE_B")
-        c: Optional[int] = s_attrib("c", fallback_cfg_key="THE_NON_EXISTING_KEY", missing=None)
+        c: int | None = s_attrib("c", fallback_cfg_key="THE_NON_EXISTING_KEY", missing=None)
 
     perform_loader_env_check(
         key_prefix=None,
-        env=dict(
-            B="99",
-        ),
+        env={
+            "B": "99",
+        },
         expected_settings=SomeSettings(
             a=75,
             b=99,
@@ -223,7 +221,7 @@ def test_composite_default():
 
     perform_loader_env_check(
         key_prefix=None,
-        env=dict(BG_PROTO="https", BG_PORT=8443),
+        env={"BG_PROTO": "https", "BG_PORT": 8443},
         expected_settings=SomeSettings(
             bg=BackendGroup(host=Fallback.HOST, port=8443, proto="https")  # From env  # From env
         ),
@@ -242,7 +240,7 @@ def test_scalar_fallback_order():
         c: str = s_attrib("dl_c", fallback_cfg_key="THE_C", missing="attrs default c")
 
     perform_loader_env_check(
-        env=dict(DL_A="a from proc env"),
+        env={"DL_A": "a from proc env"},
         expected_settings=SomeSettings(
             # A was declared in user env so we expect value from it
             a="a from proc env",
@@ -267,7 +265,7 @@ def test_ignore():
 
     @attr.s(frozen=True)
     class DefaultedSettings(SettingsBase):
-        endpoint: Optional[Nested] = s_attrib(
+        endpoint: Nested | None = s_attrib(
             "EP",
             enabled_key_name="ENABLED",
             fallback_factory=lambda fb: Nested(host=fb.EP_HOST, port=fb.EP_PORT),
@@ -276,30 +274,30 @@ def test_ignore():
 
     @attr.s(frozen=True)
     class NonDefaultedSettings(SettingsBase):
-        endpoint: Optional[Nested] = s_attrib("EP", enabled_key_name="ENABLED")
+        endpoint: Nested | None = s_attrib("EP", enabled_key_name="ENABLED")
 
     # Check that endpoint is not despite of fallback
     perform_loader_env_check(
-        env=dict(EP_ENABLED="0"),
+        env={"EP_ENABLED": "0"},
         expected_settings=DefaultedSettings(endpoint=None),
         fallback_env=Fallback,
     )
 
     # Check that we got a fallback if no keys in env and ignore key is not true
     perform_loader_env_check(
-        env=dict(
-            EP_ENABLED="1",
-            EP_PORT=9999,
-        ),
+        env={
+            "EP_ENABLED": "1",
+            "EP_PORT": 9999,
+        },
         expected_settings=DefaultedSettings(endpoint=Nested(host=Fallback.EP_HOST, port=9999)),
         fallback_env=Fallback,
     )
 
     # Check that we will not fail with ignored non-defaulted key
     perform_loader_env_check(
-        env=dict(
-            EP_ENABLED="0",
-        ),
+        env={
+            "EP_ENABLED": "0",
+        },
         expected_settings=NonDefaultedSettings(endpoint=None),
     )
 
@@ -345,23 +343,23 @@ def test_required_in_fallback_factory():
         )
 
     perform_loader_env_check(
-        env=dict(
-            DB_USER="user_from_env",
-            DB_PASSWORD="password_from_env",
-        ),
+        env={
+            "DB_USER": "user_from_env",
+            "DB_PASSWORD": "password_from_env",
+        },
         expected_settings=SomeSettings(
             db=DBConfig(host=Fallback.DB_HOST, user="user_from_env", password="password_from_env")
         ),
         fallback_env=Fallback,
     )
 
-    with pytest.raises(ConfigFieldMissing) as exc:
-        load_settings(env=dict(), settings_type=SomeSettings, fallback_env=Fallback)
+    with pytest.raises(ConfigFieldMissingError) as exc:
+        load_settings(env={}, settings_type=SomeSettings, fallback_env=Fallback)
 
     assert exc.value.field_set == {"db.password", "db.user"}
 
-    with pytest.raises(ConfigFieldMissing) as exc:
-        load_settings(env=dict(DB_USER="user_from_env"), settings_type=SomeSettings, fallback_env=Fallback)
+    with pytest.raises(ConfigFieldMissingError) as exc:
+        load_settings(env={"DB_USER": "user_from_env"}, settings_type=SomeSettings, fallback_env=Fallback)
 
     assert exc.value.field_set == {"db.password"}
 
@@ -376,13 +374,12 @@ def test_fallback_factory_static_method():
     @attr.s
     class Nested(SettingsBase):
         @staticmethod
-        def a_default(env):
+        def a_default(env) -> str:
             if isinstance(env, Fallback1):
                 return env.fb_1_only
-            elif isinstance(env, Fallback2):
+            if isinstance(env, Fallback2):
                 return env.fb_2_only
-            else:
-                raise ValueError("Unexpected fallback type")
+            raise ValueError("Unexpected fallback type")
 
         a: str = s_attrib("a", fallback_factory=a_default)
 
@@ -404,19 +401,19 @@ def test_app_type():
         mode: Mode = s_attrib("APP_MODE", is_app_cfg_type=True, env_var_converter=lambda s: Mode[s])
 
         @staticmethod
-        def default_depends_on_mode(fallback_config: Fallback, mode: Mode):
+        def default_depends_on_mode(fallback_config: Fallback, mode: Mode) -> str:
             return f"{mode.name} + {fallback_config.SOME_KEY}"
 
         depends_on_mode: str = s_attrib("DEPENDS_ON_MODE", fallback_factory=default_depends_on_mode)
 
         @staticmethod
-        def default_not_depends_on_mode(fallback_config: Fallback):
+        def default_not_depends_on_mode(fallback_config: Fallback) -> str:
             return fallback_config.SOME_KEY
 
         not_depends_on_mode: str = s_attrib("NOT_DEPENDS_ON_MODE", fallback_factory=default_not_depends_on_mode)
 
     perform_loader_env_check(
-        dict(APP_MODE="mode_a"),
+        {"APP_MODE": "mode_a"},
         TypedSettings(
             mode=Mode.mode_a,
             depends_on_mode=f"{Mode.mode_a.name} + {Fallback.SOME_KEY}",
@@ -440,12 +437,12 @@ def test_app_type_field_override():
         override_me: str = s_attrib("OVERRIDE_ME")
 
         @staticmethod
-        def default_depends_on_mode(fallback_config: Fallback, mode: Mode):
+        def default_depends_on_mode(fallback_config: Fallback, mode: Mode) -> str:
             return f"{mode.name} + {fallback_config.SOME_KEY}"
 
         depends_on_mode: str = s_attrib("DEPENDS_ON_MODE", fallback_factory=default_depends_on_mode)
 
-    env = dict(OVERRIDE_ME="yes")
+    env = {"OVERRIDE_ME": "yes"}
 
     extractor = EnvSettingsLoader(env).build_top_level_extractor(
         TypedSettings,
@@ -458,13 +455,13 @@ def test_app_type_field_override():
         mode=Mode.mode_a, depends_on_mode=f"{Mode.mode_a.name} + {Fallback.SOME_KEY}", override_me="yes"
     )
 
-    env = dict(OVERRIDE_ME="yes")
+    env = {"OVERRIDE_ME": "yes"}
     # TODO FIX: Make dedicated test when tests will migrate on classes
     extractor = EnvSettingsLoader(env).build_top_level_extractor(
         TypedSettings,
         app_cfg_type=Mode.mode_b,
         fallback_cfg=Fallback,
-        field_overrides=dict(override_me="totally_overridden"),
+        field_overrides={"override_me": "totally_overridden"},
     )
     actual_settings = extractor.extract(env)
 
@@ -483,12 +480,12 @@ def test_fallback_only():
 
     @attr.s
     class TypedSettings(SettingsBase):
-        no_env_1: Optional[str] = s_attrib(None, fallback_cfg_key="SOME_KEY", missing=None)
-        via_env: Optional[str] = s_attrib("VIA_ENV", fallback_cfg_key="SOME_KEY")
+        no_env_1: str | None = s_attrib(None, fallback_cfg_key="SOME_KEY", missing=None)
+        via_env: str | None = s_attrib("VIA_ENV", fallback_cfg_key="SOME_KEY")
         no_env_nested: Nested = s_attrib(None, fallback_factory=lambda: Nested(a=1))
 
     perform_loader_env_check(
-        dict(VIA_ENV="mode_a"),
+        {"VIA_ENV": "mode_a"},
         TypedSettings(
             no_env_1=Fallback.SOME_KEY,
             via_env="mode_a",
@@ -506,7 +503,7 @@ def test_fallback_value_propagation_in_nested_settings():
 
     @attr.s()
     class ConnBKey(SettingsBase):
-        id: Optional[str] = s_attrib("ID")
+        id: str | None = s_attrib("ID")
         secret: str = s_attrib("SECRET")
 
     @attr.s()
@@ -537,10 +534,10 @@ def test_fallback_value_propagation_in_nested_settings():
 
     # Check required only
     perform_loader_env_check(
-        dict(
-            CS_A_PASSWORD="pass",
-            CS_B_KEY_SECRET="key",
-        ),
+        {
+            "CS_A_PASSWORD": "pass",
+            "CS_B_KEY_SECRET": "key",
+        },
         Settings(
             conns=ConnectorsSettings(
                 conn_a=ConnectorA(
@@ -560,11 +557,11 @@ def test_fallback_value_propagation_in_nested_settings():
 
     # Check that deep overrides are applied
     perform_loader_env_check(
-        dict(
-            CS_A_PASSWORD="pass",
-            CS_B_KEY_SECRET="key_secret",
-            CS_B_KEY_ID="key_id_from_env",
-        ),
+        {
+            "CS_A_PASSWORD": "pass",
+            "CS_B_KEY_SECRET": "key_secret",
+            "CS_B_KEY_ID": "key_id_from_env",
+        },
         Settings(
             conns=ConnectorsSettings(
                 conn_a=ConnectorA(
@@ -583,9 +580,9 @@ def test_fallback_value_propagation_in_nested_settings():
     )
 
     # Check that exception fires on missing keys
-    with pytest.raises(ConfigFieldMissing) as exc:
+    with pytest.raises(ConfigFieldMissingError) as exc:
         load_settings(
-            env=dict(),
+            env={},
             settings_type=Settings,
         )
 
@@ -599,10 +596,10 @@ def test_complex_nested_with_required_dft_ffactory_no_env():
 
     @attr.s()
     class RootWithFallbackFactoryNone(SettingsBase):
-        nested_with_ff: Optional[Nested] = s_attrib("NWFF", fallback_factory=lambda: None)
+        nested_with_ff: Nested | None = s_attrib("NWFF", fallback_factory=lambda: None)
 
     perform_loader_env_check(
-        dict(),
+        {},
         RootWithFallbackFactoryNone(nested_with_ff=None),
     )
 
@@ -614,10 +611,10 @@ def test_complex_nested_with_required_dft_missing_no_env():
 
     @attr.s()
     class RootWithMissingNone(SettingsBase):
-        nested_with_ff: Optional[Nested] = s_attrib("NWFF", missing=None)
+        nested_with_ff: Nested | None = s_attrib("NWFF", missing=None)
 
     perform_loader_env_check(
-        dict(),
+        {},
         RootWithMissingNone(nested_with_ff=None),
     )
 
@@ -629,11 +626,11 @@ def test_complex_nested_with_required_dft_not_defined_no_env():
 
     @attr.s()
     class RootWithMissingNone(SettingsBase):
-        nested_with_ff: Optional[Nested] = s_attrib("NWFF")
+        nested_with_ff: Nested | None = s_attrib("NWFF")
 
-    with pytest.raises(ConfigFieldMissing) as exc:
+    with pytest.raises(ConfigFieldMissingError) as exc:
         load_settings(
-            env=dict(),
+            env={},
             settings_type=RootWithMissingNone,
         )
 
@@ -654,11 +651,11 @@ def test_complex_double_nested_with_required_dft_not_defined_partial_env():
 
     @attr.s()
     class RootWithMissingNone(SettingsBase):
-        nested_with_ff: Optional[Nested] = s_attrib("NWFF")
+        nested_with_ff: Nested | None = s_attrib("NWFF")
 
-    with pytest.raises(ConfigFieldMissing) as exc:
+    with pytest.raises(ConfigFieldMissingError) as exc:
         load_settings(
-            env=dict(NWFF_PAIR_C="some comment"),
+            env={"NWFF_PAIR_C": "some comment"},
             settings_type=RootWithMissingNone,
         )
 
@@ -674,19 +671,19 @@ def test_complex_double_nested_dft_fallback_factory_nested_none():
 
     @attr.s()
     class Nested(SettingsBase):
-        val: Optional[Pair] = s_attrib("PAIR")
+        val: Pair | None = s_attrib("PAIR")
 
     @attr.s()
     class RootWithMissingNone(SettingsBase):
-        nested_with_ff: Optional[Nested] = s_attrib("NWFF", fallback_factory=lambda: Nested(val=None))
+        nested_with_ff: Nested | None = s_attrib("NWFF", fallback_factory=lambda: Nested(val=None))
 
     # Check regular loading
     perform_loader_env_check(
-        dict(
-            NWFF_PAIR_L="L",
-            NWFF_PAIR_R="R",
-            NWFF_PAIR_C="1",
-        ),
+        {
+            "NWFF_PAIR_L": "L",
+            "NWFF_PAIR_R": "R",
+            "NWFF_PAIR_C": "1",
+        },
         RootWithMissingNone(
             nested_with_ff=Nested(
                 val=Pair(
@@ -699,11 +696,11 @@ def test_complex_double_nested_dft_fallback_factory_nested_none():
     )
 
     # Check that exception is correct in case of missing vars
-    with pytest.raises(ConfigFieldMissing) as exc:
+    with pytest.raises(ConfigFieldMissingError) as exc:
         load_settings(
-            env=dict(
-                NWFF_PAIR_C="1",
-            ),
+            env={
+                "NWFF_PAIR_C": "1",
+            },
             settings_type=RootWithMissingNone,
         )
 
@@ -718,7 +715,7 @@ def test_json_value():
 
     @attr.s
     class TypedSettings(SettingsBase):
-        nested: Optional[Nested] = s_attrib(
+        nested: Nested | None = s_attrib(
             "N",
             json_converter=lambda js: Nested(dft_key=js["dft_key"], map_key_id_value=js["keys"]),
             enabled_key_name="ENABLED",
@@ -726,42 +723,42 @@ def test_json_value():
         )
 
     expected_dft_key = "asf"
-    expected_key_map = dict(a="a", b="b")
+    expected_key_map = {"a": "a", "b": "b"}
     expected_settings = TypedSettings(
         nested=Nested(dft_key=expected_dft_key, map_key_id_value=dict(expected_key_map)),
     )
 
-    json_encoded_nested_value = json.dumps(dict(dft_key=expected_dft_key, keys=expected_key_map))
+    json_encoded_nested_value = json.dumps({"dft_key": expected_dft_key, "keys": expected_key_map})
 
     # Case None
     perform_loader_env_check(
-        dict(),
+        {},
         TypedSettings(nested=None),
     )
 
     # Case of JSON value
     perform_loader_env_check(
-        dict(
-            N_JSON_VALUE=json_encoded_nested_value,
-        ),
+        {
+            "N_JSON_VALUE": json_encoded_nested_value,
+        },
         expected_settings,
     )
 
     # Case disabled
     perform_loader_env_check(
-        dict(
-            N_JSON_VALUE=json_encoded_nested_value,
-            N_ENABLED="false",
-        ),
+        {
+            "N_JSON_VALUE": json_encoded_nested_value,
+            "N_ENABLED": "false",
+        },
         TypedSettings(nested=None),
     )
 
     # Case disabled
     perform_loader_env_check(
-        dict(
-            N_JSON_VALUE=json_encoded_nested_value,
-            N_ENABLED="true",
-        ),
+        {
+            "N_JSON_VALUE": json_encoded_nested_value,
+            "N_ENABLED": "true",
+        },
         expected_settings,
     )
 
@@ -775,7 +772,7 @@ def test_json_value():
     )
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def temp_file_factory() -> Callable[[str], str]:
     with tempfile.TemporaryDirectory() as tmp_dir_name:
 
@@ -801,10 +798,10 @@ def test_file_mapping(temp_file_factory):
     b_file_name = temp_file_factory(str(b_value))
 
     perform_loader_env_check(
-        dict(
-            BIE_FILE_MAP_A=a_file_name,
-            BIE_FILE_MAP_B=b_file_name,
-        ),
+        {
+            "BIE_FILE_MAP_A": a_file_name,
+            "BIE_FILE_MAP_B": b_file_name,
+        },
         TypedSettings(
             a=a_value,
             b=b_value,

@@ -1,8 +1,8 @@
 import abc
+from collections.abc import Hashable
 import json
 from typing import (
     Any,
-    Hashable,
     NamedTuple,
     get_args,
 )
@@ -67,9 +67,9 @@ class HashableWrapper:
     so using just a plain slotted object.
     """
 
-    __slots__ = ("value", "hashable")
+    __slots__ = ("hashable", "value")
 
-    def __init__(self, value: Any, hashable: Hashable):
+    def __init__(self, value: Any, hashable: Hashable) -> None:
         self.value = value
         self.hashable = hashable
 

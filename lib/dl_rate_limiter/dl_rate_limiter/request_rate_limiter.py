@@ -6,7 +6,6 @@ import attr
 
 import dl_rate_limiter.event_rate_limiter as event_rate_limiter
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -24,7 +23,7 @@ class Request:
 @attr.s(auto_attribs=True)
 class RequestEventKeyTemplateHeader:
     key: str
-    regex: typing.Optional[re.Pattern] = None  # Should contain result group
+    regex: re.Pattern | None = None  # Should contain result group
 
     def generate_value(self, headers: typing.Mapping[str, str]) -> str:
         try:
@@ -74,13 +73,11 @@ class RequestPattern:
 
 
 class SyncRequestRateLimiterProtocol(typing.Protocol):
-    def check_limit(self, request: Request) -> bool:
-        ...
+    def check_limit(self, request: Request) -> bool: ...
 
 
 class AsyncRequestRateLimiterProtocol(typing.Protocol):
-    async def check_limit(self, request: Request) -> bool:
-        ...
+    async def check_limit(self, request: Request) -> bool: ...
 
 
 @attr.s(auto_attribs=True)

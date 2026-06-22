@@ -4,14 +4,11 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-from typing import (
-    TypeVar,
-    Union,
-)
+from typing import TypeVar
 
 
-class FrozenMappingStrToStrOrStrSeq(Mapping[str, Union[str, Sequence[str]]], Hashable):
-    _dict: dict[str, Union[str, Sequence[str]]]
+class FrozenMappingStrToStrOrStrSeq(Mapping[str, str | Sequence[str]], Hashable):
+    _dict: dict[str, str | Sequence[str]]
 
     @staticmethod
     def ensure_tuple_of_str(seq: Sequence[str]) -> tuple[str, ...]:
@@ -19,10 +16,10 @@ class FrozenMappingStrToStrOrStrSeq(Mapping[str, Union[str, Sequence[str]]], Has
             assert isinstance(item, str), f"Item {idx=} is not a string"
         return tuple(seq)
 
-    def __init__(self, mapping: Mapping[str, Union[str, Sequence[str]]]) -> None:
+    def __init__(self, mapping: Mapping[str, str | Sequence[str]]) -> None:
         self._dict = {k: v if isinstance(v, str) else self.ensure_tuple_of_str(v) for k, v in mapping.items()}
 
-    def __getitem__(self, k: str) -> Union[str, Sequence[str]]:
+    def __getitem__(self, k: str) -> str | Sequence[str]:
         return self._dict.__getitem__(k)
 
     def __len__(self) -> int:
@@ -35,7 +32,7 @@ class FrozenMappingStrToStrOrStrSeq(Mapping[str, Union[str, Sequence[str]]], Has
         return hash(tuple(sorted(self.items())))
 
     def __repr__(self) -> str:
-        return f"FrozenMappingStrToStrOrStrSeq({repr(self._dict)})"
+        return f"FrozenMappingStrToStrOrStrSeq({self._dict!r})"
 
 
 _FM_VAL_T = TypeVar("_FM_VAL_T")
@@ -45,7 +42,7 @@ class FrozenStrMapping(Mapping[str, _FM_VAL_T], Hashable):
     _dict: dict[str, _FM_VAL_T]
 
     def __init__(self, mapping: Mapping[str, _FM_VAL_T]) -> None:
-        for k, _ in mapping.items():
+        for k in mapping:
             assert isinstance(k, str), f"Got non str key for FrozenStrMapping: {k!r}"
 
         self._dict = dict(mapping)
@@ -63,4 +60,4 @@ class FrozenStrMapping(Mapping[str, _FM_VAL_T], Hashable):
         return hash(tuple(sorted(self.items())))
 
     def __repr__(self) -> str:
-        return f"FrozenStrMapping({repr(self._dict)})"
+        return f"FrozenStrMapping({self._dict!r})"

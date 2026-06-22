@@ -7,7 +7,6 @@ import httpx
 
 import dl_httpx
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -56,7 +55,7 @@ class TokenPostResponse(dl_httpx.BaseResponseSchema):
         return Token(
             access_token=self.access_token,
             expires_in=self.expires_in,
-            request_datetime=datetime.datetime.now(),
+            request_datetime=datetime.datetime.now(datetime.UTC),
         )
 
 
@@ -68,7 +67,7 @@ class RefreshTokenPostResponse(TokenPostResponse):
             access_token=self.access_token,
             refresh_token=self.refresh_token,
             expires_in=self.expires_in,
-            request_datetime=datetime.datetime.now(),
+            request_datetime=datetime.datetime.now(datetime.UTC),
         )
 
 

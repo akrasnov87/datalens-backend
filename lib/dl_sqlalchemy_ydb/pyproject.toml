@@ -8,8 +8,9 @@ readme = "README.rst"
 version = "0.1"
 
 [tool.poetry.dependencies]
+frozendict = "*"
 packaging = "*"
-python = ">=3.10, <3.13"
+python = ">=3.12, <3.13"
 sqlalchemy = "*"
 ydb = "*"
 ydb-sqlalchemy = "*"
@@ -25,6 +26,7 @@ DEP001 = ["google"]
 DEP002 = [
   "dl-sqlalchemy-common",
 ]
+DEP003 = ["google"]
 
 [tool.mypy]
 check_untyped_defs = true
@@ -45,7 +47,6 @@ build-backend = "poetry.core.masonry.api"
 requires = ["poetry-core"]
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_sqlalchemy_ydb_tests/"
 skip_compose = "true"
 target_path = "unit"

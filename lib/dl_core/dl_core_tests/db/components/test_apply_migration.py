@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 import attr
 import pytest
 
-from dl_constants.enums import MigrationStatus
+from dl_constants import MigrationStatus
 from dl_core.us_manager.schema_migration.base import (
     BaseEntrySchemaMigration,
     Migration,
@@ -14,7 +17,6 @@ from dl_core.us_manager.schema_migration.base import (
 from dl_core.us_manager.schema_migration.factory_base import EntrySchemaMigrationFactoryBase
 from dl_core.us_manager.us_manager_sync import SyncUSManager
 from dl_core_tests.db.base import DefaultCoreTestClass
-
 
 if TYPE_CHECKING:
     from dl_core.services_registry import ServicesRegistry
@@ -37,12 +39,12 @@ class SimpleEntrySchemaMigration(BaseEntrySchemaMigration):
         return migrations
 
     @staticmethod
-    def _migrate_v1_to_v2(entry: dict, **kwargs) -> dict:
+    def _migrate_v1_to_v2(entry: dict, **kwargs: Any) -> dict:
         entry["meta"]["test_field"] = "test_value"
         return entry
 
     @staticmethod
-    def _migrate_v2_to_v1(entry: dict, **kwargs) -> dict:
+    def _migrate_v2_to_v1(entry: dict, **kwargs: Any) -> dict:
         entry["meta"].pop("test_field")
         return entry
 
@@ -58,7 +60,7 @@ class SimpleEntrySchemaMigrationFactory(EntrySchemaMigrationFactoryBase):
 
 
 class TestMigration(DefaultCoreTestClass):
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def sync_us_migration_manager(self, conn_default_sync_us_manager: SyncUSManager) -> SyncUSManager:
         return conn_default_sync_us_manager.clone(
             schema_migration_factory=SimpleEntrySchemaMigrationFactory(),

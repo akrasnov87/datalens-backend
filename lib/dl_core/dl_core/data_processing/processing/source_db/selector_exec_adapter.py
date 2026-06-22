@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import logging
-import time
-from typing import (
-    TYPE_CHECKING,
+from collections.abc import (
     Awaitable,
     Callable,
-    Optional,
     Sequence,
-    Union,
 )
+import logging
+import time
+from typing import TYPE_CHECKING
 
 import attr
 
@@ -18,7 +16,7 @@ from dl_api_commons.reporting.models import (
     QueryExecutionEndReportingRecord,
     QueryExecutionStartReportingRecord,
 )
-from dl_constants.enums import (
+from dl_constants import (
     ReportingQueryType,
     UserDataType,
 )
@@ -43,13 +41,12 @@ from dl_utils.streaming import (
     LazyAsyncChunked,
 )
 
-
 if TYPE_CHECKING:
     from sqlalchemy.sql.selectable import Select
 
     from dl_api_commons.base_models import RequestContextInfo
     from dl_cache_engine.primitives import LocalKeyRepresentation
-    from dl_constants.enums import DataSourceRole
+    from dl_constants import DataSourceRole
     from dl_constants.types import TBIDataValue
     from dl_core.base_models import ConnectionRef
     from dl_core.connections_security.base import ConnectionSecurityManager
@@ -68,19 +65,18 @@ def get_query_type(connection: ConnectionBase, conn_sec_mgr: ConnectionSecurityM
     if connection.is_always_internal_source:
         return ReportingQueryType.internal
 
-    if isinstance(connection, ClassicConnectionSQL):
-        if conn_sec_mgr.is_internal_connection(connection.get_conn_dto()):
-            return ReportingQueryType.internal
+    if isinstance(connection, ClassicConnectionSQL) and conn_sec_mgr.is_internal_connection(connection.get_conn_dto()):
+        return ReportingQueryType.internal
 
     return ReportingQueryType.external
 
 
 @attr.s
-class SourceDbExecAdapter(ProcessorDbExecAdapterBase):  # noqa
+class SourceDbExecAdapter(ProcessorDbExecAdapterBase):
     _role: DataSourceRole = attr.ib(kw_only=True)
     _dataset: Dataset = attr.ib(kw_only=True)
-    _prep_component_manager: Optional[PreparedComponentManagerBase] = attr.ib(kw_only=True, default=None)
-    _row_count_hard_limit: Optional[int] = attr.ib(kw_only=True, default=None)
+    _prep_component_manager: PreparedComponentManagerBase | None = attr.ib(kw_only=True, default=None)
+    _row_count_hard_limit: int | None = attr.ib(kw_only=True, default=None)
     _us_entry_buffer: USEntryBuffer = attr.ib(kw_only=True)
     _ce_factory: ConnExecutorFactory = attr.ib(kw_only=True)
     _rci: RequestContextInfo = attr.ib(kw_only=True)
@@ -102,7 +98,7 @@ class SourceDbExecAdapter(ProcessorDbExecAdapterBase):  # noqa
         *,
         query_res_info: QueryAndResultInfo,
         joint_dsrc_info: PreparedFromInfo,
-        row_count_hard_limit: Optional[int] = None,
+        row_count_hard_limit: int | None = None,
     ) -> TValuesChunkStream:
         """Generate data stream from a data source"""
 
@@ -112,11 +108,21 @@ class SourceDbExecAdapter(ProcessorDbExecAdapterBase):  # noqa
             joint_dsrc_info.query_compiler.dialect,
             obfuscation_engine=self._rci.obfuscation_engine,
         )
-        LOGGER.info(f"SQL query for dataset: {debug_query}")
+        LOGGER.info("SQL query for dataset: %s", debug_query)
 
         assert joint_dsrc_info.target_connection_ref is not None
         target_connection = self._us_entry_buffer.get_entry(joint_dsrc_info.target_connection_ref)
         assert isinstance(target_connection, ConnectionBase)
+
+        target_connection.validate_query_settings(self._dataset.data.query_settings)
+
+        query_settings: dict[str, str] = self._dataset.data.query_settings
+        if self._dataset.data.query_settings and joint_dsrc_info.data_source_list:
+            target_data_source = joint_dsrc_info.data_source_list[0]
+            query_settings = {
+                key: target_data_source.render_dataset_parameter_values(value)
+                for key, value in self._dataset.data.query_settings.items()
+            }
 
         ce = self._ce_factory.get_async_conn_executor(target_connection)
 
@@ -128,6 +134,7 @@ class SourceDbExecAdapter(ProcessorDbExecAdapterBase):  # noqa
                 debug_compiled_query=debug_query,
                 inspector_query=inspector_query,
                 chunk_size=None,
+                query_settings=query_settings,
             )
         )
         wrapped_result_iter = AsyncChunked(chunked_data=exec_result.result)
@@ -146,21 +153,21 @@ class SourceDbExecAdapter(ProcessorDbExecAdapterBase):  # noqa
         if row_count_hard_limit is not None:
             result_iter = result_iter.limit(
                 max_count=row_count_hard_limit,
-                limit_exception=exc.ResultRowCountLimitExceeded,
+                limit_exception=exc.ResultRowCountLimitExceededError,
             )
         return result_iter
 
     async def _execute_and_fetch(
         self,
         *,
-        query: Union[str, Select],
+        query: str | Select,
         user_types: Sequence[UserDataType],
         chunk_size: int,
-        joint_dsrc_info: Optional[PreparedFromInfo] = None,
+        joint_dsrc_info: PreparedFromInfo | None = None,
         query_id: str,
         ctx: OpExecutionContext,
         data_key: LocalKeyRepresentation,
-        preparation_callback: Optional[Callable[[], Awaitable[None]]],
+        preparation_callback: Callable[[], Awaitable[None]] | None,
     ) -> TValuesChunkStream:
         assert not isinstance(query, str), "String queries are not supported by source DB processor"
         assert joint_dsrc_info is not None, "joint_dsrc_info is required for source DB processor"
@@ -169,18 +176,17 @@ class SourceDbExecAdapter(ProcessorDbExecAdapterBase):  # noqa
             await preparation_callback()
 
         query_res_info = self._make_query_res_info(query=query, user_types=user_types)
-        data_stream_data = await self._get_data_stream_from_source(
+        return await self._get_data_stream_from_source(
             joint_dsrc_info=joint_dsrc_info,
             query_res_info=query_res_info,
             row_count_hard_limit=self._row_count_hard_limit,
         )
-        return data_stream_data
 
     def _save_start_exec_reporting_record(
         self,
         query_id: str,
         compiled_query: str,
-        target_connection_ref: Optional[ConnectionRef],
+        target_connection_ref: ConnectionRef | None,
     ) -> None:
         assert target_connection_ref is not None
         target_connection = self._us_entry_buffer.get_entry(entry_id=target_connection_ref)
@@ -207,7 +213,7 @@ class SourceDbExecAdapter(ProcessorDbExecAdapterBase):  # noqa
         )
         self.add_reporting_record(record)
 
-    def _save_end_exec_reporting_record(self, query_id: str, exec_exception: Optional[Exception]) -> None:
+    def _save_end_exec_reporting_record(self, query_id: str, exec_exception: Exception | None) -> None:
         record = QueryExecutionEndReportingRecord(
             timestamp=time.time(),
             query_id=query_id,
@@ -227,7 +233,7 @@ class SourceDbExecAdapter(ProcessorDbExecAdapterBase):  # noqa
         self,
         query_id: str,
         compiled_query: str,
-        target_connection_ref: Optional[ConnectionRef],
+        target_connection_ref: ConnectionRef | None,
     ) -> None:
         self._save_start_exec_reporting_record(
             query_id=query_id,
@@ -235,7 +241,7 @@ class SourceDbExecAdapter(ProcessorDbExecAdapterBase):  # noqa
             target_connection_ref=target_connection_ref,
         )
 
-    def post_query_execute(self, query_id: str, exec_exception: Optional[Exception]) -> None:
+    def post_query_execute(self, query_id: str, exec_exception: Exception | None) -> None:
         self._save_end_exec_reporting_record(query_id=query_id, exec_exception=exec_exception)
 
     def post_cache_usage(self, query_id: str, cache_full_hit: bool | None) -> None:

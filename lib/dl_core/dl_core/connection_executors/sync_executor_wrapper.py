@@ -1,20 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import (
+    Awaitable,
+    Callable,
+    Generator,
+)
 import functools
 from typing import (
     TYPE_CHECKING,
     Any,
-    Awaitable,
-    Callable,
-    Generator,
+    Literal,
     Optional,
     TypeVar,
     overload,
 )
 
 import attr
-from typing_extensions import Literal
 
 from dl_api_commons.base_models import RequestContextInfo
 from dl_core.connection_executors import ConnExecutorQuery
@@ -34,7 +36,6 @@ from dl_core.connection_executors.sync_base import (
 )
 from dl_core.db import SchemaInfo
 
-
 if TYPE_CHECKING:
     from dl_constants.types import TBIDataTable
     from dl_core.connection_models.common_models import (
@@ -51,12 +52,9 @@ if TYPE_CHECKING:
     )
 
 
-_RET_TV = TypeVar("_RET_TV")
-
-
-def init_required(wrapped: Callable[..., _RET_TV]) -> Callable[..., _RET_TV]:
+def init_required[RET_TV](wrapped: Callable[..., RET_TV]) -> Callable[..., RET_TV]:
     @functools.wraps(wrapped)
-    def wrapper(self: "SyncWrapperForAsyncConnExecutor", *args: Any, **kwargs: Any) -> _RET_TV:
+    def wrapper(self: SyncWrapperForAsyncConnExecutor, *args: Any, **kwargs: Any) -> RET_TV:
         if not self.is_initialized:
             self.initialize()
         return wrapped(self, *args, **kwargs)
@@ -97,10 +95,10 @@ class SyncWrapperForAsyncConnExecutor(SyncConnExecutorBase):
         self._await_sync(self._async_conn_executor.close())
 
     @overload
-    def _extract_sync_sa_adapter(self, raise_on_not_exists: Literal[False]) -> Optional[SyncDirectDBAdapter]:
+    def _extract_sync_sa_adapter(self, raise_on_not_exists: Literal[False]) -> SyncDirectDBAdapter | None:
         pass
 
-    @overload  # noqa
+    @overload
     def _extract_sync_sa_adapter(self, raise_on_not_exists: Literal[True]) -> SyncDirectDBAdapter:
         pass
 
@@ -140,8 +138,7 @@ class SyncWrapperForAsyncConnExecutor(SyncConnExecutorBase):
 
     def _execute_typed_query_on_sync_adapter_from_wrapped_executor(self, typed_query: TypedQuery) -> TypedQueryResult:
         sa_adapter = self._extract_sync_sa_adapter(raise_on_not_exists=True)
-        result = sa_adapter.execute_typed_query(typed_query=typed_query)
-        return result
+        return sa_adapter.execute_typed_query(typed_query=typed_query)
 
     def _convert_async_result_to_sync(self, async_result: AsyncExecutionResult) -> SyncExecutionResult:
         def data_generator() -> Generator[TBIDataTable, None, None]:
@@ -186,7 +183,7 @@ class SyncWrapperForAsyncConnExecutor(SyncConnExecutorBase):
         return self._await_sync(self._async_conn_executor.test())
 
     @init_required
-    def get_db_version(self, db_ident: DBIdent) -> Optional[str]:
+    def get_db_version(self, db_ident: DBIdent) -> str | None:
         sa_adapter = self._extract_sync_sa_adapter(raise_on_not_exists=False)
         if sa_adapter is not None:
             return sa_adapter.get_db_version(db_ident)
@@ -230,5 +227,5 @@ class SyncWrapperForAsyncConnExecutor(SyncConnExecutorBase):
     def __enter__(self) -> SyncWrapperForAsyncConnExecutor:
         return self
 
-    def __exit__(self, exc_type: Optional[type[Exception]], exc_val: Optional[Exception], exc_tb: Any) -> None:
+    def __exit__(self, exc_type: type[Exception] | None, exc_val: Exception | None, exc_tb: Any) -> None:
         self.close()

@@ -3,7 +3,6 @@ from __future__ import annotations
 import dataclasses
 import logging
 import ssl
-from typing import Optional
 
 import flask
 
@@ -26,12 +25,11 @@ from dl_api_lib.connector_availability.base import ConnectorAvailabilityConfig
 from dl_cache_engine.primitives import CacheTTLConfig
 from dl_configs.enums import RequiredService
 from dl_configs.utils import get_multiple_root_certificates
-from dl_constants.enums import USAuthMode
+from dl_constants import USAuthMode
 from dl_core.services_registry.entity_checker import EntityUsageChecker
 from dl_core.services_registry.env_manager_factory import InsecureEnvManagerFactory
 from dl_core.services_registry.env_manager_factory_base import EnvManagerFactory
 from dl_core.services_registry.rqe_caches import RQECachesSetting
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -55,19 +53,19 @@ class StandaloneControlApiSRFactoryBuilder(SRFactoryBuilder[ControlApiAppSetting
     ) -> StandaloneServiceRegistryFactory:
         return StandaloneServiceRegistryFactory()
 
-    def _get_entity_usage_checker(self, settings: ControlApiAppSettingsOS) -> Optional[EntityUsageChecker]:
+    def _get_entity_usage_checker(self, settings: ControlApiAppSettingsOS) -> EntityUsageChecker | None:
         return None
 
     def _get_bleeding_edge_users(self, settings: ControlApiAppSettingsOS) -> tuple[str, ...]:
-        return tuple()
+        return ()
 
-    def _get_rqe_caches_settings(self, settings: ControlApiAppSettingsOS) -> Optional[RQECachesSetting]:
+    def _get_rqe_caches_settings(self, settings: ControlApiAppSettingsOS) -> RQECachesSetting | None:
         return None
 
-    def _get_default_cache_ttl_settings(self, settings: ControlApiAppSettingsOS) -> Optional[CacheTTLConfig]:
+    def _get_default_cache_ttl_settings(self, settings: ControlApiAppSettingsOS) -> CacheTTLConfig | None:
         return None
 
-    def _get_connector_availability(self, settings: ControlApiAppSettingsOS) -> Optional[ConnectorAvailabilityConfig]:
+    def _get_connector_availability(self, settings: ControlApiAppSettingsOS) -> ConnectorAvailabilityConfig | None:
         return settings.CONNECTOR_AVAILABILITY
 
 
@@ -78,7 +76,7 @@ class StandaloneControlApiAppFactory(
     def set_up_environment(
         self,
         app: flask.Flask,
-        testing_app_settings: Optional[ControlApiAppTestingsSettings] = None,
+        testing_app_settings: ControlApiAppTestingsSettings | None = None,
     ) -> EnvSetupResult:
         auth_setup_result = self._setup_auth_middleware(app=app)
 
@@ -87,7 +85,7 @@ class StandaloneControlApiAppFactory(
     def _setup_auth_middleware(
         self,
         app: flask.Flask,
-        testing_app_settings: Optional[ControlApiAppTestingsSettings] = None,
+        testing_app_settings: ControlApiAppTestingsSettings | None = None,
     ) -> AuthSetupResult:
         self._settings: ControlApiAppSettingsOS
         settings = self._settings.AUTH
@@ -113,7 +111,7 @@ class StandaloneControlApiAppFactory(
     def _setup_auth_middleware_none(
         self,
         app: flask.Flask,
-        testing_app_settings: Optional[ControlApiAppTestingsSettings] = None,
+        testing_app_settings: ControlApiAppTestingsSettings | None = None,
     ) -> AuthSetupResult:
         from dl_api_commons.flask.middlewares.trust_auth import TrustAuthService
 
@@ -175,6 +173,7 @@ class StandaloneControlApiAppFactory(
             settings=dl_auth_native.MiddlewareSettings(
                 decoder_key=settings.JWT_KEY,
                 decoder_algorithms=[settings.JWT_ALGORITHM],
+                master_token=self._settings.US_MASTER_TOKEN,
             )
         ).set_up(app=app)
         LOGGER.info("Native auth setup complete")

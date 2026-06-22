@@ -3,25 +3,24 @@ from __future__ import annotations
 from typing import (
     Any,
     ClassVar,
-    Optional,
+    Self,
 )
 
 import attr
-from typing_extensions import Self
 
-from dl_constants.enums import ConnectionType
+from dl_constants import ConnectionType
 
 
 @attr.s(frozen=True)
 class ConnDTO:
     conn_type: ClassVar[ConnectionType]
 
-    conn_id: Optional[str] = attr.ib(kw_only=True)
+    conn_id: str | None = attr.ib(kw_only=True)
 
     def conn_reporting_data(self) -> dict:
-        return dict(
-            connection_id=self.conn_id,
-        )
+        return {
+            "connection_id": self.conn_id,
+        }
 
     def clone(self, **kwargs: Any) -> Self:
         return attr.evolve(self, **kwargs)
@@ -32,7 +31,7 @@ def to_tuple(v: Any) -> tuple:
 
 
 @attr.s(frozen=True)
-class DefaultSQLDTO(ConnDTO):  # noqa
+class DefaultSQLDTO(ConnDTO):
     host: str = attr.ib(kw_only=True)
     multihosts: tuple[str, ...] = attr.ib(kw_only=True, converter=to_tuple)
     port: int = attr.ib(kw_only=True)
@@ -44,6 +43,6 @@ class DefaultSQLDTO(ConnDTO):  # noqa
         return list(self.multihosts) if self.multihosts else [self.host] if self.host else []
 
     def conn_reporting_data(self) -> dict:
-        return super().conn_reporting_data() | dict(
-            host=self.host,
-        )
+        return super().conn_reporting_data() | {
+            "host": self.host,
+        }

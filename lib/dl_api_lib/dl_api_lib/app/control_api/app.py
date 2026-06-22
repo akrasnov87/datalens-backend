@@ -1,11 +1,7 @@
 from __future__ import annotations
 
 import abc
-from typing import (
-    TYPE_CHECKING,
-    Generic,
-    TypeVar,
-)
+from typing import TYPE_CHECKING
 
 import attr
 import flask
@@ -32,18 +28,19 @@ from dl_api_lib.app_settings import (
     ControlApiAppTestingsSettings,
 )
 from dl_configs.utils import get_multiple_root_certificates
-from dl_constants.enums import USAuthMode
+from dl_constants import USAuthMode
 from dl_core import profiling_middleware
 from dl_core.connectors.settings.base import ConnectorSettings
 from dl_core.flask_utils.services_registry_middleware import ServicesRegistryMiddleware
 from dl_core.flask_utils.us_manager_middleware import USManagerFlaskMiddleware
+from dl_core.us_manager.dynamic_token_factory import DynamicUSMasterTokenFactory
 from dl_obfuscator import (
     OBFUSCATION_BASE_OBFUSCATORS_KEY,
     SecretKeeper,
     create_base_obfuscators,
+    get_secret_strings,
 )
 import dl_retrier
-
 
 if TYPE_CHECKING:
     from dl_core.connection_models import ConnectOptions
@@ -55,11 +52,10 @@ class EnvSetupResult:
     us_auth_mode: USAuthMode = attr.ib(kw_only=True)
 
 
-TControlApiAppSettings = TypeVar("TControlApiAppSettings", bound=ControlApiAppSettings)
-
-
 @attr.s(kw_only=True)
-class ControlApiAppFactory(SRFactoryBuilder, Generic[TControlApiAppSettings], abc.ABC):
+class ControlApiAppFactory[TControlApiAppSettings: ControlApiAppSettings](
+    SRFactoryBuilder[TControlApiAppSettings], abc.ABC
+):
     _settings: TControlApiAppSettings = attr.ib()
 
     @abc.abstractmethod
@@ -84,6 +80,13 @@ class ControlApiAppFactory(SRFactoryBuilder, Generic[TControlApiAppSettings], ab
         us_auth_mode: USAuthMode,
         ca_data: bytes,
     ) -> USManagerFlaskMiddleware:
+        dynamic_token_factory: DynamicUSMasterTokenFactory | None = None
+        if self._settings.US_CLIENT.DYNAMIC_AUTH_PRIVATE_KEY is not None:
+            dynamic_token_factory = DynamicUSMasterTokenFactory(
+                private_key=self._settings.US_CLIENT.DYNAMIC_AUTH_PRIVATE_KEY,
+                token_lifetime_sec=self._settings.US_CLIENT.DYNAMIC_AUTH_TOKEN_LIFETIME_SEC,
+                min_ttl_sec=self._settings.US_CLIENT.DYNAMIC_AUTH_MIN_TTL_SEC,
+            )
         return USManagerFlaskMiddleware(
             crypto_keys_config=self._settings.CRYPTO_KEYS_CONFIG,
             us_base_url=self._settings.US_BASE_URL,
@@ -91,6 +94,8 @@ class ControlApiAppFactory(SRFactoryBuilder, Generic[TControlApiAppSettings], ab
             us_auth_mode=us_auth_mode,
             ca_data=ca_data,
             retry_policy_factory=dl_retrier.RetryPolicyFactory.from_settings(self._settings.US_CLIENT.RETRY_POLICY),
+            dynamic_token_factory=dynamic_token_factory,
+            master_token_authorization_enabled=self._settings.US_CLIENT.MASTER_TOKEN_AUTHORIZATION_ENABLED,
         )
 
     def _get_extra_regex_patterns(self) -> tuple[str, ...] | None:
@@ -150,14 +155,15 @@ class ControlApiAppFactory(SRFactoryBuilder, Generic[TControlApiAppSettings], ab
 
         if self._settings.OBFUSCATION_ENABLED:
             global_keeper = SecretKeeper()
-            if self._settings.US_MASTER_TOKEN:
-                # just for example for now. More secrets will be added in BI-6492
-                global_keeper.add_secret(self._settings.US_MASTER_TOKEN, "us_master_token")
+            global_keeper.add_secrets(get_secret_strings(self._settings))
             app.config[OBFUSCATION_BASE_OBFUSCATORS_KEY] = create_base_obfuscators(
                 global_keeper=global_keeper,
                 extra_regex_patterns=self._get_extra_regex_patterns(),
             )
-        setup_obfuscation_context_middleware(app)
+        setup_obfuscation_context_middleware(
+            app,
+            log_format_profiling_enabled=self._settings.LOG_FORMAT_PROFILING_ENABLED,
+        )
 
         ReqCtxInfoMiddleware().set_up(app)
 

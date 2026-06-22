@@ -1,11 +1,9 @@
 import asyncio
-from typing import (
+from collections.abc import (
     AsyncGenerator,
-    ClassVar,
     Generator,
-    Generic,
-    TypeVar,
 )
+from typing import ClassVar
 
 from aiohttp.pytest_plugin import AiohttpClient
 from aiohttp.test_utils import TestClient
@@ -26,24 +24,21 @@ from dl_core.connection_executors.models.connection_target_dto_base import ConnT
 from dl_core.connection_executors.models.db_adapter_data import DBAdapterQuery
 from dl_core.connection_executors.models.scoped_rci import DBAdapterScopedRCI
 from dl_core.connection_executors.remote_query_executor.app_async import create_async_qe_app
-from dl_core.exc import SourceTimeout
+from dl_core.exc import SourceTimeoutError
 from dl_core.us_connection_base import ConnectionBase
 from dl_core_testing.rqe import RQEConfigurationMaker
 from dl_core_testing.testcases.connection_executor import BaseConnectionExecutorTestClass
 from dl_utils.aio import alist
 
 
-_CONN_TV = TypeVar("_CONN_TV", bound=ConnectionBase)
-
-
-class BaseRemoteQueryExecutorTestClass(BaseConnectionExecutorTestClass[_CONN_TV], Generic[_CONN_TV]):
+class BaseRemoteQueryExecutorTestClass[CONN_TV: ConnectionBase](BaseConnectionExecutorTestClass[CONN_TV]):
     SYNC_ADAPTER_CLS: ClassVar[type[CommonBaseDirectAdapter]]
     ASYNC_ADAPTER_CLS: ClassVar[type[CommonBaseDirectAdapter]]
 
     EXT_QUERY_EXECUTER_SECRET_KEY: ClassVar[str] = "very_secret_key"
     EXT_QUERY_EXECUTER_SECRET_KEY_ALT: ClassVar[str] = "very_secret_key_alt"
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def forbid_private_addr(self) -> bool:
         return False
 
@@ -51,7 +46,7 @@ class BaseRemoteQueryExecutorTestClass(BaseConnectionExecutorTestClass[_CONN_TV]
     def basic_test_query(self) -> str:
         return "select 1"
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def query_executor_app(
         self, loop: asyncio.AbstractEventLoop, aiohttp_client: AiohttpClient, forbid_private_addr: bool
     ) -> TestClient:
@@ -69,7 +64,7 @@ class BaseRemoteQueryExecutorTestClass(BaseConnectionExecutorTestClass[_CONN_TV]
         with pytest.MonkeyPatch.context() as mp:
             yield mp
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def sync_rqe_netloc_subprocess(
         self,
         forbid_private_addr: bool,
@@ -77,18 +72,13 @@ class BaseRemoteQueryExecutorTestClass(BaseConnectionExecutorTestClass[_CONN_TV]
     ) -> Generator[RQEBaseURL, None, None]:
         monkeysession.setenv("no_proxy", "*")  # https://github.com/python/cpython/issues/74570#issuecomment-1093748531
         with RQEConfigurationMaker(
-            ext_query_executer_secret_key=",".join(
-                (
-                    self.EXT_QUERY_EXECUTER_SECRET_KEY,
-                    self.EXT_QUERY_EXECUTER_SECRET_KEY_ALT,
-                )
-            ),
+            ext_query_executer_secret_key=f"{self.EXT_QUERY_EXECUTER_SECRET_KEY},{self.EXT_QUERY_EXECUTER_SECRET_KEY_ALT}",
             core_connector_whitelist=self.core_test_config.core_connector_ep_names,
             forbid_private_addr="1" if forbid_private_addr else "0",
         ).sync_rqe_netloc_subprocess_cm() as sync_rqe_config:
             yield sync_rqe_config
 
-    @pytest.fixture(scope="function", params=[RQEExecuteRequestMode.STREAM, RQEExecuteRequestMode.NON_STREAM])
+    @pytest.fixture(params=[RQEExecuteRequestMode.STREAM, RQEExecuteRequestMode.NON_STREAM])
     def query_executor_options(
         self,
         query_executor_app: TestClient,
@@ -133,7 +123,7 @@ class BaseRemoteQueryExecutorTestClass(BaseConnectionExecutorTestClass[_CONN_TV]
             force_async_rqe=request.param,
         )
 
-    @pytest.fixture(scope="function", params=[True, False], ids=["json", "pickle"], autouse=True)
+    @pytest.fixture(params=[True, False], ids=["json", "pickle"], autouse=True)
     def use_new_qe_serializer(self, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
         if request.param:
             monkeypatch.setenv("USE_NEW_QE_SERIALIZER", "1")
@@ -141,8 +131,7 @@ class BaseRemoteQueryExecutorTestClass(BaseConnectionExecutorTestClass[_CONN_TV]
     async def execute_request(self, remote_adapter: RemoteAsyncAdapter, query: str) -> list[TBIDataRow]:
         async with remote_adapter:
             resp = await remote_adapter.execute(DBAdapterQuery(query))
-            result = await alist(resp.get_all_rows())
-        return result
+            return await alist(resp.get_all_rows())
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("forbid_private_addr", [True])
@@ -150,5 +139,5 @@ class BaseRemoteQueryExecutorTestClass(BaseConnectionExecutorTestClass[_CONN_TV]
         self, remote_adapter: RemoteAsyncAdapter, forbid_private_addr: bool, basic_test_query: str
     ) -> None:
         async with remote_adapter:
-            with pytest.raises(SourceTimeout):
+            with pytest.raises(SourceTimeoutError):
                 await self.execute_request(remote_adapter, query=basic_test_query)

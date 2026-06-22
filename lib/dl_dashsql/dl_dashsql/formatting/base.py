@@ -1,14 +1,14 @@
 import abc
-from enum import Enum
-import re
-from typing import (
+from collections.abc import (
     Mapping,
     Sequence,
 )
+from enum import Enum
+import re
 
 import attr
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_dashsql.types import IncomingDSQLParamTypeExt
 
 
@@ -160,7 +160,7 @@ class QueryFormatter:
         if unconsumed_param_names and self._unconsumed_param_policy == UnconsumedParameterPolicy.error:
             raise RuntimeError(f"Unconsumed query parameters: {sorted(unconsumed_param_names)}")
 
-        result = QueryFormattingResult(
+        return QueryFormattingResult(
             formatted_query=FormattedQuery(
                 query=formatted_query_str,
                 bound_params=tuple(format_state.bound_params),
@@ -169,8 +169,6 @@ class QueryFormatter:
             unknown_param_names=frozenset(format_state.unknown_param_names),
             unconsumed_param_names=frozenset(unconsumed_param_names),
         )
-
-        return result
 
 
 @attr.s(frozen=True)

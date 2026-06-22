@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import Collection
 from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
-    Collection,
-    Optional,
 )
 
 from aiohttp import web
@@ -32,7 +31,6 @@ from dl_query_processing.postprocessing.postprocessor import DataPostprocessor
 from dl_query_processing.postprocessing.primitives import PostprocessedQuery
 from dl_query_processing.translation.primitives import DetailedType
 from dl_utils.utils import enum_not_none
-
 
 if TYPE_CHECKING:
     from aiohttp.web_response import Response
@@ -92,7 +90,7 @@ class DatasetRangeView(DatasetDataBaseView, abc.ABC):
     async def execute_query(
         self,
         block_spec: BlockSpec,
-        possible_data_lengths: Optional[Collection] = None,
+        possible_data_lengths: Collection | None = None,
         profiling_postfix: str = "",
         parameter_value_specs: list[ParameterValueSpec] | None = None,
         allow_cache_usage: bool | None = None,
@@ -155,14 +153,13 @@ class DatasetRangeView(DatasetDataBaseView, abc.ABC):
         detailed_types = postprocessed_query.meta.detailed_types
         assert detailed_types is not None
 
-        postprocessed_query = postprocessed_query.clone(
+        return postprocessed_query.clone(
             postprocessed_data=[[min_value], [max_value]],
             meta=postprocessed_query.meta.clone(
                 field_order=field_order[:1],
                 detailed_types=detailed_types[:1],
             ),
         )
-        return postprocessed_query
 
 
 class DatasetRangeViewV1(DatasetRangeView):
@@ -185,7 +182,7 @@ class DatasetRangeViewV1(DatasetRangeView):
         return self._make_response_v1(req_model=req_model, merged_stream=merged_stream)
 
 
-class DatasetRangeViewV1_5(DatasetRangeView):
+class DatasetRangeViewV1p5(DatasetRangeView):
     """
     Same as v1, for full v1.5 coverage
     """

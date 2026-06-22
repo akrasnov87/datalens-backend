@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 import logging
-from typing import (
-    Callable,
-    Optional,
-)
+from typing import Any
 
 import attr
 
@@ -30,7 +28,6 @@ from dl_query_processing.translation.primitives import (
     TranslatedMultiQueryBase,
 )
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -39,10 +36,10 @@ class MultiLevelQueryTranslator:
     _source_db_columns: ColumnRegistry = attr.ib(kw_only=True)
     _inspect_env: InspectionEnvironment = attr.ib(kw_only=True)
     _function_scopes: int = attr.ib(kw_only=True)
-    _verbose_logging: bool = attr.ib(kw_only=True, default=False)  # noqa
-    _avatar_alias_mapper: Callable[[str], str] = attr.ib(kw_only=True, default=lambda s: s)  # noqa
+    _verbose_logging: bool = attr.ib(kw_only=True, default=False)
+    _avatar_alias_mapper: Callable[[str], str] = attr.ib(kw_only=True, default=lambda s: s)
     _dialect: DialectCombo = attr.ib(kw_only=True)
-    _compeng_dialect: Optional[DialectCombo] = attr.ib(kw_only=True)
+    _compeng_dialect: DialectCombo | None = attr.ib(kw_only=True)
 
     # Attributes for source_db
     _collect_stats: bool = attr.ib(kw_only=True, default=False)
@@ -68,7 +65,7 @@ class MultiLevelQueryTranslator:
             dialect=self._compeng_dialect,
         )
 
-    def _log_info(self, *args, **kwargs) -> None:  # type: ignore  # TODO: fix
+    def _log_info(self, *args: Any, **kwargs: Any) -> None:
         if self._verbose_logging:
             LOGGER.info(*args, **kwargs)
 
@@ -91,19 +88,20 @@ class MultiLevelQueryTranslator:
                 "cache_hits": combined_stats,
             }
             LOGGER.info(
-                f"Function translation statistics for {level_type.name}",
-                extra=dict(function_translation_statistics=data),
+                "Function translation statistics for %s",
+                level_type.name,
+                extra={"function_translation_statistics": data},
             )
 
     def _log_query_complexity_stats(self, compiled_multi_query: CompiledMultiQueryBase) -> None:
         LOGGER.info(
             "Query structural info",
-            extra=dict(
-                query_struct_info=dict(
-                    complexity=compiled_multi_query.get_complexity(),
-                    subquery_count=compiled_multi_query.query_count(),
-                )
-            ),
+            extra={
+                "query_struct_info": {
+                    "complexity": compiled_multi_query.get_complexity(),
+                    "subquery_count": compiled_multi_query.query_count(),
+                }
+            },
         )
 
     def _get_flat_translator_for_level_type(

@@ -1,10 +1,10 @@
 import asyncio
-import logging
-from typing import (
-    Any,
+from collections.abc import (
     Awaitable,
     Callable,
 )
+import logging
+from typing import Any
 
 from dl_cache_engine.cache_invalidation import exc as cache_invalidation_exceptions
 from dl_cache_engine.cache_invalidation.engine import TCacheInvalidationGenerateFunc
@@ -26,7 +26,6 @@ from dl_core.us_connection_base import (
 from dl_core.us_dataset import Dataset
 from dl_core.us_manager.us_manager_async import AsyncUSManager
 from dl_core.utils import sa_plain_text
-
 
 TValidateFunc = Callable[[], CacheInvalidationError | None]
 
@@ -136,12 +135,11 @@ async def get_invalidation_payload_sql(
     )
 
     try:
-        payload = await helper.get_cache_invalidation_result(
+        return await helper.get_cache_invalidation_result(
             key=key,
             throttling_interval_sec=float(throttling_interval_sec),
             generate_func=generate_func,
         )
-        return payload
     except Exception:
         LOGGER.exception("Error during invalidation cache check, skipping (graceful degradation)")
         return None
@@ -199,7 +197,7 @@ async def get_invalidation_payload_formula(
                 execute_formula_func(),
                 timeout=_INVALIDATION_QUERY_TIMEOUT_SEC,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             LOGGER.warning(
                 "Formula invalidation query timed out after %.1f seconds",
                 _INVALIDATION_QUERY_TIMEOUT_SEC,
@@ -287,7 +285,7 @@ def _make_sql_generate_func(
 
         try:
             rows = await asyncio.wait_for(_execute_sql(), timeout=_INVALIDATION_QUERY_TIMEOUT_SEC)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             LOGGER.warning(
                 "Cache invalidation SQL query timed out after %.1f seconds",
                 _INVALIDATION_QUERY_TIMEOUT_SEC,

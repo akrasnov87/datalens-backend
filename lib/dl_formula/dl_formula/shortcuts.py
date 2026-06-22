@@ -1,14 +1,10 @@
 from __future__ import annotations
 
 import builtins
+from collections.abc import Sequence
 import datetime as datetime_mod
 from functools import wraps
-from typing import (
-    Any,
-    Optional,
-    Sequence,
-    Union,
-)
+from typing import Any
 import uuid as uuid_mod
 
 from sqlalchemy.sql.elements import ClauseElement
@@ -22,7 +18,7 @@ from dl_formula.translation import ext_nodes
 from dl_formula.translation.context import TranslationCtx
 
 
-def _require_type(expected_type: Union[type, tuple[Union[type, nodes.Array], ...], nodes.Array]):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+def _require_type(expected_type: type | tuple[type | nodes.Array, ...] | nodes.Array):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
     def decorator(func):  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation  [no-untyped-def]
         @wraps(func)
         def wrapper(self, value):  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation  [no-untyped-def]
@@ -58,7 +54,7 @@ class NodeShortcut:
             type(None),
         )
     )
-    def lit(self, value: Any) -> Union[nodes.BaseLiteral, nodes.Null]:
+    def lit(self, value: Any) -> nodes.BaseLiteral | nodes.Null:
         if isinstance(value, str):
             return self.str(value)
         if isinstance(value, bool):
@@ -118,7 +114,7 @@ class NodeShortcut:
         return nodes.LiteralGeopolygon.make(value)
 
     @_require_type((builtins.str, uuid_mod.UUID))
-    def uuid(self, value: Union[builtins.str, uuid_mod.UUID]) -> nodes.LiteralUuid:
+    def uuid(self, value: builtins.str | uuid_mod.UUID) -> nodes.LiteralUuid:
         return nodes.LiteralUuid.make(value)
 
     @_require_type(builtins.str)
@@ -126,7 +122,7 @@ class NodeShortcut:
         return nodes.LiteralString.make(value)
 
     @_require_type((ClauseElement, TranslationCtx))
-    def expr(self, value: Union[ClauseElement, TranslationCtx]) -> ext_nodes.CompiledExpression:
+    def expr(self, value: ClauseElement | TranslationCtx) -> ext_nodes.CompiledExpression:
         return ext_nodes.CompiledExpression.make(value)
 
     def null(self) -> nodes.Null:
@@ -161,7 +157,7 @@ class NodeShortcut:
 
     def _normalize_raw_bfb(
         self,
-        before_filter_by: Optional[list[Union[nodes.Field, builtins.str]]] = None,
+        before_filter_by: list[nodes.Field | builtins.str] | None = None,
     ) -> nodes.BeforeFilterBy:
         return nodes.BeforeFilterBy.make(
             field_names=frozenset([f.name if isinstance(f, nodes.Field) else f for f in (before_filter_by or ())]),
@@ -170,29 +166,29 @@ class NodeShortcut:
     class FuncShortcut:
         """SQLAlchemy-like function shortcut provider: ````"""
 
-        def __init__(self, assume_window: bool = False):
+        def __init__(self, assume_window: bool = False) -> None:
             self._assume_window = assume_window
 
-        def __getattr__(self, name: str):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+        def __getattr__(self, name: str) -> Any:
             return self._make_func(name)
 
-        def __call__(self, name: str):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
+        def __call__(self, name: str) -> Any:
             return self._make_func(name)
 
         def _make_func(self, name: str):  # type: ignore  # 2024-01-24 # TODO: Function is missing a return type annotation  [no-untyped-def]
             def wrapper(
                 *pos_args: nodes.FormulaItem,
-                grouping: Optional[nodes.WindowGrouping] = None,
-                total: Optional[bool] = None,
-                within: Optional[list[nodes.FormulaItem]] = None,
-                among: Optional[list[nodes.FormulaItem]] = None,
-                order_by: Optional[list[nodes.FormulaItem]] = None,
-                before_filter_by: Optional[list[Union[nodes.Field, str]]] = None,
-                ignore_dimensions: Optional[nodes.IgnoreDimensions] = None,
-                lod: Optional[nodes.LodSpecifier] = None,
+                grouping: nodes.WindowGrouping | None = None,
+                total: bool | None = None,
+                within: list[nodes.FormulaItem] | None = None,
+                among: list[nodes.FormulaItem] | None = None,
+                order_by: list[nodes.FormulaItem] | None = None,
+                before_filter_by: list[nodes.Field | str] | None = None,
+                ignore_dimensions: nodes.IgnoreDimensions | None = None,
+                lod: nodes.LodSpecifier | None = None,
                 args: Sequence[nodes.FormulaItem] = (),
-                meta: Optional[nodes.NodeMeta] = None,
-            ) -> Union[nodes.FuncCall, nodes.WindowFuncCall]:
+                meta: nodes.NodeMeta | None = None,
+            ) -> nodes.FuncCall | nodes.WindowFuncCall:
                 assert (
                     len([bool(spec) for spec in (grouping, total, within, among) if spec is not None]) <= 1
                 ), "Only one grouping specifier is allowed"
@@ -244,15 +240,15 @@ class NodeShortcut:
         def then(self, expr: Any) -> nodes.WhenPart:
             return nodes.WhenPart.make(val=_norm(self._val), expr=_norm(expr))
 
-    def when(self, val: Any) -> "NodeShortcut.WhenProxy":
+    def when(self, val: Any) -> NodeShortcut.WhenProxy:
         return self.WhenProxy(val)
 
     class CaseProxy:
-        def __init__(self, case_expr):  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation  [no-untyped-def]
+        def __init__(self, case_expr: Any) -> None:
             self._case_expr = case_expr
-            self._when_list = []
+            self._when_list: list = []
 
-        def whens(self, *when_list) -> "NodeShortcut.CaseProxy":  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+        def whens(self, *when_list: Any) -> NodeShortcut.CaseProxy:
             self._when_list += when_list or []
             return self
 
@@ -261,7 +257,7 @@ class NodeShortcut:
                 case_expr=_norm(self._case_expr), when_list=self._when_list, else_expr=_norm(expr)
             )
 
-    def case(self, expr) -> "NodeShortcut.CaseProxy":  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+    def case(self, expr) -> NodeShortcut.CaseProxy:  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
         """
         Usage:
         TODO
@@ -269,22 +265,22 @@ class NodeShortcut:
         return self.CaseProxy(expr)
 
     class IfPartProxy:
-        def __init__(self, cond):  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation  [no-untyped-def]
+        def __init__(self, cond: Any) -> None:
             self._cond = cond
             self._expr = None
 
-        def then(self, expr) -> "NodeShortcut.IfPartProxy":  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+        def then(self, expr) -> NodeShortcut.IfPartProxy:  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
             self._expr = expr
             return self
 
         def else_(self, expr) -> nodes.IfBlock:  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
             return n.IfBlockProxy([self]).else_(expr)
 
-    def elseif(self, cond) -> "NodeShortcut.IfPartProxy":  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+    def elseif(self, cond) -> NodeShortcut.IfPartProxy:  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
         return self.IfPartProxy(cond)
 
     class IfBlockProxy:
-        def __init__(self, if_list: list):
+        def __init__(self, if_list: list) -> None:
             self._if_list = if_list
 
         def else_(self, expr) -> nodes.IfBlock:  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
@@ -293,7 +289,7 @@ class NodeShortcut:
                 else_expr=_norm(expr),
             )
 
-    def if_(self, *exprs) -> Union["NodeShortcut.IfBlockProxy", "NodeShortcut.IfPartProxy"]:  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+    def if_(self, *exprs: Any) -> NodeShortcut.IfBlockProxy | NodeShortcut.IfPartProxy:
         """
         Usage:
         TODO
@@ -328,10 +324,10 @@ class NodeShortcut:
         self,
         joining: fork_nodes.QueryForkJoiningBase,
         result_expr: nodes.FormulaItem,
-        before_filter_by: Optional[list[Union[nodes.Field, builtins.str]]] = None,
-        lod: Optional[nodes.FixedLodSpecifier] = None,
+        before_filter_by: list[nodes.Field | builtins.str] | None = None,
+        lod: nodes.FixedLodSpecifier | None = None,
         join_type: fork_nodes.JoinType = fork_nodes.JoinType.left,
-        bfb_filter_mutations: Optional[fork_nodes.BfbFilterMutationCollectionSpec] = None,
+        bfb_filter_mutations: fork_nodes.BfbFilterMutationCollectionSpec | None = None,
     ) -> fork_nodes.QueryFork:
         before_filter_by_node = self._normalize_raw_bfb(before_filter_by=before_filter_by)
         return fork_nodes.QueryFork.make(
@@ -352,7 +348,7 @@ class NodeShortcut:
     def joining(
         self,
         *,
-        conditions: Optional[Sequence[fork_nodes.JoinConditionBase]] = None,
+        conditions: Sequence[fork_nodes.JoinConditionBase] | None = None,
     ) -> fork_nodes.QueryForkJoiningBase:
         if conditions is not None:
             return fork_nodes.QueryForkJoiningWithList.make(
@@ -364,7 +360,7 @@ class NodeShortcut:
         self,
         name: builtins.str,
         expr: nodes.FormulaItem,
-        meta: Optional[nodes.NodeMeta] = None,
+        meta: nodes.NodeMeta | None = None,
     ) -> nodes.Unary:
         return nodes.Unary.make(name=name, expr=expr, meta=meta)
 
@@ -373,7 +369,7 @@ class NodeShortcut:
         name: builtins.str,
         left: nodes.FormulaItem,
         right: nodes.FormulaItem,
-        meta: Optional[nodes.NodeMeta] = None,
+        meta: nodes.NodeMeta | None = None,
     ) -> nodes.Binary:
         return nodes.Binary.make(name=name, left=left, right=right, meta=meta)
 
@@ -383,14 +379,14 @@ class NodeShortcut:
         first: nodes.FormulaItem,
         second: nodes.FormulaItem,
         third: nodes.FormulaItem,
-        meta: Optional[nodes.NodeMeta] = None,
+        meta: nodes.NodeMeta | None = None,
     ) -> nodes.Ternary:
         return nodes.Ternary.make(name=name, first=first, second=second, third=third, meta=meta)
 
     def not_(
         self,
         expr: nodes.FormulaItem,
-        meta: Optional[nodes.NodeMeta] = None,
+        meta: nodes.NodeMeta | None = None,
     ) -> nodes.Unary:
         return self.unary("not", expr, meta=meta)
 

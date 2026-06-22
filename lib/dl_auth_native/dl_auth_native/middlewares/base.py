@@ -1,5 +1,7 @@
+import hmac
+from typing import Self
+
 import attr
-from typing_extensions import Self
 
 import dl_api_commons
 import dl_auth
@@ -9,7 +11,7 @@ import dl_constants
 
 @attr.s(frozen=True)
 class AuthData(dl_auth.AuthData):
-    _user_access_token: str = attr.ib()
+    _user_access_token: str = attr.ib(repr=False)
     _token_type: str = attr.ib()
     _roles: list[str] = attr.ib(factory=list)
 
@@ -37,8 +39,9 @@ class AuthResult:
 
 @attr.s(frozen=True)
 class MiddlewareSettings:
-    decoder_key: str = attr.ib()
+    decoder_key: str = attr.ib(repr=False)
     decoder_algorithms: list[str] = attr.ib()
+    master_token: str | None = attr.ib(default=None, repr=False)
 
 
 @attr.s()
@@ -46,6 +49,8 @@ class BaseMiddleware:
     _token_decoder: token.DecoderProtocol = attr.ib()
     _user_access_header_key: str = attr.ib(default=dl_constants.DLHeadersCommon.AUTHORIZATION_TOKEN)
     _token_type: str = attr.ib(default="Bearer")
+    _master_token: str | None = attr.ib(default=None, repr=False)
+    _service_auth_header_key: str = attr.ib(default=dl_constants.DLHeadersCommon.US_MASTER_TOKEN)
 
     @classmethod
     def from_settings(cls, settings: MiddlewareSettings) -> Self:
@@ -56,25 +61,30 @@ class BaseMiddleware:
 
         return cls(
             token_decoder=token_decoder,
+            master_token=settings.master_token,
         )
 
     @attr.s(frozen=True)
-    class Unauthorized(Exception):
+    class UnauthorizedError(Exception):
+        message: str = attr.ib()
+
+    @attr.s(frozen=True)
+    class ForbiddenError(Exception):
         message: str = attr.ib()
 
     def _auth(self, user_access_header: str | None) -> AuthResult:
         if user_access_header is None:
-            raise self.Unauthorized("User access token header is missing")
+            raise self.UnauthorizedError("User access token header is missing")
 
         if not user_access_header.startswith(self._token_type):
-            raise self.Unauthorized("Bad token type")
+            raise self.UnauthorizedError("Bad token type")
 
         user_access_token = user_access_header.removeprefix(self._token_type).strip()
 
         try:
             payload = self._token_decoder.decode(user_access_token)
         except token.TokenError as exc:
-            raise self.Unauthorized(f"Invalid user access token: {exc.message}")
+            raise self.UnauthorizedError(f"Invalid user access token: {exc.message}") from exc
 
         return AuthResult(
             user_id=payload.user_id,
@@ -85,6 +95,16 @@ class BaseMiddleware:
                 roles=payload.roles,
             ),
         )
+
+    def _service_auth(self, service_token_header: str | None) -> None:
+        if self._master_token is None:
+            raise self.UnauthorizedError("Service auth is not configured")
+
+        if service_token_header is None:
+            raise self.UnauthorizedError("Service token header is missing")
+
+        if not hmac.compare_digest(service_token_header, self._master_token):
+            raise self.ForbiddenError("Invalid service token")
 
 
 __all__ = [

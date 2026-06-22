@@ -9,18 +9,17 @@ from dl_formula.shortcuts import n
 
 from dl_connector_snowflake.formula.constants import SnowFlakeDialect as D
 
-
 V = TranslationVariant.make
 VW = TranslationVariantWrapped.make
 
 
 class FuncIEndswithNonConstSF(base.FuncIEndswithNonConst):
-    variants = [
+    variants = (
         VW(
             D.SNOWFLAKE,
             lambda s, substr: n.func.ENDSWITH(n.func.LOWER(s), n.func.LOWER(substr)),
         ),
-    ]
+    )
 
 
 DEFINITIONS_STRING = [

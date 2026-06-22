@@ -1,22 +1,20 @@
 from __future__ import annotations
 
-import abc
+from collections.abc import (
+    Callable,
+    Collection,
+    Generator,
+    Hashable,
+    Iterable,
+    Mapping,
+    Sequence,
+)
 import copy
 import datetime
 from typing import (
     Any,
-    Callable,
     ClassVar,
-    Collection,
-    Generator,
-    Generic,
-    Hashable,
-    Iterable,
-    Mapping,
-    Optional,
-    Sequence,
     TypeVar,
-    Union,
     cast,
 )
 import uuid
@@ -28,14 +26,14 @@ from dl_formula.core.tag import LevelTag
 
 
 class NodeMeta:
-    __slots__ = ("position", "original_text", "level_tag")
+    __slots__ = ("level_tag", "original_text", "position")
 
     def __init__(
         self,
-        position: Optional[Position] = None,
-        original_text: Optional[str] = None,
-        level_tag: Optional[LevelTag] = None,
-    ):
+        position: Position | None = None,
+        original_text: str | None = None,
+        level_tag: LevelTag | None = None,
+    ) -> None:
         self.position = position or Position()
         self.original_text = original_text
         self.level_tag = level_tag
@@ -57,13 +55,13 @@ class NodeMeta:
         )
 
 
-_FORMULA_ITEM_TV = TypeVar("_FORMULA_ITEM_TV", bound="FormulaItem")
+FORMULA_ITEM_TV = TypeVar("FORMULA_ITEM_TV", bound="FormulaItem")
 
 
-class FormulaItem(abc.ABC):
-    """Abstract class. Base class for all formula building blocks."""
+class FormulaItem:
+    """Base class for all formula building blocks."""
 
-    __slots__ = ("__children", "__internal_value", "__meta", "__extract")
+    __slots__ = ("__children", "__extract", "__internal_value", "__meta")
     show_names: tuple[str, ...] = ()
     autonomous: ClassVar[bool] = True
     # If True, then the node can represent a standalone expression.
@@ -74,7 +72,7 @@ class FormulaItem(abc.ABC):
         return tuple(self.__children)
 
     @property
-    def internal_value(self) -> tuple[Optional[Hashable], ...]:
+    def internal_value(self) -> tuple[Hashable | None, ...]:
         return self.__internal_value
 
     @property
@@ -82,15 +80,15 @@ class FormulaItem(abc.ABC):
         return self.__meta.position
 
     @property
-    def original_text(self) -> Optional[str]:
+    def original_text(self) -> str | None:
         return self.__meta.original_text
 
     @property
-    def level_tag(self) -> Optional[LevelTag]:
+    def level_tag(self) -> LevelTag | None:
         return self.__meta.level_tag
 
     @property
-    def pos_range(self) -> tuple[Optional[int], Optional[int]]:
+    def pos_range(self) -> tuple[int | None, int | None]:
         return self.__meta.position.start, self.__meta.position.end
 
     @property
@@ -100,9 +98,9 @@ class FormulaItem(abc.ABC):
     def __init__(
         self,
         *children: FormulaItem,
-        internal_value: tuple[Optional[Hashable], ...] = (),
-        meta: Optional[NodeMeta] = None,
-    ):
+        internal_value: tuple[Hashable | None, ...] = (),
+        meta: NodeMeta | None = None,
+    ) -> None:
         for child in children:
             if not isinstance(child, FormulaItem):
                 raise TypeError(f"Invalid type {type(child)} for child node")
@@ -111,7 +109,7 @@ class FormulaItem(abc.ABC):
         assert isinstance(internal_value, tuple)
         self.validate_internal_value(internal_value)
 
-        self.__children: list[FormulaItem] = [child for child in children]
+        self.__children: list[FormulaItem] = list(children)
         self.__internal_value = internal_value
         self.__meta: NodeMeta = meta or NodeMeta()
         self.__extract = self._make_extract()
@@ -121,14 +119,14 @@ class FormulaItem(abc.ABC):
         return
 
     @classmethod
-    def validate_internal_value(cls, internal_value: tuple[Optional[Hashable], ...]) -> None:
+    def validate_internal_value(cls, internal_value: tuple[Hashable | None, ...]) -> None:
         assert internal_value == ()
 
-    def get_scalar_value(self) -> Optional[Hashable]:
+    def get_scalar_value(self) -> Hashable | None:
         return self.__internal_value
 
     def stringify(self, with_meta: bool = False) -> str:
-        show_names = self.show_names if not with_meta else (self.show_names + ("meta",))
+        show_names = self.show_names if not with_meta else ((*self.show_names, "meta"))
         kv_pairs = []
         for name in show_names:
             if name == "meta":
@@ -142,7 +140,7 @@ class FormulaItem(abc.ABC):
             pair = f"{name}={attr_value_s}"
             kv_pairs.append(pair)
         param_str = ", ".join(kv_pairs)
-        return "{}({})".format(self.__class__.__name__, param_str)
+        return f"{self.__class__.__name__}({param_str})"
 
     def __repr__(self) -> str:
         return self.stringify()
@@ -181,22 +179,21 @@ class FormulaItem(abc.ABC):
                 res = "(\n"
                 item_indent = _initial_indent + indent
                 for item in _child:
-                    res += "{}{},\n".format(item_indent, prettify_child(item, item_indent))
+                    res += f"{item_indent}{prettify_child(item, item_indent)},\n"
                 res += _initial_indent + ")"
                 return res
-            else:
-                return repr(_child)
+            return repr(_child)
 
         lines = []
         lines.append("{}{}(".format(initial_indent if do_leading_indent else "", self.__class__.__name__))
-        show_names = self.show_names if not with_meta else (self.show_names + ("meta",))
+        show_names = self.show_names if not with_meta else ((*self.show_names, "meta"))
         for name in show_names:
             if name == "meta":
                 child = str(self.__meta)
             else:
                 child = prettify_child(getattr(self, name), initial_indent + indent)
-            lines.append("{}{}={},".format(initial_indent + indent, name, child))
-        lines.append("{})".format(initial_indent))
+            lines.append(f"{initial_indent + indent}{name}={child},")
+        lines.append(f"{initial_indent})")
 
         return "\n".join(lines)
 
@@ -208,16 +205,16 @@ class FormulaItem(abc.ABC):
         for child in self.__children:
             child.visit_node_type(node_type=node_type, visit_func=visit_func)
 
-    def list_node_type(self, node_type: type[_FORMULA_ITEM_TV]) -> list[_FORMULA_ITEM_TV]:
-        res: list[_FORMULA_ITEM_TV] = []
-        self.visit_node_type(node_type=node_type, visit_func=res.append)  # type: ignore  # 2024-01-30 # TODO: Argument "visit_func" to "visit_node_type" of "FormulaItem" has incompatible type "Callable[[_FORMULA_ITEM_TV], None]"; expected "Callable[[FormulaItem], Any]"  [arg-type]
+    def list_node_type(self, node_type: type[FORMULA_ITEM_TV]) -> list[FORMULA_ITEM_TV]:
+        res: list[FORMULA_ITEM_TV] = []
+        self.visit_node_type(node_type=node_type, visit_func=res.append)  # type: ignore  # 2024-01-30 # TODO: Argument "visit_func" to "visit_node_type" of "FormulaItem" has incompatible type "Callable[[FORMULA_ITEM_TV], None]"; expected "Callable[[FormulaItem], Any]"  [arg-type]
         return res
 
     def get_by_pos(
         self,
         pos: int,
-        node_types: Optional[tuple[type[FormulaItem], ...]] = None,
-    ) -> Optional[FormulaItem]:
+        node_types: tuple[type[FormulaItem], ...] | None = None,
+    ) -> FormulaItem | None:
         """
         Return the innermost node at position ``pos``.
         If ``node_types`` is given, then choose only among nodes of the listed types.
@@ -245,7 +242,7 @@ class FormulaItem(abc.ABC):
 
     @staticmethod
     def __inplace_replace_at_index_no_copy(
-        top_node: _FORMULA_ITEM_TV, index: NodeHierarchyIndex, expr: FormulaItem
+        top_node: FORMULA_ITEM_TV, index: NodeHierarchyIndex, expr: FormulaItem
     ) -> None:
         parent_index, child_index = index.rsplit()
         assert child_index is not None
@@ -256,20 +253,20 @@ class FormulaItem(abc.ABC):
             node.__extract = node._make_extract()
 
     def substitute_batch(
-        self: _FORMULA_ITEM_TV, to_substitute: Mapping[NodeHierarchyIndex, FormulaItem]
-    ) -> _FORMULA_ITEM_TV:
+        self: FORMULA_ITEM_TV, to_substitute: Mapping[NodeHierarchyIndex, FormulaItem]
+    ) -> FORMULA_ITEM_TV:
         """
         Substitutes sub nodes by given indexes
         Note that substituent nodes are not copied before "insertion"
         """
-        self_copy: _FORMULA_ITEM_TV = copy.copy(self)
+        self_copy: FORMULA_ITEM_TV = copy.copy(self)
         for index, expr in to_substitute.items():
             self.__inplace_replace_at_index_no_copy(self_copy, index=index, expr=expr)
 
         self_copy.__extract = self_copy._make_extract()
         return self_copy
 
-    def replace_at_index(self: _FORMULA_ITEM_TV, index: NodeHierarchyIndex, expr: FormulaItem) -> _FORMULA_ITEM_TV:
+    def replace_at_index(self: FORMULA_ITEM_TV, index: NodeHierarchyIndex, expr: FormulaItem) -> FORMULA_ITEM_TV:
         """
         Replace node at index ``index`` with a new one specified by ``expr``.
         Creating new nodes while descending along the `index` in recursion.
@@ -278,7 +275,7 @@ class FormulaItem(abc.ABC):
 
         # final replacement
         if child_in_index is None:
-            return expr  # type: ignore  # 2024-01-30 # TODO: Incompatible return value type (got "FormulaItem", expected "_FORMULA_ITEM_TV")  [return-value]
+            return expr  # type: ignore  # 2024-01-30 # TODO: Incompatible return value type (got "FormulaItem", expected "FORMULA_ITEM_TV")  [return-value]
 
         child = self.__children[child_in_index]
         new_child = child.replace_at_index(index_tail, expr)
@@ -289,8 +286,8 @@ class FormulaItem(abc.ABC):
         return self.light_copy(children)
 
     def light_copy(
-        self: _FORMULA_ITEM_TV, children: Sequence[FormulaItem], *, meta: Optional[NodeMeta] = None
-    ) -> _FORMULA_ITEM_TV:
+        self: FORMULA_ITEM_TV, children: Sequence[FormulaItem], *, meta: NodeMeta | None = None
+    ) -> FORMULA_ITEM_TV:
         """
         Creates a copy of self with new children nodes
         """
@@ -302,11 +299,11 @@ class FormulaItem(abc.ABC):
         )
 
     def replace_nodes(
-        self: _FORMULA_ITEM_TV,
+        self: FORMULA_ITEM_TV,
         match_func: Callable[[FormulaItem, tuple[FormulaItem, ...]], bool],
         replace_func: Callable[[FormulaItem, tuple[FormulaItem, ...]], FormulaItem],
         parent_stack: tuple[FormulaItem, ...] = (),
-    ) -> _FORMULA_ITEM_TV:
+    ) -> FORMULA_ITEM_TV:
         """
         Walk the whole ``FormulaItem`` (sub)tree and replace child nodes
         for which ``replace_func(<child_node>)`` is ``True`` with``replace_func(<child_node>)``.
@@ -317,7 +314,7 @@ class FormulaItem(abc.ABC):
 
         is_modified = False
 
-        parent_stack_w_self = parent_stack + (self,)
+        parent_stack_w_self: tuple[FormulaItem, ...] = (*parent_stack, self)
         to_replace: dict[int, FormulaItem] = {}
 
         for idx, child in enumerate(self.__children):
@@ -335,13 +332,13 @@ class FormulaItem(abc.ABC):
         if is_modified:
             children = cast(
                 list[FormulaItem],
-                [to_replace[idx] if idx in to_replace else child for idx, child in enumerate(self.__children)],
+                [to_replace.get(idx, child) for idx, child in enumerate(self.__children)],
             )
             return self.light_copy(children)
 
         return self
 
-    def __copy__(self: _FORMULA_ITEM_TV) -> _FORMULA_ITEM_TV:
+    def __copy__(self: FORMULA_ITEM_TV) -> FORMULA_ITEM_TV:
         """Create a copy of self"""
 
         return self.__class__(
@@ -354,7 +351,7 @@ class FormulaItem(abc.ABC):
         self.__meta = meta
         self.__extract = self._make_extract()
 
-    def with_tag(self: _FORMULA_ITEM_TV, level_tag: LevelTag) -> _FORMULA_ITEM_TV:
+    def with_tag(self: FORMULA_ITEM_TV, level_tag: LevelTag) -> FORMULA_ITEM_TV:
         """
         Return a copy of node with replaced ``self.meta.level_tag``
         """
@@ -373,7 +370,7 @@ class FormulaItem(abc.ABC):
     def enumerate(
         self,
         prefix: NodeHierarchyIndex = NodeHierarchyIndex(),  # noqa: B008
-        max_depth: Optional[int] = None,
+        max_depth: int | None = None,
     ) -> Generator[tuple[NodeHierarchyIndex, FormulaItem], None, None]:
         """
         Similar to the standard ``enumerate`` function,
@@ -389,7 +386,7 @@ class FormulaItem(abc.ABC):
         for child_i, child in enumerate(self.children):
             yield from child.enumerate(prefix=prefix + child_i, max_depth=child_max_depth)
 
-    def resolve_index(self, node: FormulaItem, pointer_eq: bool = True) -> Optional[NodeHierarchyIndex]:
+    def resolve_index(self, node: FormulaItem, pointer_eq: bool = True) -> NodeHierarchyIndex | None:
         """Get index for given ``node``."""
         for index, child in self.enumerate():
             if pointer_eq:
@@ -411,18 +408,18 @@ class FormulaItem(abc.ABC):
                 yield node
 
     @property
-    def start_pos(self) -> Optional[int]:
+    def start_pos(self) -> int | None:
         return self.position.start
 
     @property
-    def end_pos(self) -> Optional[int]:
+    def end_pos(self) -> int | None:
         return self.position.end
 
     @property
-    def complexity(self) -> Optional[int]:
+    def complexity(self) -> int | None:
         return self.__extract.complexity if self.__extract is not None else None
 
-    def _make_extract(self) -> Optional[NodeExtract]:
+    def _make_extract(self) -> NodeExtract | None:
         """
         Return a hashable immutable object that represents this node and its children.
         It should not contain any syntactic info so that can be used for optimization of data calculations.
@@ -439,7 +436,7 @@ class FormulaItem(abc.ABC):
         )
 
     @property
-    def extract(self) -> Optional[NodeExtract]:
+    def extract(self) -> NodeExtract | None:
         return self.__extract
 
     @property
@@ -448,15 +445,15 @@ class FormulaItem(abc.ABC):
         return self.__extract
 
 
-class Child(Generic[_FORMULA_ITEM_TV]):
+class Child[FORMULA_ITEM_TV: "FormulaItem"]:
     """Descriptor for node properties that refer to child nodes"""
 
     __slots__ = ("ind",)
 
-    def __init__(self, ind: int):
+    def __init__(self, ind: int) -> None:
         self.ind = ind
 
-    def __get__(self, instance: FormulaItem, owner: type[FormulaItem]) -> _FORMULA_ITEM_TV:
+    def __get__(self, instance: FormulaItem, owner: type[FormulaItem]) -> FORMULA_ITEM_TV:
         if instance is None:
             raise TypeError("Cannot be used on class")
         return instance.children[self.ind]  # type: ignore  # Cannot validate type here
@@ -465,15 +462,15 @@ class Child(Generic[_FORMULA_ITEM_TV]):
         raise RuntimeError("Cannot set children")
 
 
-class MultiChild(Generic[_FORMULA_ITEM_TV]):
+class MultiChild[FORMULA_ITEM_TV: "FormulaItem"]:
     """Descriptor for node properties that refer to child nodes"""
 
     __slots__ = ("slice",)
 
-    def __init__(self, slice: slice):
+    def __init__(self, slice: slice) -> None:
         self.slice = slice
 
-    def __get__(self, instance: FormulaItem, owner: type[FormulaItem]) -> tuple[_FORMULA_ITEM_TV, ...]:
+    def __get__(self, instance: FormulaItem, owner: type[FormulaItem]) -> tuple[FORMULA_ITEM_TV, ...]:
         if instance is None:
             raise TypeError("Cannot be used on class")
         return instance.children[self.slice]  # type: ignore  # Cannot validate type here
@@ -494,7 +491,7 @@ class Null(FormulaItem):
 
 class ExprWrapper(FormulaItem):
     __slots__ = ()
-    show_names = FormulaItem.show_names + ("expr",)
+    show_names = (*FormulaItem.show_names, "expr")
 
     expr: Child[FormulaItem] = Child(0)
 
@@ -503,7 +500,7 @@ class ExprWrapper(FormulaItem):
         assert len(children) == 1
 
     @classmethod
-    def make(cls: type[_FORMULA_ITEM_TV], expr: FormulaItem, *, meta: Optional[NodeMeta] = None) -> _FORMULA_ITEM_TV:
+    def make(cls: type[FORMULA_ITEM_TV], expr: FormulaItem, *, meta: NodeMeta | None = None) -> FORMULA_ITEM_TV:
         return cls(expr, meta=meta)
 
 
@@ -520,7 +517,7 @@ class BaseLiteral(FormulaItem):
     """Represents a constant value"""
 
     __slots__ = ()
-    show_names = FormulaItem.show_names + ("value",)
+    show_names = (*FormulaItem.show_names, "value")
 
     @property
     def value(self) -> Any:
@@ -531,16 +528,16 @@ class BaseLiteral(FormulaItem):
         assert len(children) == 0
 
     @classmethod
-    def validate_internal_value(cls, internal_value: tuple[Optional[Hashable], ...]) -> None:
+    def validate_internal_value(cls, internal_value: tuple[Hashable | None, ...]) -> None:
         assert len(internal_value) == 1
         cls.validate_literal_value(internal_value[0])
 
     @classmethod
-    def validate_literal_value(cls, literal_value: Optional[Hashable]) -> None:
+    def validate_literal_value(cls, literal_value: Hashable | None) -> None:
         pass
 
     @classmethod
-    def make(cls: type[_LITERAL_TV], value: Any, *, meta: Optional[NodeMeta] = None) -> _LITERAL_TV:
+    def make(cls: type[_LITERAL_TV], value: Any, *, meta: NodeMeta | None = None) -> _LITERAL_TV:
         internal_value = (value,)
         return cls(internal_value=internal_value, meta=meta)
 
@@ -548,7 +545,7 @@ class BaseLiteral(FormulaItem):
 class Array:
     __slots__ = ("item_cls",)
 
-    def __init__(self, item_cls: type):
+    def __init__(self, item_cls: type) -> None:
         self.item_cls = item_cls
 
     def __str__(self) -> str:
@@ -560,7 +557,7 @@ class Array:
 
 def does_type_match(
     value: Any,
-    expected_type: Union[type, tuple[Union[type, Array], ...], Array],
+    expected_type: type | tuple[type | Array, ...] | Array,
 ) -> bool:
     if isinstance(expected_type, Array):
         if not isinstance(value, list):
@@ -572,15 +569,15 @@ def does_type_match(
             if not does_type_match(item, expected_type=expected_type.item_cls):
                 return False
         return True
-    elif isinstance(expected_type, tuple):
+    if isinstance(expected_type, tuple):
         return any(does_type_match(value, expected_type=sub_type) for sub_type in expected_type)
-    elif isinstance(expected_type, type):
+    if isinstance(expected_type, type):
         return isinstance(value, expected_type)
 
     raise TypeError(f"Unexpected type: {expected_type}")
 
 
-def check_type(value: Any, expected_type: Union[type, tuple[Union[type, Array], ...], Array]) -> None:
+def check_type(value: Any, expected_type: type | tuple[type | Array, ...] | Array) -> None:
     if not does_type_match(value, expected_type):
         raise TypeError(f"Expected type {expected_type}, got {type(value)}")
 
@@ -591,7 +588,7 @@ class LiteralInteger(BaseLiteral):
     __slots__ = ()
 
     @classmethod
-    def validate_literal_value(cls, literal_value: Optional[Hashable]) -> None:
+    def validate_literal_value(cls, literal_value: Hashable | None) -> None:
         assert isinstance(literal_value, int)
 
 
@@ -601,7 +598,7 @@ class LiteralFloat(BaseLiteral):
     __slots__ = ()
 
     @classmethod
-    def validate_literal_value(cls, literal_value: Optional[Hashable]) -> None:
+    def validate_literal_value(cls, literal_value: Hashable | None) -> None:
         assert isinstance(literal_value, float)
 
 
@@ -611,7 +608,7 @@ class LiteralBoolean(BaseLiteral):
     __slots__ = ()
 
     @classmethod
-    def validate_literal_value(cls, literal_value: Optional[Hashable]) -> None:
+    def validate_literal_value(cls, literal_value: Hashable | None) -> None:
         assert isinstance(literal_value, bool)
 
 
@@ -621,7 +618,7 @@ class LiteralString(BaseLiteral):
     __slots__ = ()
 
     @classmethod
-    def validate_literal_value(cls, literal_value: Optional[Hashable]) -> None:
+    def validate_literal_value(cls, literal_value: Hashable | None) -> None:
         assert isinstance(literal_value, str)
 
 
@@ -631,7 +628,7 @@ class LiteralDate(BaseLiteral):
     __slots__ = ()
 
     @classmethod
-    def validate_literal_value(cls, literal_value: Optional[Hashable]) -> None:
+    def validate_literal_value(cls, literal_value: Hashable | None) -> None:
         assert isinstance(literal_value, datetime.date)
 
 
@@ -641,7 +638,7 @@ class LiteralDatetime(BaseLiteral):
     __slots__ = ()
 
     @classmethod
-    def validate_literal_value(cls, literal_value: Optional[Hashable]) -> None:
+    def validate_literal_value(cls, literal_value: Hashable | None) -> None:
         assert isinstance(literal_value, datetime.datetime)
 
 
@@ -651,7 +648,7 @@ class LiteralDatetimeTZ(BaseLiteral):
     __slots__ = ()
 
     @classmethod
-    def validate_literal_value(cls, literal_value: Optional[Hashable]) -> None:
+    def validate_literal_value(cls, literal_value: Hashable | None) -> None:
         assert isinstance(literal_value, datetime.datetime)
         if literal_value.tzinfo is None:
             raise TypeError("Expected non-empty datetime tzinfo")
@@ -663,7 +660,7 @@ class LiteralGenericDatetime(BaseLiteral):
     __slots__ = ()
 
     @classmethod
-    def validate_literal_value(cls, literal_value: Optional[Hashable]) -> None:
+    def validate_literal_value(cls, literal_value: Hashable | None) -> None:
         assert isinstance(literal_value, datetime.datetime)
 
 
@@ -688,12 +685,12 @@ class LiteralUuid(BaseLiteral):
     __slots__ = ()
 
     @classmethod
-    def make(cls, value: Union[uuid.UUID, str], *, meta: Optional[NodeMeta] = None) -> LiteralUuid:
+    def make(cls, value: uuid.UUID | str, *, meta: NodeMeta | None = None) -> LiteralUuid:
         value = value if isinstance(value, uuid.UUID) else uuid.UUID(value)
         return super().make(value=value, meta=meta)
 
     @classmethod
-    def validate_literal_value(cls, literal_value: Optional[Hashable]) -> None:
+    def validate_literal_value(cls, literal_value: Hashable | None) -> None:
         assert isinstance(literal_value, uuid.UUID)
 
 
@@ -703,7 +700,7 @@ class BaseLiteralArray(BaseLiteral):
     __slots__ = ()
 
 
-def _validate_array(literal_value: Optional[Hashable], item_type: type | tuple[type, ...]) -> None:
+def _validate_array(literal_value: Hashable | None, item_type: type | tuple[type, ...]) -> None:
     assert isinstance(literal_value, tuple)
     for el in literal_value:
         assert el is None or isinstance(el, item_type)
@@ -715,11 +712,11 @@ class LiteralArrayInteger(BaseLiteralArray):
     __slots__ = ()
 
     @classmethod
-    def make(cls, value: list[int], *, meta: Optional[NodeMeta] = None) -> LiteralArrayInteger:
+    def make(cls, value: list[int], *, meta: NodeMeta | None = None) -> LiteralArrayInteger:
         return super().make(value=tuple(value), meta=meta)
 
     @classmethod
-    def validate_literal_value(cls, literal_value: Optional[Hashable]) -> None:
+    def validate_literal_value(cls, literal_value: Hashable | None) -> None:
         _validate_array(literal_value, int)
 
 
@@ -729,11 +726,11 @@ class LiteralArrayFloat(BaseLiteralArray):
     __slots__ = ()
 
     @classmethod
-    def make(cls, value: list[float], *, meta: Optional[NodeMeta] = None) -> LiteralArrayFloat:
+    def make(cls, value: list[float], *, meta: NodeMeta | None = None) -> LiteralArrayFloat:
         return super().make(value=tuple(value), meta=meta)
 
     @classmethod
-    def validate_literal_value(cls, literal_value: Optional[Hashable]) -> None:
+    def validate_literal_value(cls, literal_value: Hashable | None) -> None:
         _validate_array(literal_value, float)
 
 
@@ -743,11 +740,11 @@ class LiteralArrayString(BaseLiteralArray):
     __slots__ = ()
 
     @classmethod
-    def make(cls, value: list[str], *, meta: Optional[NodeMeta] = None) -> LiteralArrayString:
+    def make(cls, value: list[str], *, meta: NodeMeta | None = None) -> LiteralArrayString:
         return super().make(value=tuple(value), meta=meta)
 
     @classmethod
-    def validate_literal_value(cls, literal_value: Optional[Hashable]) -> None:
+    def validate_literal_value(cls, literal_value: Hashable | None) -> None:
         _validate_array(literal_value, str)
 
 
@@ -763,11 +760,11 @@ class LiteralTreeString(BaseLiteralArray):
     __slots__ = ()
 
     @classmethod
-    def make(cls, value: list[str], *, meta: Optional[NodeMeta] = None) -> LiteralTreeString:
+    def make(cls, value: list[str], *, meta: NodeMeta | None = None) -> LiteralTreeString:
         return super().make(value=tuple(value), meta=meta)
 
     @classmethod
-    def validate_literal_value(cls, literal_value: Optional[Hashable]) -> None:
+    def validate_literal_value(cls, literal_value: Hashable | None) -> None:
         _validate_array(literal_value, str)
 
 
@@ -778,7 +775,7 @@ class ExpressionList(FormulaItem):
     autonomous = False
 
     @classmethod
-    def make(cls: type[_FORMULA_ITEM_TV], *children: FormulaItem, meta: Optional[NodeMeta] = None) -> _FORMULA_ITEM_TV:
+    def make(cls: type[FORMULA_ITEM_TV], *children: FormulaItem, meta: NodeMeta | None = None) -> FORMULA_ITEM_TV:
         return cls(*children, meta=meta)
 
 
@@ -787,10 +784,10 @@ _NAMED_ITEM_TV = TypeVar("_NAMED_ITEM_TV", bound="NamedItem")
 
 class NamedItem(FormulaItem):
     __slots__ = ()
-    show_names = FormulaItem.show_names + ("name",)
+    show_names = (*FormulaItem.show_names, "name")
 
     @classmethod
-    def validate_internal_value(cls, internal_value: tuple[Optional[Hashable], ...]) -> None:
+    def validate_internal_value(cls, internal_value: tuple[Hashable | None, ...]) -> None:
         assert len(internal_value) == 1
         assert isinstance(internal_value[0], str)
 
@@ -801,16 +798,16 @@ class NamedItem(FormulaItem):
 
 class DimListNodeBase(FormulaItem):
     __slots__ = ()
-    show_names = FormulaItem.show_names + ("dim_list",)
+    show_names = (*FormulaItem.show_names, "dim_list")
 
     dim_list: MultiChild[FormulaItem] = MultiChild(slice(0, None))  # TODO: rename to expr_list
 
     @classmethod
     def make(
-        cls: type[_FORMULA_ITEM_TV],
-        dim_list: Optional[Sequence[FormulaItem]],
-        meta: Optional[NodeMeta] = None,
-    ) -> _FORMULA_ITEM_TV:
+        cls: type[FORMULA_ITEM_TV],
+        dim_list: Sequence[FormulaItem] | None,
+        meta: NodeMeta | None = None,
+    ) -> FORMULA_ITEM_TV:
         return cls(*(dim_list or ()), meta=meta)
 
 
@@ -871,7 +868,7 @@ class FuncCall(OperationCall):
     """Generic function call"""
 
     __slots__ = ()
-    show_names = OperationCall.show_names + ("args",)
+    show_names = (*OperationCall.show_names, "args")
     # Omit before_filter_by, ignore_dimensions and lod because they will be very rarely used explicitly
 
     args: MultiChild[FormulaItem] = MultiChild(slice(0, -3))
@@ -885,10 +882,10 @@ class FuncCall(OperationCall):
         name: str,
         args: Iterable[FormulaItem],
         *,
-        lod: Optional[LodSpecifier] = None,
-        ignore_dimensions: Optional[IgnoreDimensions] = None,
-        before_filter_by: Optional[BeforeFilterBy] = None,
-        meta: Optional[NodeMeta] = None,
+        lod: LodSpecifier | None = None,
+        ignore_dimensions: IgnoreDimensions | None = None,
+        before_filter_by: BeforeFilterBy | None = None,
+        meta: NodeMeta | None = None,
     ) -> _FUNC_CALL_TV:
         if lod is None:
             lod = DefaultAggregationLodSpecifier()
@@ -913,7 +910,7 @@ class Unary(OperationCall):
     """Unary (arithmetic or logical) operation"""
 
     __slots__ = ()
-    show_names = OperationCall.show_names + ("expr",)
+    show_names = (*OperationCall.show_names, "expr")
 
     expr: Child[FormulaItem] = Child(0)
 
@@ -927,7 +924,7 @@ class Unary(OperationCall):
         name: str,
         expr: FormulaItem,
         *,
-        meta: Optional[NodeMeta] = None,
+        meta: NodeMeta | None = None,
     ) -> Unary:
         children = (expr,)
         internal_value = (name,)
@@ -938,7 +935,7 @@ class Binary(OperationCall):
     """Binary (arithmetic or logical) operation"""
 
     __slots__ = ()
-    show_names = OperationCall.show_names + ("left", "right")
+    show_names = (*OperationCall.show_names, "left", "right")
 
     left: Child[FormulaItem] = Child(0)
     right: Child[FormulaItem] = Child(1)
@@ -954,7 +951,7 @@ class Binary(OperationCall):
         left: FormulaItem,
         right: FormulaItem,
         *,
-        meta: Optional[NodeMeta] = None,
+        meta: NodeMeta | None = None,
     ) -> Binary:
         children = (left, right)
         internal_value = (name,)
@@ -965,7 +962,7 @@ class Ternary(OperationCall):
     """Ternary (arithmetic or logical) operation"""
 
     __slots__ = ()
-    show_names = OperationCall.show_names + ("first", "second", "third")
+    show_names = (*OperationCall.show_names, "first", "second", "third")
 
     first: Child[FormulaItem] = Child(0)
     second: Child[FormulaItem] = Child(1)
@@ -983,7 +980,7 @@ class Ternary(OperationCall):
         second: FormulaItem,
         third: FormulaItem,
         *,
-        meta: Optional[NodeMeta] = None,
+        meta: NodeMeta | None = None,
     ) -> Ternary:
         children = (first, second, third)
         internal_value = (name,)
@@ -996,7 +993,7 @@ class Field(NamedItem):
     __slots__ = ()
 
     @classmethod
-    def make(cls, name: str, meta: Optional[NodeMeta] = None) -> Field:
+    def make(cls, name: str, meta: NodeMeta | None = None) -> Field:
         children = ()
         internal_value = (name,)
         return cls(*children, internal_value=internal_value, meta=meta)
@@ -1040,15 +1037,15 @@ class Ordering(FormulaItem):
 
     __slots__ = ()
     autonomous = False
-    show_names = FormulaItem.show_names + ("expr_list",)
+    show_names = (*FormulaItem.show_names, "expr_list")
 
     expr_list: MultiChild[FormulaItem] = MultiChild(slice(0, None))
 
     @classmethod
     def make(
         cls,
-        expr_list: Optional[list[FormulaItem]] = None,
-        meta: Optional[NodeMeta] = None,
+        expr_list: list[FormulaItem] | None = None,
+        meta: NodeMeta | None = None,
     ) -> Ordering:
         children = expr_list or ()
         internal_value = ()
@@ -1062,13 +1059,13 @@ class FieldNameListNode(FormulaItem):
     """Represents clause containing a field name list"""
 
     __slots__ = ()
-    show_names = FormulaItem.show_names + ("field_names",)
+    show_names = (*FormulaItem.show_names, "field_names")
 
     @classmethod
     def make(
         cls: type[_FIELD_NAME_LIST_NODE_TV],
-        field_names: Optional[Collection[str]] = None,
-        meta: Optional[NodeMeta] = None,
+        field_names: Collection[str] | None = None,
+        meta: NodeMeta | None = None,
     ) -> _FIELD_NAME_LIST_NODE_TV:
         children = ()
         internal_value = (frozenset(field_names or ()),)
@@ -1079,7 +1076,7 @@ class FieldNameListNode(FormulaItem):
         assert not children
 
     @classmethod
-    def validate_internal_value(cls, internal_value: tuple[Optional[Hashable], ...]) -> None:
+    def validate_internal_value(cls, internal_value: tuple[Hashable | None, ...]) -> None:
         assert isinstance(internal_value, tuple)
         assert len(internal_value) == 1
         name_list = internal_value[0]
@@ -1132,7 +1129,7 @@ class WindowFuncCall(FuncCall):
     """Represents window function calls"""
 
     __slots__ = ()
-    show_names = FuncCall.show_names + ("grouping", "ordering", "before_filter_by")
+    show_names = (*FuncCall.show_names, "grouping", "ordering", "before_filter_by")
 
     args: MultiChild[FormulaItem] = MultiChild(slice(0, -5))
     ordering: Child[Ordering] = Child(-5)
@@ -1145,12 +1142,12 @@ class WindowFuncCall(FuncCall):
         name: str,
         args: Iterable[FormulaItem],
         *,
-        ordering: Optional[Ordering] = None,
-        grouping: Optional[WindowGrouping] = None,
-        lod: Optional[LodSpecifier] = None,
-        ignore_dimensions: Optional[IgnoreDimensions] = None,
-        before_filter_by: Optional[BeforeFilterBy] = None,
-        meta: Optional[NodeMeta] = None,
+        ordering: Ordering | None = None,
+        grouping: WindowGrouping | None = None,
+        lod: LodSpecifier | None = None,
+        ignore_dimensions: IgnoreDimensions | None = None,
+        before_filter_by: BeforeFilterBy | None = None,
+        meta: NodeMeta | None = None,
     ) -> WindowFuncCall:
         if grouping is None:
             grouping = WindowGroupingTotal()
@@ -1178,7 +1175,7 @@ class WindowFuncCall(FuncCall):
 class IfPart(FormulaItem):
     __slots__ = ()
     autonomous = False
-    show_names = FormulaItem.show_names + ("cond", "expr")
+    show_names = (*FormulaItem.show_names, "cond", "expr")
 
     cond: Child[FormulaItem] = Child(0)
     expr: Child[FormulaItem] = Child(1)
@@ -1188,7 +1185,7 @@ class IfPart(FormulaItem):
         assert len(children) == 2
 
     @classmethod
-    def validate_internal_value(cls, internal_value: tuple[Optional[Hashable], ...]) -> None:
+    def validate_internal_value(cls, internal_value: tuple[Hashable | None, ...]) -> None:
         assert internal_value == ()
 
     @classmethod
@@ -1197,7 +1194,7 @@ class IfPart(FormulaItem):
         cond: FormulaItem,
         expr: FormulaItem,
         *,
-        meta: Optional[NodeMeta] = None,
+        meta: NodeMeta | None = None,
     ) -> IfPart:
         children = [cond, expr]
         return cls(*children, internal_value=(), meta=meta)
@@ -1210,7 +1207,7 @@ class IfBlock(FormulaItem):
     """
 
     __slots__ = ()
-    show_names = FormulaItem.show_names + ("if_list", "else_expr")
+    show_names = (*FormulaItem.show_names, "if_list", "else_expr")
 
     if_list: MultiChild[IfPart] = MultiChild(slice(0, -1))
     else_expr: Child[FormulaItem] = Child(-1)
@@ -1222,16 +1219,16 @@ class IfBlock(FormulaItem):
             assert isinstance(child, IfPart)
 
     @classmethod
-    def validate_internal_value(cls, internal_value: tuple[Optional[Hashable], ...]) -> None:
+    def validate_internal_value(cls, internal_value: tuple[Hashable | None, ...]) -> None:
         assert internal_value == ()
 
     @classmethod
     def make(
         cls,
         if_list: list[IfPart],
-        else_expr: Optional[FormulaItem] = None,
+        else_expr: FormulaItem | None = None,
         *,
-        meta: Optional[NodeMeta] = None,
+        meta: NodeMeta | None = None,
     ) -> IfBlock:
         for part in if_list:
             check_type(part, IfPart)
@@ -1245,7 +1242,7 @@ class IfBlock(FormulaItem):
 class WhenPart(FormulaItem):
     __slots__ = ()
     autonomous = False
-    show_names = FormulaItem.show_names + ("val", "expr")
+    show_names = (*FormulaItem.show_names, "val", "expr")
 
     val: Child[FormulaItem] = Child(0)
     expr: Child[FormulaItem] = Child(1)
@@ -1255,7 +1252,7 @@ class WhenPart(FormulaItem):
         assert len(children) == 2
 
     @classmethod
-    def validate_internal_value(cls, internal_value: tuple[Optional[Hashable], ...]) -> None:
+    def validate_internal_value(cls, internal_value: tuple[Hashable | None, ...]) -> None:
         assert internal_value == ()
 
     @classmethod
@@ -1263,7 +1260,7 @@ class WhenPart(FormulaItem):
         cls,
         val: FormulaItem,
         expr: FormulaItem,
-        meta: Optional[NodeMeta] = None,
+        meta: NodeMeta | None = None,
     ) -> WhenPart:
         children = [val, expr]
         return cls(*children, meta=meta)
@@ -1276,7 +1273,7 @@ class CaseBlock(FormulaItem):
     """
 
     __slots__ = ()
-    show_names = FormulaItem.show_names + ("case_expr", "when_list", "else_expr")
+    show_names = (*FormulaItem.show_names, "case_expr", "when_list", "else_expr")
 
     case_expr: Child[FormulaItem] = Child(0)
     when_list: MultiChild[WhenPart] = MultiChild(slice(1, -1))
@@ -1289,7 +1286,7 @@ class CaseBlock(FormulaItem):
             assert isinstance(child, WhenPart)
 
     @classmethod
-    def validate_internal_value(cls, internal_value: tuple[Optional[Hashable], ...]) -> None:
+    def validate_internal_value(cls, internal_value: tuple[Hashable | None, ...]) -> None:
         assert internal_value == ()
 
     @classmethod
@@ -1297,9 +1294,9 @@ class CaseBlock(FormulaItem):
         cls,
         case_expr: FormulaItem,
         when_list: list[WhenPart],
-        else_expr: Optional[FormulaItem] = None,
+        else_expr: FormulaItem | None = None,
         *,
-        meta: Optional[NodeMeta] = None,
+        meta: NodeMeta | None = None,
     ) -> CaseBlock:
         for part in when_list:
             check_type(part, WhenPart)

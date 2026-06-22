@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import (
+    Collection,
+    Iterable,
+    Sequence,
+)
 from contextlib import redirect_stdout
 import inspect
 import json
 import os
-from typing import (
-    Any,
-    Collection,
-    Iterable,
-    Optional,
-    Sequence,
-)
+from typing import Any
 
 import attr
 import jinja2
@@ -77,7 +76,6 @@ from dl_formula_testing.database import (
     make_db_from_config,
 )
 
-
 try:
     from dl_formula_ref.examples.data_prep import DataPreparer
 except exc.ParserNotFoundError:
@@ -88,10 +86,9 @@ except exc.ParserNotFoundError:
 
 
 def get_jinja_env(gen_config: RefDocGeneratorConfig) -> jinja2.Environment:
-    import dl_formula_ref as top
-
-    return jinja2.Environment(
-        loader=jinja2.PackageLoader(top.__name__, gen_config.template_dir_rel),
+    # S701: renders internal formula-reference doc templates (markdown/text from trusted repo data), not user-facing HTML — autoescape not needed.
+    return jinja2.Environment(  # noqa: S701
+        loader=jinja2.PackageLoader("dl_formula_ref", gen_config.template_dir_rel),
     )
 
 
@@ -187,18 +184,18 @@ class ReferenceDocGenerator:
         global_audiences = set(self._gen_config.function_scopes.keys())
 
         print("items:")
-        print("  - name: {}\n    href: {}".format(trans(DOC_ALL_TITLE), self._gen_config.doc_all_filename))
+        print(f"  - name: {trans(DOC_ALL_TITLE)}\n    href: {self._gen_config.doc_all_filename}")
 
         localized_categories = {
             category: human_category(category=funcs_by_category[category][0].category.name, locale=self._locale)
-            for category in funcs_by_category.keys()
+            for category in funcs_by_category
         }
         locale_sorted_categories = sorted(funcs_by_category.keys(), key=lambda category: localized_categories[category])
         for category in locale_sorted_categories:
             print(f"  - name: {localized_categories[category]}")
             print("    items:")
-            print("      - name: {}".format(trans(DOC_OVERVIEW_TEXT)))
-            print("        href: {}".format(renderer.path_renderer.get_cat_path(category_name=category)))
+            print(f"      - name: {trans(DOC_OVERVIEW_TEXT)}")
+            print(f"        href: {renderer.path_renderer.get_cat_path(category_name=category)}")
             if list_funcs:
                 for multi_func in sorted(
                     funcs_by_category[category], key=lambda func: func.get_title(locale=self._locale)
@@ -217,13 +214,13 @@ class ReferenceDocGenerator:
                         items = multi_func.items()
 
                     for audience, raw_func in items:
-                        print("      - name: {}".format(raw_func.get_short_title(locale=self._locale)))
-                        print("        href: {}".format(renderer.path_renderer.get_func_path(func_key=func_key)))
+                        print(f"      - name: {raw_func.get_short_title(locale=self._locale)}")
+                        print(f"        href: {renderer.path_renderer.get_func_path(func_key=func_key)}")
                         if not audience.default:
                             print(f'        when: audience == "{audience.name}"')
 
         if self._gen_config.gen_availability_table:
-            print("  - name: {}\n    href: {}".format(trans(DOC_AVAIL_TITLE), self._gen_config.doc_avail_filename))
+            print(f"  - name: {trans(DOC_AVAIL_TITLE)}\n    href: {self._gen_config.doc_avail_filename}")
 
     def _generate_doc_list(
         self,
@@ -275,13 +272,13 @@ class ReferenceDocGenerator:
         doc_config = self._gen_config.func_doc_configs[FuncDocConfigVersion.overview_shortcut]
         raw_funcs = self._func_ref.filter(category=category)
         rend_funcs = self._render_funcs(raw_funcs=raw_funcs, doc_config=doc_config)
-        rend_first_func = [
+        rend_first_func = next(
             # Some funcs have double categories, so find one whose primary category is the one we need
             # TODO: refactor this
             func
             for func in rend_funcs
             if func.category_name == category
-        ][0]
+        )
         title = human_category(category=category, locale=self._locale)
         self._generate_doc_list(
             context_path=context_path,
@@ -330,10 +327,7 @@ class ReferenceDocGenerator:
                 if len(supported_dialects) == 1 and next(iter(supported_dialects)) == D.ANY:
                     supported_dialects = ANY_DIALECTS
             func_data = [
-                "[{}]({})".format(
-                    func.get_title(locale=self._locale),
-                    relative_path_renderer.get_func_path(func_key=func_key),
-                ),
+                f"[{func.get_title(locale=self._locale)}]({relative_path_renderer.get_func_path(func_key=func_key)})",
                 *[("X" if dialect in supported_dialects else "") for dialect in dialects],
             ]
             table_data.append(func_data)
@@ -344,8 +338,7 @@ class ReferenceDocGenerator:
         table = tabulate(table_data, headers=headers, tablefmt="pipe")
         # now hack column alignment to be centered for all columns except the first one
         first_match = table.find("-|")
-        table = table[: first_match + 2] + table[first_match + 2 :].replace("-|", ":|")
-        return table
+        return table[: first_match + 2] + table[first_match + 2 :].replace("-|", ":|")
 
     def generate_doc_availability_list_for_all_audiences(self, context_path: str) -> None:
         table_by_audience: dict[Audience, str] = {}
@@ -371,31 +364,27 @@ class ReferenceDocGenerator:
         func_dir = outdir
         self.generate_doc_func(outdir=func_dir)
         all_funcs_path = os.path.join(func_dir, self._gen_config.doc_all_filename)
-        with open(all_funcs_path, "w") as outfile:
-            with redirect_stdout(outfile):
-                self.generate_doc_list_all(context_path=os.path.dirname(all_funcs_path))
+        with open(all_funcs_path, "w") as outfile, redirect_stdout(outfile):
+            self.generate_doc_list_all(context_path=os.path.dirname(all_funcs_path))
         for doc_config in self._gen_config.func_doc_configs.values():
             for category in sorted(funcs_by_category):
                 category_path = os.path.join(func_dir, doc_config.cat_file_path.format(category_name=category))
-                with open(category_path, "w") as outfile:
-                    with redirect_stdout(outfile):
-                        self.generate_doc_list_category(context_path=os.path.dirname(category_path), category=category)
+                with open(category_path, "w") as outfile, redirect_stdout(outfile):
+                    self.generate_doc_list_category(context_path=os.path.dirname(category_path), category=category)
         if self._gen_config.gen_availability_table:
             availability_path = os.path.join(func_dir, self._gen_config.doc_avail_filename)
-            with open(availability_path, "w") as outfile:
-                with redirect_stdout(outfile):
-                    self.generate_doc_availability_list_for_all_audiences(
-                        context_path=os.path.dirname(availability_path),
-                    )
-        with open(os.path.join(outdir, self._gen_config.doc_toc_filename), "w") as outfile:
-            with redirect_stdout(outfile):
-                self.generate_doc_toc(list_funcs=True)
+            with open(availability_path, "w") as outfile, redirect_stdout(outfile):
+                self.generate_doc_availability_list_for_all_audiences(
+                    context_path=os.path.dirname(availability_path),
+                )
+        with open(os.path.join(outdir, self._gen_config.doc_toc_filename), "w") as outfile, redirect_stdout(outfile):
+            self.generate_doc_toc(list_funcs=True)
 
     @staticmethod
-    def _get_func_base_class(name: str) -> Optional[type]:
+    def _get_func_base_class(name: str) -> type | None:
         """Find the first (base) class for the given function"""
         name = name.lower()
-        for _i, definition in OPERATION_REGISTRY.items():
+        for definition in OPERATION_REGISTRY.values():
             func_name = definition.name
             assert func_name is not None
             if func_name.lower() == name:

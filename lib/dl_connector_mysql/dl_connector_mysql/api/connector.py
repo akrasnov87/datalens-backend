@@ -11,7 +11,7 @@ from dl_api_connector.connector import (
     ApiSourceDefinition,
     MQMFactorySettingItem,
 )
-from dl_constants.enums import QueryProcessingMode
+from dl_constants import QueryProcessingMode
 from dl_query_processing.multi_query.factory import NoCompengMultiQueryMutatorFactory
 
 from dl_connector_mysql.api.api_schema.connection import MySQLConnectionSchema
@@ -52,7 +52,8 @@ class MySQLApiConnectionDefinition(ApiConnectionDefinition):
 class MySQLApiBackendDefinition(ApiBackendDefinition):
     core_backend_definition = MySQLCoreBackendDefinition
     formula_dialect_name = DIALECT_NAME_MYSQL
-    multi_query_mutation_factories = ApiBackendDefinition.multi_query_mutation_factories + (
+    multi_query_mutation_factories = (
+        *ApiBackendDefinition.multi_query_mutation_factories,
         MQMFactorySettingItem(
             query_proc_mode=QueryProcessingMode.native_wf,
             dialects=MySQLDialect.and_above(MySQLDialect.MYSQL_8_0_12).to_list(),

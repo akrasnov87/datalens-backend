@@ -1,24 +1,24 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import (
+    Iterable,
+    Sequence,
+)
 from http.cookies import SimpleCookie
 import logging
 import os
 import re
+from re import Pattern
 from typing import (
     Any,
     ClassVar,
-    Iterable,
-    Optional,
-    Pattern,
-    Sequence,
 )
 
 import attr
 
 from dl_api_commons.headers import normalize_header_name
 import dl_logging
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -67,18 +67,13 @@ class RequestObfuscator:
         if header_name.lower() in self.SECRET_HEADERS:
             return True
 
-        for pattern in self.SECRET_HEADERS_PATTERNS:
-            if pattern.match(header_name):
-                return True
-
-        return False
+        return any(pattern.match(header_name) for pattern in self.SECRET_HEADERS_PATTERNS)
 
     def _obfuscate_value(self, secret_value: str) -> str:
         repl_str = "<hidden>"
         if len(secret_value) > 8:
             return secret_value[:3] + repl_str + secret_value[-3:]
-        else:
-            return repl_str
+        return repl_str
 
     def _obfuscate_cookie_header_value(self, cookie_string: str) -> str:
         cookie: SimpleCookie = SimpleCookie(cookie_string)
@@ -93,24 +88,24 @@ class RequestObfuscator:
         return tuple(
             (
                 name,
-                self._obfuscate_value(val)
-                if self._is_secret_header(name)
-                else self._obfuscate_cookie_header_value(val)
-                if name.lower() == "cookie"
-                else val,
+                (
+                    self._obfuscate_value(val)
+                    if self._is_secret_header(name)
+                    else self._obfuscate_cookie_header_value(val) if name.lower() == "cookie" else val
+                ),
             )
             for name, val in headers
         )
 
     def mask_sensitive_fields_by_name_in_json_recursive(
-        self, source: Optional[dict[str, Any]], extra_sensitive_key_names: Iterable[str] = ()
-    ) -> Optional[dict[str, Any]]:
+        self, source: dict[str, Any] | None, extra_sensitive_key_names: Iterable[str] = ()
+    ) -> dict[str, Any] | None:
         if source is None:
             return None
 
         all_sensitive_key_names = self.SENSITIVE_KEY_NAMES | frozenset(extra_sensitive_key_names)
 
-        def process_value(key_name: Optional[str], value: Any) -> Any:
+        def process_value(key_name: str | None, value: Any) -> Any:
             if value is None:
                 return None
 
@@ -172,16 +167,16 @@ class RequestLogHelper:
             method.upper(),
             full_path,
             status_code,
-            extra=dict(
-                event_code="http_response",
-                request_method=method,
-                request_path=full_path,
-                response_status=status_code,
-            ),
+            extra={
+                "event_code": "http_response",
+                "request_method": method,
+                "request_path": full_path,
+                "response_status": status_code,
+            },
         )
 
     # TODO FIX: Make more strict typing for headers
-    def _normalize_headers(self, headers: Any) -> Optional[dict[str, str]]:
+    def _normalize_headers(self, headers: Any) -> dict[str, str] | None:
         if headers is None:
             return None
         if hasattr(headers, "items"):
@@ -189,26 +184,24 @@ class RequestLogHelper:
         headers = sorted(headers)
         headers = {normalize_header_name(key): value for key, value in headers}
 
-        headers = dict(self._obfuscator.clean_secret_data_in_headers(headers.items()))
-
-        return headers
+        return dict(self._obfuscator.clean_secret_data_in_headers(headers.items()))
 
     # TODO CONSIDER: Create custom type for headers
     def log_request_end_extended(
         self,
         request_method: str,
         request_path: str,
-        request_headers: Optional[dict],
+        request_headers: dict | None,
         response_status: int,
-        response_headers: Optional[dict],
-        response_timing: Optional[float],
+        response_headers: dict | None,
+        response_timing: float | None,
         # ...
-        user_id: Optional[str] = None,
-        username: Optional[str] = None,
+        user_id: str | None = None,
+        username: str | None = None,
         # extra extra for when they're not in the context.
         # TODO: tenant_id
-        request_id: Optional[str] = None,
-        endpoint_code: Optional[str] = None,
+        request_id: str | None = None,
+        endpoint_code: str | None = None,
     ) -> None:
         """
         Response pre-return detailed (extended) logging.
@@ -245,20 +238,20 @@ class RequestLogHelper:
         if response_timing is not None:
             response_timing = round(response_timing, 4)
 
-        extra = dict(
-            event_code="http_response",
-            request_method=request_method,
-            request_path=request_path,
-            request_headers=request_headers,
-            user_id=user_id,
-            username=username,
-            response_status=response_status,
-            response_headers=response_headers,
-            response_timing=response_timing,
+        extra = {
+            "event_code": "http_response",
+            "request_method": request_method,
+            "request_path": request_path,
+            "request_headers": request_headers,
+            "user_id": user_id,
+            "username": username,
+            "response_status": response_status,
+            "response_headers": response_headers,
+            "response_timing": response_timing,
             # Other possibilities:
             # response_body_info=dict(body_piece=body[:max_size], body_size=body_size, ...),
             # response_details=dict(...),
-        )
+        }
         if request_id is not None:
             extra["request_id"] = request_id
         if endpoint_code is not None:
@@ -300,13 +293,10 @@ def extra_with_evt_code(event_code: str, extra: dict[str, Any]) -> dict[str, Any
 
 
 def _get_map_key_label(*args: str, **kwargs: str) -> dict[str, str]:
-    map_field_name_label: dict[str, str] = {}
-    for field_name in args:
-        map_field_name_label[field_name] = field_name
-    for label, field_name in kwargs.items():
-        map_field_name_label[field_name] = label
-
-    return map_field_name_label
+    return {
+        **{field_name: field_name for field_name in args},
+        **{field_name: label for label, field_name in kwargs.items()},
+    }
 
 
 def format_dict(extra: dict[str, Any], separator: str = " ", *args: str, **kwargs: str) -> str:
@@ -315,13 +305,13 @@ def format_dict(extra: dict[str, Any], separator: str = " ", *args: str, **kwarg
 
     for extra_name, label in map_extra_name_label.items():
         if extra_name in extra:
-            parts.append(f"{label}={repr(extra[extra_name])}")
+            parts.append(f"{label}={extra[extra_name]!r}")
         else:
             parts.append(f"{label}=N/A")
             LOGGER.warning(
                 "Can not found extra key during message formatting: %s",
                 extra_name,
-                extra=extra_with_evt_code("logging_missing_extra_in_formatting", dict(extra_name=extra_name)),
+                extra=extra_with_evt_code("logging_missing_extra_in_formatting", {"extra_name": extra_name}),
             )
 
     return separator.join(parts)

@@ -1,5 +1,4 @@
 import abc
-from typing import Optional
 
 from aiohttp.test_utils import TestClient
 import pytest
@@ -9,7 +8,7 @@ from dl_api_lib_testing.typed_query_base import (
     DashSQLTypedQueryTestBase,
     TypedQueryInfo,
 )
-from dl_constants.enums import (
+from dl_constants import (
     DashSQLQueryType,
     UserDataType,
 )
@@ -49,7 +48,7 @@ class DefaultDashSQLTypedQueryTestSuite(DashSQLTypedQueryTestBase, RegulatedTest
         data_api_lowlevel_aiohttp_client: TestClient,
         saved_connection_id: str,
         typed_query_info: TypedQueryInfo,
-        bi_headers: Optional[dict[str, str]],
+        bi_headers: dict[str, str] | None,
     ) -> None:
         resp = await self.get_typed_query_response(
             data_api_aio=data_api_lowlevel_aiohttp_client,

@@ -13,7 +13,7 @@ from dl_api_lib.query.registry import (
     is_compeng_enabled,
     is_forkable_dialect,
 )
-from dl_constants.enums import (
+from dl_constants import (
     AggregationFunction,
     UserDataType,
     WhereClauseOperation,
@@ -31,7 +31,6 @@ from dl_formula.mutation.registry import get_mutation_lookup_functions_names
 from dl_query_processing.compilation.filter_compiler import FilterFormulaCompiler
 from dl_query_processing.compilation.formula_compiler import FormulaCompiler
 from dl_utils.func_tools import method_lru
-
 
 _FUNCTION_TAG_TO_SCOPE_MAP: dict[str, Scope] = {
     "stable": Scope.STABLE,
@@ -58,13 +57,13 @@ class SupportedFunctionsManager:
 
     @method_lru(maxsize=1000)
     def get_supported_aggregations(self, dialect: DialectCombo, user_type: UserDataType) -> list[AggregationFunction]:
-        supported_func_names = set(
+        supported_func_names = {
             name
             for name, *_ in self._get_supported_functions(
                 dialect=dialect,
                 scope=Scope.EXPLICIT_USAGE,
             )
-        )
+        }
 
         return [
             ag_type
@@ -89,12 +88,10 @@ class SupportedFunctionsManager:
 
         lookup_functions_names = get_mutation_lookup_functions_names() if is_forkable_dialect(dialect) else []
 
-        supported_function_names = sorted(
+        return sorted(
             {func[0] for func in chain.from_iterable((native_supp_funcs, compeng_supp_funcs))}
             | set(lookup_functions_names)
         )
-
-        return supported_function_names
 
     @property
     def _supported_scopes(self) -> tuple[int, ...]:

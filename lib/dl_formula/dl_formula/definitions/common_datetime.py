@@ -16,7 +16,6 @@ from dl_formula.core import (
 from dl_formula.core.datatype import DataType
 from dl_formula.shortcuts import n
 
-
 if TYPE_CHECKING:
     from sqlalchemy.sql.elements import ClauseElement
 
@@ -35,7 +34,7 @@ SUPPORTED_INTERVAL_TYPES = ("second", "minute", "hour", "day", "week", "month", 
 def normalize_and_validate_datetime_interval_type(type_name: str) -> str:
     type_name = type_name.lower()
     if type_name not in SUPPORTED_INTERVAL_TYPES:
-        raise exc.TranslationError("Invalid interval type: '{}'".format(type_name))
+        raise exc.TranslationError(f"Invalid interval type: '{type_name}'")
     return type_name
 
 
@@ -50,11 +49,11 @@ def datetime_interval(
 
     if literal_mult:
         if literal_type:
-            sql = "INTERVAL '{} {}'".format(mult, type_name)
+            sql = f"INTERVAL '{mult} {type_name}'"
         else:
-            sql = "INTERVAL '{}' {}".format(mult, type_name)
+            sql = f"INTERVAL '{mult}' {type_name}"
     else:
-        sql = "INTERVAL {} {}".format(mult, type_name)
+        sql = f"INTERVAL {mult} {type_name}"
 
     if caps:
         sql = sql.upper()
@@ -79,7 +78,7 @@ def ensure_naive_first_arg(func):  # type: ignore  # 2024-01-24 # TODO: Function
     # TODO: this should have probably been an autocast-by-function (same with str->markup)
 
     @functools.wraps(func)
-    def _ensured_naive_first_arg(datetime_ctx, *args, **kwargs):  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def _ensured_naive_first_arg(datetime_ctx: Any, *args: Any, **kwargs: Any) -> Any:
         datetime_ctx = ensure_naive_datetime(datetime_ctx)
         return func(datetime_ctx, *args, **kwargs)
 
@@ -104,9 +103,11 @@ def make_ch_tz_args(date_ctx) -> tuple[tuple[Any, ...], tuple[Any, ...]]:  # typ
         (
             (date_ctx.data_type_params.timezone,)
             if date_ctx.data_type in (DataType.DATETIMETZ, DataType.CONST_DATETIMETZ)
-            else ()
-            if date_ctx.data_type in (DataType.GENERICDATETIME, DataType.CONST_GENERICDATETIME)
-            else UTC_CH_TZ_ARGS
+            else (
+                ()
+                if date_ctx.data_type in (DataType.GENERICDATETIME, DataType.CONST_GENERICDATETIME)
+                else UTC_CH_TZ_ARGS
+            )
         ),
         # output-case TZ args
         (() if date_ctx.data_type in (DataType.GENERICDATETIME, DataType.CONST_GENERICDATETIME) else ("UTC",)),
@@ -128,8 +129,8 @@ def ch_date_with_tz(date_ctx) -> tuple[ClauseElement, ...]:  # type: ignore  # 2
 
     tz_args, _ = make_ch_tz_args(date_ctx)
     if data_type == DataType.DATETIMETZ:
-        return (date_expr,) + tz_args
+        return (date_expr, *tz_args)
     if data_type in (DataType.DATETIME, DataType.CONST_DATETIME):
-        return (date_expr,) + tuple(sa.literal(arg) for arg in tz_args)
+        return (date_expr, *tuple(sa.literal(arg) for arg in tz_args))
 
     raise ValueError("Unexpected data type in ch_date_with_tz", data_type)

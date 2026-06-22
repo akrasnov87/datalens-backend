@@ -1,6 +1,4 @@
-from typing import Optional
-
-from dl_constants.enums import (
+from dl_constants import (
     FieldRole,
     FieldType,
     UserDataType,
@@ -25,7 +23,7 @@ from dl_query_processing.pagination.paginator import QueryPaginator
 
 
 def _make_legend() -> Legend:
-    legend = Legend(
+    return Legend(
         items=[
             LegendItem(
                 legend_item_id=0,
@@ -36,17 +34,16 @@ def _make_legend() -> Legend:
             ),
         ]
     )
-    return legend
 
 
 def _make_block_legend(
-    block_limit: Optional[int] = None,
-    block_offset: Optional[int] = None,
-    glob_limit: Optional[int] = None,
-    glob_offset: Optional[int] = None,
+    block_limit: int | None = None,
+    block_offset: int | None = None,
+    glob_limit: int | None = None,
+    glob_offset: int | None = None,
 ) -> BlockLegend:
     legend = _make_legend()
-    block_legend = BlockLegend(
+    return BlockLegend(
         blocks=[
             BlockSpec(
                 block_id=0,
@@ -61,7 +58,6 @@ def _make_block_legend(
             offset=glob_offset,
         ),
     )
-    return block_legend
 
 
 def test_pre_paginate_single_block():

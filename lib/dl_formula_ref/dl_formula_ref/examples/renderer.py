@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Callable,
+    Sequence,
+)
 import datetime
 from decimal import Decimal
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Optional,
-    Sequence,
 )
 
 import attr
@@ -22,7 +23,6 @@ from dl_formula_ref.examples.utils import (
 )
 from dl_formula_ref.i18n.registry import get_localizer
 
-
 if TYPE_CHECKING:
     from dl_formula_ref.examples.config import ExampleConfig
     from dl_formula_ref.examples.data_table import DataTable
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 class ExampleResult:
     name: str = attr.ib(kw_only=True)
     result: str = attr.ib(kw_only=True)
-    source: Optional[str] = attr.ib(kw_only=True, default=None)
+    source: str | None = attr.ib(kw_only=True, default=None)
     group_by: Sequence[str] = attr.ib(kw_only=True, factory=list)
     order_by: Sequence[str] = attr.ib(kw_only=True, factory=list)
     formula_fields: Sequence[tuple[str, str]] = attr.ib(kw_only=True, factory=list)
@@ -76,11 +76,11 @@ class ExampleRenderer:
 
         if example.formulas_as_names:
             if example.override_formula_fields is not None:
-                name_mapping = {name: formula for name, formula in example.override_formula_fields}
+                name_mapping = dict(example.override_formula_fields)
             elif not example.additional_transformations:
-                name_mapping = {name: formula for name, formula in example.formula_fields}
+                name_mapping = dict(example.formula_fields)
             else:
-                name_mapping = {name: formula for name, formula in example.additional_transformations[-1]}
+                name_mapping = dict(example.additional_transformations[-1])
             result_table = rename_columns(result_table, name_mapping=name_mapping)
 
         if example.override_formula_fields is not None:
@@ -101,8 +101,7 @@ class ExampleRenderer:
 
     def _get_result_table_from_storage(self, func_name: str, example: ExampleConfig) -> DataTable:
         storage_key = make_key_for_example(func_name=func_name, example=example)
-        result_table = self._storage.get_result_data(storage_key)
-        return result_table
+        return self._storage.get_result_data(storage_key)
 
     def render_example_from_storage(self, func_name: str, example: ExampleConfig, under_cut: bool) -> str:
         result_table = self._get_result_table_from_storage(func_name=func_name, example=example)

@@ -4,25 +4,17 @@ from datetime import (
     date,
     datetime,
 )
-from typing import (
-    ClassVar,
-    Generic,
-    TypeVar,
-    Union,
-)
+from typing import ClassVar
 
 import attr
 
-from dl_constants.enums import UserDataType
-
-
-_INNER_TYPE = TypeVar("_INNER_TYPE")
+from dl_constants import UserDataType
 
 
 @attr.s(frozen=True)
-class BIValue(Generic[_INNER_TYPE]):
+class BIValue[INNER_TYPE]:
     type: ClassVar[UserDataType]
-    value: _INNER_TYPE = attr.ib()
+    value: INNER_TYPE = attr.ib()
 
 
 @attr.s(frozen=True)
@@ -66,12 +58,12 @@ class BooleanValue(BIValue[bool]):
 
 
 @attr.s(frozen=True)
-class GeoPointValue(BIValue[list[Union[int, float]]]):
+class GeoPointValue(BIValue[list[int | float]]):
     type: ClassVar[UserDataType] = UserDataType.geopoint
 
 
 @attr.s(frozen=True)
-class GeoPolygonValue(BIValue[list[list[list[Union[int, float]]]]]):
+class GeoPolygonValue(BIValue[list[list[list[int | float]]]]):
     type: ClassVar[UserDataType] = UserDataType.geopolygon
 
 

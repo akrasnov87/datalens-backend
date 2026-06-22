@@ -1,11 +1,9 @@
 import inspect
 import os
 import re
-from typing import Optional
 
 import attr
 import yaml
-
 
 _CONTAINER_HOST_FROM_COMPOSE_MARKER = "from_compose"
 _APPLIB_PATH_RE = re.compile(r".+\/(?:app(?:_[^\/]+)?|lib|site-packages)\/[^\/]+\/")
@@ -20,7 +18,7 @@ class HostPort:
         return f"{self.host}:{self.port}"
 
 
-def _get_docker_compose_file_path(filename: Optional[str] = None) -> str | None:
+def _get_docker_compose_file_path(filename: str | None = None) -> str | None:
     filename = filename or "docker-compose.yml"
     assert filename is not None
     base_filename: str
@@ -41,9 +39,9 @@ def _get_docker_compose_file_path(filename: Optional[str] = None) -> str | None:
 
 def get_test_container_hostport(
     service_key: str,
-    original_port: Optional[int] = None,
-    fallback_port: Optional[int] = None,  # likely redundant
-    dc_filename: Optional[str] = None,
+    original_port: int | None = None,
+    fallback_port: int | None = None,  # likely redundant
+    dc_filename: str | None = None,
     use_localhost_instead_of_loopback_ip: bool = False,
 ) -> HostPort:
     localhost = "localhost" if use_localhost_instead_of_loopback_ip else "127.0.0.1"
@@ -57,19 +55,17 @@ def get_test_container_hostport(
         if fallback_port is not None:
             return HostPort(host=localhost, port=fallback_port)
         raise FileNotFoundError("Docker compose file not found")
-    else:
-        try:
-            with open(file_path) as dcyml:
-                docker_compose_yml = yaml.safe_load(dcyml)
-        except FileNotFoundError:
-            if fallback_port is not None:
-                return HostPort(host=localhost, port=fallback_port)
-            else:
-                raise
+    try:
+        with open(file_path) as dcyml:
+            docker_compose_yml = yaml.safe_load(dcyml)
+    except FileNotFoundError:
+        if fallback_port is not None:
+            return HostPort(host=localhost, port=fallback_port)
+        raise
 
     ports = docker_compose_yml["services"][service_key]["ports"]
     if original_port is not None:
-        port_pair = [pp.split(":") for pp in ports if int(pp.split(":")[1]) == original_port][0]
+        port_pair = next(pp.split(":") for pp in ports if int(pp.split(":")[1]) == original_port)
     else:
         port_pair = ports[0].split(":")
 

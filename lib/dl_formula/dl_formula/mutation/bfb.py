@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import dl_formula.core.nodes as nodes
 from dl_formula.mutation.mutation import FormulaMutation
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -15,7 +13,7 @@ class RemapBfbMutation(FormulaMutation):
     Applies a name mapper to all BEFORE FILTER BY clauses.
     """
 
-    def __init__(self, name_mapping: Optional[dict[str, str]] = None):
+    def __init__(self, name_mapping: dict[str, str] | None = None) -> None:
         self._name_mapping = name_mapping
 
     def remap_name(self, name: str) -> str:

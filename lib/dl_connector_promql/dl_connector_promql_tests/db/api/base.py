@@ -2,7 +2,7 @@ import pytest
 
 from dl_api_lib_testing.configuration import ApiTestEnvironmentConfiguration
 from dl_api_lib_testing.connection_base import ConnectionTestBase
-from dl_constants.enums import RawSQLLevel
+from dl_constants import RawSQLLevel
 from dl_core_testing.database import (
     CoreDbConfig,
     Db,
@@ -42,9 +42,9 @@ class PromQLConnectionTestBase(ConnectionTestBase):
 class PromQLDashSQLConnectionTest(PromQLConnectionTestBase):
     @pytest.fixture(scope="class")
     def connection_params(self) -> dict:
-        return API_CONNECTION_SETTINGS | dict(
-            raw_sql_level=RawSQLLevel.dashsql.value,
-        )
+        return API_CONNECTION_SETTINGS | {
+            "raw_sql_level": RawSQLLevel.dashsql.value,
+        }
 
 
 class PromQLHeaderAuthConnectionTest(PromQLConnectionTestBase):

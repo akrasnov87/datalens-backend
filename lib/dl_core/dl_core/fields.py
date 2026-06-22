@@ -2,33 +2,35 @@
 
 from __future__ import annotations
 
+from collections.abc import (
+    Collection,
+    Iterator,
+)
 import logging
 import re
 from typing import (
     Any,
     ClassVar,
-    Collection,
     NamedTuple,
-    Optional,
-    Union,
+    Self,
 )
 
 import attr
-from typing_extensions import Self
 
-from dl_constants.enums import (
+from dl_constants import (
     AggregationFunction,
     CalcMode,
     FieldType,
     ManagedBy,
+    OrderDirection,
     ParameterValueConstraintType,
     TopLevelComponentId,
     UserDataType,
 )
+from dl_core.base_models import DefaultWhereClause
 from dl_core.components.ids import FieldId
-from dl_core.exc import FieldNotFound
+from dl_core.exc import FieldNotFoundError
 from dl_model_tools.typed_values import BIValue
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -59,8 +61,8 @@ class NullParameterValueConstraint(BaseParameterValueConstraint):
 
 @attr.s(frozen=True)
 class RangeParameterValueConstraint(BaseParameterValueConstraint):
-    min: Optional[BIValue] = attr.ib(default=None)
-    max: Optional[BIValue] = attr.ib(default=None)
+    min: BIValue | None = attr.ib(default=None)
+    max: BIValue | None = attr.ib(default=None)
     type: ParameterValueConstraintType = attr.ib(default=ParameterValueConstraintType.range)
 
     def _is_valid(self, value: Any) -> bool:
@@ -149,7 +151,7 @@ class DirectCalculationSpec(CalculationSpec):
     mode = CalcMode.direct
 
     # ID of the avatar (table) this field refers to
-    avatar_id: Optional[str] = attr.ib(kw_only=True, default=None)
+    avatar_id: str | None = attr.ib(kw_only=True, default=None)
     # Name of the table column this field refers to
     # (name attribute of a raw_Schema column).
     # Use empty string (`''`) for non-direct fields.
@@ -188,10 +190,10 @@ class ParameterCalculationSpec(CalculationSpec):
     mode = CalcMode.parameter
 
     # Default value of the parameter.
-    default_value: Optional[BIValue] = attr.ib(kw_only=True, default=None)
+    default_value: BIValue | None = attr.ib(kw_only=True, default=None)
     # Value constraint of the parameter
     # (defines the restrictions and origins of possible values).
-    value_constraint: Optional[BaseParameterValueConstraint] = attr.ib(kw_only=True, default=None)
+    value_constraint: BaseParameterValueConstraint | None = attr.ib(kw_only=True, default=None)
     template_enabled: bool = attr.ib(kw_only=True, default=False)
 
 
@@ -254,11 +256,11 @@ class BIField(NamedTuple):  # TODO: Convert to attr.s
     # - direct: it corresponds to the user_type of the referenced raw_schema column;
     # - formula: automatically derived from the formula;
     # - parameter: defined by the user.
-    initial_data_type: Optional[UserDataType]
+    initial_data_type: UserDataType | None
 
     # redefines the data type in `initial_data_type`, is set by the user.
     # For parameter calc_mode, it is the same as `initial_data_type`.
-    cast: Optional[UserDataType]
+    cast: UserDataType | None
 
     # An explicitly set aggregation (via UI).
     # Value "none" corresponds to no aggregation.
@@ -266,7 +268,7 @@ class BIField(NamedTuple):  # TODO: Convert to attr.s
     aggregation: AggregationFunction
 
     # The data type automatically determined after the aggregation is applied
-    data_type: Optional[UserDataType]
+    data_type: UserDataType | None
 
     # Flag indicates that the field is automatically aggregated
     # and an explicit aggregation (`aggregation` attribute) is not applicable.
@@ -299,19 +301,19 @@ class BIField(NamedTuple):  # TODO: Convert to attr.s
     def make(
         cls,
         guid: FieldId,
-        title: Optional[str],
+        title: str | None,
         calc_spec: CalculationSpec,
-        aggregation: Union[AggregationFunction, str, None] = None,
-        type: Union[FieldType, str, None] = None,
+        aggregation: AggregationFunction | str | None = None,
+        type: FieldType | str | None = None,
         hidden: bool = False,
         description: str = "",
-        cast: Union[UserDataType, str, None] = None,
-        initial_data_type: Union[UserDataType, str, None] = None,
-        data_type: Union[UserDataType, str, None] = None,
-        valid: Optional[bool] = None,
+        cast: UserDataType | str | None = None,
+        initial_data_type: UserDataType | str | None = None,
+        data_type: UserDataType | str | None = None,
+        valid: bool | None = None,
         has_auto_aggregation: bool = False,
         lock_aggregation: bool = False,
-        managed_by: Optional[ManagedBy] = None,
+        managed_by: ManagedBy | None = None,
         ui_settings: str = "",
     ) -> BIField:
         """
@@ -362,7 +364,7 @@ class BIField(NamedTuple):  # TODO: Convert to attr.s
         return self.calc_spec.mode
 
     @property
-    def avatar_id(self) -> Optional[str]:
+    def avatar_id(self) -> str | None:
         assert isinstance(self.calc_spec, DirectCalculationSpec)
         return self.calc_spec.avatar_id
 
@@ -382,12 +384,12 @@ class BIField(NamedTuple):  # TODO: Convert to attr.s
         return self.calc_spec.guid_formula
 
     @property
-    def default_value(self) -> Optional[BIValue]:
+    def default_value(self) -> BIValue | None:
         assert isinstance(self.calc_spec, ParameterCalculationSpec)
         return self.calc_spec.default_value
 
     @property
-    def value_constraint(self) -> Optional[BaseParameterValueConstraint]:
+    def value_constraint(self) -> BaseParameterValueConstraint | None:
         assert isinstance(self.calc_spec, ParameterCalculationSpec)
         return self.calc_spec.value_constraint
 
@@ -401,8 +403,7 @@ class BIField(NamedTuple):  # TODO: Convert to attr.s
         return (
             self.has_auto_aggregation
             # TODO: Remove this second condition after dataset migration #11 is applied
-            or self.type == FieldType.MEASURE
-            and self.aggregation == AggregationFunction.none
+            or (self.type == FieldType.MEASURE and self.aggregation == AggregationFunction.none)
         )
 
     @property
@@ -482,7 +483,7 @@ class ResultSchema:
         try:
             return self._guid_cache[guid]
         except KeyError as e:
-            raise FieldNotFound(f"Unknown field {guid}") from e
+            raise FieldNotFoundError(f"Unknown field {guid}") from e
 
     def by_title(self, title: str) -> BIField:
         """Find field by title"""
@@ -491,7 +492,7 @@ class ResultSchema:
         try:
             return self._title_cache[title]
         except KeyError as e:
-            raise FieldNotFound(f"Unknown field {title}") from e
+            raise FieldNotFoundError(f"Unknown field {title}") from e
 
     @property
     def titles_to_guids(self) -> dict[str, FieldId]:
@@ -501,19 +502,19 @@ class ResultSchema:
     def guids_to_titles(self) -> dict[FieldId, str]:
         return {f.guid: f.title for f in self.fields}
 
-    def __iter__(self):  # type: ignore  # TODO: fix
+    def __iter__(self) -> Iterator[Any]:
         return self.fields.__iter__()
 
-    def __bool__(self):  # type: ignore  # TODO: fix
-        return self.fields.__iter__()
+    def __bool__(self) -> bool:
+        return bool(self.fields)
 
-    def __len__(self):  # type: ignore  # TODO: fix
+    def __len__(self) -> int:
         return self.fields.__len__()
 
-    def __getitem__(self, ind):  # type: ignore  # TODO: fix
+    def __getitem__(self, ind: int) -> BIField:
         return self.fields.__getitem__(ind)
 
-    def add(self, field: BIField, idx: Optional[int]) -> None:
+    def add(self, field: BIField, idx: int | None) -> None:
         if idx is not None:
             self.fields.insert(idx, field)
         else:
@@ -543,3 +544,19 @@ class ResultSchema:
             for field in self.fields
             if isinstance(field.calc_spec, DirectCalculationSpec) and field.avatar_id in avatar_ids
         ]
+
+
+@attr.s
+class OrderField:
+    id: str = attr.ib()
+    field_guid: str = attr.ib()
+    direction: OrderDirection = attr.ib(default=OrderDirection.asc)
+    valid: bool = attr.ib(default=True)
+
+
+@attr.s()
+class FilterField:
+    id: str = attr.ib()
+    field_guid: str = attr.ib()
+    filters: list[DefaultWhereClause] = attr.ib(factory=list)
+    valid: bool = attr.ib(default=True)

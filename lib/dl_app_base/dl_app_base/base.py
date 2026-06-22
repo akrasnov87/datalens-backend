@@ -1,19 +1,20 @@
 import abc
 import asyncio
+from collections.abc import (
+    AsyncGenerator,
+    Iterator,
+)
 import contextlib
 import datetime
 import enum
 import logging
 from typing import (
-    AsyncGenerator,
     ClassVar,
-    Generic,
-    Iterator,
+    Self,
     TypeVar,
 )
 
 import attr
-from typing_extensions import Self
 
 import dl_app_base.exceptions as exceptions
 import dl_app_base.models as models
@@ -21,8 +22,7 @@ import dl_app_base.singleton as singleton
 import dl_settings
 
 
-class BaseAppSettings(dl_settings.BaseRootSettings):
-    ...
+class BaseAppSettings(dl_settings.BaseRootSettings): ...
 
 
 class RuntimeStatus(enum.Enum):
@@ -76,10 +76,9 @@ class BaseApp:
                 if callback.exception:
                     self.logger.exception(message)
                     raise exceptions.StartupError(message) from e
-                else:
-                    self.logger.warning(message)
+                self.logger.warning(message)
             else:
-                self.logger.info(f"Successfully started StartupCallback({callback.name})")
+                self.logger.info("Successfully started StartupCallback(%s)", callback.name)
 
         self.logger.info("Startup Callbacks completed")
 
@@ -99,10 +98,9 @@ class BaseApp:
                 if callback.exception:
                     self.logger.exception(message)
                     raise exceptions.ShutdownError(message) from e
-                else:
-                    self.logger.warning(message)
+                self.logger.warning(message)
             else:
-                self.logger.info(f"Successfully shutdown ShutdownCallback({callback.name})")
+                self.logger.info("Successfully shutdown ShutdownCallback(%s)", callback.name)
 
         self.logger.info("ShutdownCallbacks completed")
         self._state.runtime_status = RuntimeStatus.STOPPED
@@ -190,8 +188,10 @@ class BaseApp:
         try:
             run_task = asyncio.create_task(self.run(), name="run_in_task_context")
 
-            deadline = datetime.datetime.now() + readiness_timeout
-            while datetime.datetime.now() < deadline and self._state.runtime_status != RuntimeStatus.RUNNING:
+            deadline = datetime.datetime.now(datetime.UTC) + readiness_timeout
+            while (
+                datetime.datetime.now(datetime.UTC) < deadline and self._state.runtime_status != RuntimeStatus.RUNNING
+            ):
                 if self._state.runtime_status in [RuntimeStatus.STOPPING, RuntimeStatus.STOPPED]:
                     raise RuntimeError("Failed to wait for the application to be running")
 
@@ -212,9 +212,9 @@ AppType = TypeVar("AppType", bound=BaseApp)
 
 
 @attr.define(kw_only=True, slots=False)
-class BaseAppFactory(Generic[AppType]):
+class BaseAppFactory[AppType: BaseApp]:
     settings: BaseAppSettings
-    app_class: ClassVar[type[AppType]]  # type: ignore
+    app_class: ClassVar[type[AppType]]
 
     async def create_application(
         self,
@@ -264,5 +264,4 @@ class BaseAppFactory(Generic[AppType]):
     @singleton.singleton_class_method_result
     async def _get_logger(
         self,
-    ) -> logging.Logger:
-        ...
+    ) -> logging.Logger: ...

@@ -11,7 +11,6 @@ import dl_app_api_base.auth.request_context as auth_request_context
 import dl_app_api_base.handlers as handlers
 import dl_app_api_base.request_context as request_context
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -36,8 +35,8 @@ class AuthMiddleware:
         context = self._request_context_provider.get()
         try:
             await context.get_auth_user()
-        except auth_exc.AuthError:
+        except auth_exc.AuthError as exc:
             LOGGER.exception("Authentication failed")
-            raise UnauthorizedResponseSchema().as_exception()
+            raise UnauthorizedResponseSchema().as_exception() from exc
 
         return await handler(request)

@@ -23,9 +23,10 @@ dl-i18n = {path = "../dl_i18n"}
 dl-query-processing = {path = "../dl_query_processing"}
 dl-sqlalchemy-mysql = {path = "../dl_sqlalchemy_mysql"}
 dl-type-transformer = {path = "../dl_type_transformer"}
+frozendict = "*"
 marshmallow = "*"
 pymysql = "*"
-python = ">=3.10, <3.13"
+python = ">=3.12, <3.13"
 sqlalchemy = "*"
 
 [tool.poetry.group.tests.dependencies]
@@ -35,7 +36,6 @@ dl-api-lib-testing = {path = "../dl_api_lib_testing"}
 dl-core-testing = {path = "../dl_core_testing"}
 dl-formula-testing = {path = "../dl_formula_testing"}
 dl-testing = {path = "../dl_testing"}
-frozendict = "*"
 pytest = "*"
 requests = "*"
 
@@ -98,7 +98,6 @@ root_dir = "dl_connector_mysql_tests/"
 target_path = "db"
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_connector_mysql_tests/"
 skip_compose = "true"
 target_path = "unit"

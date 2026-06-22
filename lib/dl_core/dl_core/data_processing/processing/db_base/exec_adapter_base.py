@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import (
+    Awaitable,
+    Callable,
+    Collection,
+    Sequence,
+)
 import logging
 from typing import (
     TYPE_CHECKING,
-    Awaitable,
-    Callable,
     ClassVar,
-    Collection,
-    Optional,
-    Sequence,
-    Union,
 )
 
 import attr
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 from sqlalchemy.sql.selectable import Select
 
 from dl_cache_engine.primitives import LocalKeyRepresentation
-from dl_constants.enums import JoinType
+from dl_constants import JoinType
 from dl_constants.types import TBIDataValue
 from dl_core.connectors.base.query_compiler import QueryCompiler
 from dl_core.data_processing.cache.utils import DatasetOptionsBuilder
@@ -28,11 +28,10 @@ from dl_core.query.bi_query import QueryAndResultInfo
 from dl_core.utils import make_id
 from dl_utils.streaming import AsyncChunkedBase
 
-
 if TYPE_CHECKING:
     from dl_api_commons.reporting.records import ReportingRecord
     from dl_api_commons.reporting.registry import ReportingRegistry
-    from dl_constants.enums import UserDataType
+    from dl_constants import UserDataType
     from dl_core.base_models import ConnectionRef
     from dl_core.data_processing.prepared_components.primitives import PreparedFromInfo
 
@@ -60,11 +59,11 @@ class ProcessorDbExecAdapterBase(abc.ABC):
         query: Select | str,
         user_types: Sequence[UserDataType],
         chunk_size: int,
-        joint_dsrc_info: Optional[PreparedFromInfo] = None,
+        joint_dsrc_info: PreparedFromInfo | None = None,
         query_id: str,
         ctx: OpExecutionContext,
         data_key: LocalKeyRepresentation,
-        preparation_callback: Optional[Callable[[], Awaitable[None]]],
+        preparation_callback: Callable[[], Awaitable[None]] | None,
     ) -> TValuesChunkStream:
         """
         Execute SELECT statement.
@@ -78,7 +77,7 @@ class ProcessorDbExecAdapterBase(abc.ABC):
         user_type: UserDataType,
         ctx: OpExecutionContext,
         data_key: LocalKeyRepresentation | None = None,
-        preparation_callback: Optional[Callable[[], Awaitable[None]]] = None,
+        preparation_callback: Callable[[], Awaitable[None]] | None = None,
     ) -> TBIDataValue:
         """Execute a statement returning a scalar value."""
         if data_key is None:
@@ -101,14 +100,14 @@ class ProcessorDbExecAdapterBase(abc.ABC):
     async def fetch_data_from_select(
         self,
         *,
-        query: Union[str, sa.sql.selectable.Select],
+        query: str | sa.sql.selectable.Select,
         user_types: Sequence[UserDataType],
-        chunk_size: Optional[int] = None,
-        joint_dsrc_info: Optional[PreparedFromInfo] = None,
+        chunk_size: int | None = None,
+        joint_dsrc_info: PreparedFromInfo | None = None,
         query_id: str,
         ctx: OpExecutionContext,
         data_key: LocalKeyRepresentation | None = None,
-        preparation_callback: Optional[Callable[[], Awaitable[None]]] = None,
+        preparation_callback: Callable[[], Awaitable[None]] | None = None,
     ) -> TValuesChunkStream:
         """Fetch data from a table"""
         if data_key is None:
@@ -130,10 +129,10 @@ class ProcessorDbExecAdapterBase(abc.ABC):
 
     def _make_query_res_info(
         self,
-        query: Union[str, Select],
+        query: str | Select,
         user_types: Sequence[UserDataType],
     ) -> QueryAndResultInfo:
-        query_res_info = QueryAndResultInfo(
+        return QueryAndResultInfo(
             query=query,  # type: ignore  # TODO: fix
             user_types=list(user_types),
             # This is basically legacy and will be removed.
@@ -141,7 +140,6 @@ class ProcessorDbExecAdapterBase(abc.ABC):
             # So we generate random ones here
             col_names=[f"col_{i}" for i in range(len(user_types))],
         )
-        return query_res_info
 
     async def create_table(
         self,
@@ -181,11 +179,11 @@ class ProcessorDbExecAdapterBase(abc.ABC):
         self,
         query_id: str,
         compiled_query: str,
-        target_connection_ref: Optional[ConnectionRef],
+        target_connection_ref: ConnectionRef | None,
     ) -> None:
         return
 
-    def post_query_execute(self, query_id: str, exec_exception: Optional[Exception]) -> None:
+    def post_query_execute(self, query_id: str, exec_exception: Exception | None) -> None:
         return
 
     def post_cache_usage(self, query_id: str, cache_full_hit: bool | None) -> None:

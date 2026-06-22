@@ -1,13 +1,8 @@
-from typing import (
-    Any,
+from collections.abc import (
     Callable,
     Mapping,
-    Union,
 )
-
+from typing import Any
 
 SDict = Mapping[str, str]
-FallbackFactory = Union[
-    Callable[[Any, Any], Any],  # fallback_cfg & app_cfg_type
-    Callable[[Any], Any],  # fallback_cfg only
-]
+FallbackFactory = Callable[[Any, Any], Any] | Callable[[Any], Any]

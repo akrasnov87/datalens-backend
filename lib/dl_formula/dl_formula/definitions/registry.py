@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import (
+from collections.abc import (
     Generator,
-    NamedTuple,
-    Optional,
     Sequence,
 )
+from typing import NamedTuple
 
 from dl_formula.core.datatype import DataType
 from dl_formula.core.dialect import DialectCombo
@@ -18,7 +17,7 @@ from dl_formula.definitions.scope import Scope
 
 class FuncKey(NamedTuple):
     name: str
-    arg_cnt: Optional[int]
+    arg_cnt: int | None
     is_window: bool
 
     @property
@@ -28,7 +27,7 @@ class FuncKey(NamedTuple):
 
 class OperationRegistry:
     def __init__(self) -> None:
-        self.ops: dict[FuncKey, list["op_base.NodeTranslation"]] = {}
+        self.ops: dict[FuncKey, list[op_base.NodeTranslation]] = {}
 
     def __contains__(self, key: FuncKey) -> bool:
         return key in self.ops
@@ -48,7 +47,7 @@ class OperationRegistry:
             is_window=def_item.is_window,
         )
 
-    def register(self, def_item: "op_base.NodeTranslation") -> None:
+    def register(self, def_item: op_base.NodeTranslation) -> None:
         assert isinstance(def_item, op_base.NodeTranslation)
         if def_item.name is None:
             raise ValueError("Cannot register nameless functions")
@@ -58,7 +57,7 @@ class OperationRegistry:
         if def_item not in self.ops[func_key]:
             self.ops[func_key].append(def_item)
 
-    def unregister(self, def_item: "op_base.NodeTranslation") -> None:
+    def unregister(self, def_item: op_base.NodeTranslation) -> None:
         if def_item.name is None:
             raise ValueError("Cannot unregister nameless functions")
         func_key = self._func_key_from_def_item(def_item)
@@ -72,13 +71,13 @@ class OperationRegistry:
         name: str,
         arg_types: Sequence[DataType],
         is_window: bool = False,
-        dialect: Optional[DialectCombo] = None,
+        dialect: DialectCombo | None = None,
         for_any_dialect: bool = False,
         required_scopes: int = Scope.EXPLICIT_USAGE,
-    ) -> "op_base.NodeTranslation":
+    ) -> op_base.NodeTranslation:
         """Find translation that matches given name and arguments"""
 
-        if dialect is not None and for_any_dialect or dialect is None and not for_any_dialect:
+        if (dialect is not None and for_any_dialect) or (dialect is None and not for_any_dialect):
             raise ValueError(
                 "Either dialect should be provided or for_any_dialect be set to True. Cannot provide both."
             )
@@ -106,10 +105,9 @@ class OperationRegistry:
                 if dialect is None:
                     assert for_any_dialect
                     return func_translation
-                elif func_translation.match_dialect(dialect):
+                if func_translation.match_dialect(dialect):
                     return func_translation
-                else:
-                    some_type_match = True
+                some_type_match = True
 
         # such a function does exist, but there is no implementation that accepts the given arguments
         what = "function" if translations[0].is_function else "operator"
@@ -127,15 +125,22 @@ class OperationRegistry:
         ]
         raise exc.DataTypeError("; ".join(message_parts) + ".")
 
-    def items(self) -> Generator[tuple[FuncKey, "op_base.NodeTranslation"], None, None]:
-        """Like regular ``dict.items()``,  but flatten translation lists"""
-        sorted_keys = sorted(
+    def keys(self) -> list[FuncKey]:
+        """Sorted function keys (like ``dict.keys()``)"""
+        return sorted(
             self.ops.keys(), key=lambda key: (key[0], key[1] if key[1] is not None else float("inf"), *key[2:])
         )
-        for func_key in sorted_keys:
-            trans_list = self.ops[func_key]
-            for translation in trans_list:
+
+    def items(self) -> Generator[tuple[FuncKey, op_base.NodeTranslation], None, None]:
+        """Like regular ``dict.items()``,  but flatten translation lists"""
+        for func_key in self.keys():
+            for translation in self.ops[func_key]:
                 yield func_key, translation
+
+    def values(self) -> Generator[op_base.NodeTranslation, None, None]:
+        """Like regular ``dict.values()``, but flatten translation lists"""
+        for func_key in self.keys():
+            yield from self.ops[func_key]
 
     def get_supported_functions(
         self,

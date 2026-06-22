@@ -13,7 +13,7 @@ from dl_api_lib.query.formalization.query_formalizer import (
     ValueRangeSpecFormalizer,
 )
 from dl_api_lib.query.registry import get_filter_formula_compiler_cls
-from dl_constants.enums import (
+from dl_constants import (
     CalcMode,
     DataSourceRole,
     ProcessorType,
@@ -28,7 +28,6 @@ from dl_query_processing.execution.exec_info import QueryExecutionInfo
 from dl_query_processing.execution.executor import QueryExecutor
 from dl_query_processing.execution.primitives import ExecutedQuery
 from dl_query_processing.legend.block_legend import BlockSpec
-
 
 if TYPE_CHECKING:
     from dl_constants.types import TBIDataValue
@@ -129,6 +128,8 @@ class DatasetView(DatasetBaseWrapper):
 
     _verbose_logging = True
 
+    RESULT_QUERY_SPEC_FORMALIZER_CLS: type[DataQuerySpecFormalizer] = DataQuerySpecFormalizer
+
     def __init__(
         self,
         ds: Dataset,
@@ -137,7 +138,7 @@ class DatasetView(DatasetBaseWrapper):
         block_spec: BlockSpec,
         rci: RequestContextInfo,
         parameter_value_specs: list[ParameterValueSpec] | None = None,
-    ):
+    ) -> None:
         self._rci = rci
         self._query_type = block_spec.query_type  # FIXME: Remove
         self._parameter_value_specs = parameter_value_specs
@@ -155,7 +156,7 @@ class DatasetView(DatasetBaseWrapper):
         elif query_type == QueryType.totals:
             query_form_cls = TotalsSpecFormalizer
         else:
-            query_form_cls = DataQuerySpecFormalizer
+            query_form_cls = self.RESULT_QUERY_SPEC_FORMALIZER_CLS
         return query_form_cls(
             verbose_logging=self._verbose_logging,
             dataset=self._ds,
@@ -196,11 +197,10 @@ class DatasetView(DatasetBaseWrapper):
         return self._capabilities.resolve_source_role(for_preview=self.is_preview)
 
     def build_exec_info(self) -> QueryExecutionInfo:
-        LOGGER.info(f"Select field IDs: {[spec.field_id for spec in self.query_spec.select_specs]}")
+        LOGGER.info("Select field IDs: %s", [spec.field_id for spec in self.query_spec.select_specs])
 
-        assert (
-            self._formula_compiler is not None and self.inspect_env is not None
-        ), "perhaps the sources were not reloaded properly"
+        assert self._formula_compiler is not None, "perhaps the sources were not reloaded properly"
+        assert self.inspect_env is not None, "perhaps the sources were not reloaded properly"
 
         translated_multi_query = self.compile_and_translate_query(query_spec=self.query_spec)
 

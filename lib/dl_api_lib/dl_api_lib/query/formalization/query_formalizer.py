@@ -1,22 +1,22 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Collection,
+    Sequence,
+    Set,
+)
 import logging
 import os
-from typing import (
-    TYPE_CHECKING,
-    AbstractSet,
-    Collection,
-    Optional,
-    Sequence,
-)
+from typing import TYPE_CHECKING
 
 import attr
 
 from dl_api_commons.base_models import RequestContextInfo
+from dl_api_lib.dataset.sys_parameters import resolve_sys_parameter_value_specs
 from dl_api_lib.query.formalization.avatar_tools import normalize_explicit_avatar_ids
 from dl_api_lib.query.formalization.field_resolver import FieldResolver
 from dl_api_lib.query.formalization.query_formalizer_base import QuerySpecFormalizerBase
-from dl_constants.enums import (
+from dl_constants import (
     CalcMode,
     DataSourceRole,
     FieldRole,
@@ -65,7 +65,6 @@ from dl_query_processing.legend.field_legend import (
     TreeRoleSpec,
 )
 
-
 if TYPE_CHECKING:
     from dl_core.services_registry.top_level import ServicesRegistry
     from dl_core.us_entry import USEntry
@@ -87,11 +86,11 @@ def need_permission_on_entry(us_entry: USEntry, permission: str) -> None:
     assert us_entry.permissions is not None
     assert us_entry.uuid is not None
     if not us_entry.permissions[permission]:
-        raise dl_core.exc.USPermissionRequired(us_entry.uuid, permission)
+        raise dl_core.exc.USPermissionRequiredError(us_entry.uuid, permission)
 
 
 @attr.s
-class SimpleQuerySpecFormalizer(QuerySpecFormalizerBase):  # noqa
+class SimpleQuerySpecFormalizer(QuerySpecFormalizerBase):
     """
     Simple formalizer.
     Can be used for validation (no real data query is performed).
@@ -125,8 +124,7 @@ class SimpleQuerySpecFormalizer(QuerySpecFormalizerBase):  # noqa
             dataset_parameter_values=self._ds_accessor.get_parameter_values(),
             dataset_template_enabled=self._ds_accessor.get_template_enabled(),
         )
-        dsrc = dsrc_coll.get_strict(role=role)
-        return dsrc
+        return dsrc_coll.get_strict(role=role)
 
     def _is_preview(self, block_spec: BlockSpec) -> bool:
         return block_spec.query_type == QueryType.preview
@@ -220,12 +218,11 @@ class SimpleQuerySpecFormalizer(QuerySpecFormalizerBase):  # noqa
             assert isinstance(filter_role_spec, FilterRoleSpec)
             try:
                 field_id = legend_filter_spec.id
-            except dl_core.exc.FieldNotFound:
+            except dl_core.exc.FieldNotFoundError:
                 if block_spec.ignore_nonexistent_filters:
                     self._log_info("Skipping filter for unknown field %s", legend_filter_spec)
                     continue
-                else:
-                    raise
+                raise
 
             filter_spec = FilterFieldSpec(
                 field_id=field_id,
@@ -273,7 +270,7 @@ class SimpleQuerySpecFormalizer(QuerySpecFormalizerBase):  # noqa
     def make_relation_and_avatar_specs(
         self,
         used_field_ids: Collection[FieldId],
-    ) -> tuple[list[RelationSpec], AbstractSet[AvatarId], Optional[AvatarId]]:
+    ) -> tuple[list[RelationSpec], Set[AvatarId], AvatarId | None]:
         return [], set(), None
 
     def make_parameter_value_specs(
@@ -286,12 +283,11 @@ class SimpleQuerySpecFormalizer(QuerySpecFormalizerBase):  # noqa
             assert isinstance(parameter_role_spec, ParameterRoleSpec)
             try:
                 field_id = legend_parameter_spec.id
-            except dl_core.exc.FieldNotFound:
+            except dl_core.exc.FieldNotFoundError:
                 if block_spec.ignore_nonexistent_filters:
                     self._log_info("Skipping parameter value for unknown field %s", legend_parameter_spec)
                     continue
-                else:
-                    raise
+                raise
 
             parameter_value_spec = ParameterValueSpec(field_id=field_id, value=parameter_role_spec.value)
             result.append(parameter_value_spec)
@@ -300,7 +296,7 @@ class SimpleQuerySpecFormalizer(QuerySpecFormalizerBase):  # noqa
 
 
 @attr.s
-class DataQuerySpecFormalizer(SimpleQuerySpecFormalizer):  # noqa
+class DataQuerySpecFormalizer(SimpleQuerySpecFormalizer):
     """
     A more complex formalizer for real data queries:
     ``/result``, ``/preview``, etc.
@@ -348,6 +344,17 @@ class DataQuerySpecFormalizer(SimpleQuerySpecFormalizer):  # noqa
     _dep_mgr_factory: ComponentDependencyManagerFactoryBase = attr.ib(kw_only=True)
     _service_registry: ServicesRegistry = attr.ib(kw_only=True)
 
+    def make_parameter_value_specs(
+        self,
+        block_spec: BlockSpec,
+    ) -> list[ParameterValueSpec]:
+        # Reject client-supplied `_sys.*` values and inject server-resolved ones.
+        return resolve_sys_parameter_value_specs(
+            parameter_value_specs=super().make_parameter_value_specs(block_spec=block_spec),
+            result_schema=self._dataset.result_schema,
+            rci=self._rci,
+        )
+
     def _validate_phantom_select_ids(self, phantom_select_ids: Sequence[FieldId]) -> None:
         if any(
             self._dataset.result_schema.by_guid(phantom_select_id).type == FieldType.DIMENSION
@@ -375,14 +382,14 @@ class DataQuerySpecFormalizer(SimpleQuerySpecFormalizer):  # noqa
             avatar_id = field.avatar_id
             assert avatar_id is not None
             if not self._avatar_exists(avatar_id=avatar_id):
-                raise dl_core.exc.UnknownReferencedAvatar(
+                raise dl_core.exc.UnknownReferencedAvatarError(
                     f"Field {field.title!r} ({field_id}) references unknown source avatar {field.avatar_id}."
                 )
 
         if not field.valid:
             # FIXME: BI-2714 Investigate if/why this error is happening and return the raise
             # raise exc.InvalidFieldError(
-            LOGGER.error(f"Field {field.title!r} ({field_id}) is invalid and cannot be selected. Error ignored.")
+            LOGGER.error("Field %r (%s) is invalid and cannot be selected. Error ignored.", field.title, field_id)
 
         self._ensure_not_unsupported_type(field)
         if not block_spec.allow_measure_fields:
@@ -476,7 +483,7 @@ class DataQuerySpecFormalizer(SimpleQuerySpecFormalizer):  # noqa
         elif block_spec.group_by_policy == GroupByPolicy.disable:
             # GROUP BY is disabled. If there are measures in the query, it is not valid
             if has_measures:
-                raise dl_query_processing.exc.InvalidGroupByConfiguration(
+                raise dl_query_processing.exc.InvalidGroupByConfigurationError(
                     "Invalid parameter disable_group_by for dataset with measure fields"
                 )
             return []
@@ -487,7 +494,7 @@ class DataQuerySpecFormalizer(SimpleQuerySpecFormalizer):  # noqa
     def make_relation_and_avatar_specs(
         self,
         used_field_ids: Collection[FieldId],
-    ) -> tuple[list[RelationSpec], AbstractSet[AvatarId], Optional[AvatarId]]:
+    ) -> tuple[list[RelationSpec], Set[AvatarId], AvatarId | None]:
         # Resolve avatars explicitly specified in fields
         deep_dep_mgr = self._dep_mgr_factory.get_field_deep_inter_dependency_manager()
         field_ava_dep_mgr = self._dep_mgr_factory.get_field_avatar_dependency_manager()
@@ -510,7 +517,7 @@ class DataQuerySpecFormalizer(SimpleQuerySpecFormalizer):  # noqa
             for avatar_id in (relation.left_avatar_id, relation.right_avatar_id)
             if relation.required
         }
-        LOGGER.info(f"Adding avatars that are a part of required relations: {avatar_ids_by_required_relations}")
+        LOGGER.info("Adding avatars that are a part of required relations: %s", avatar_ids_by_required_relations)
         explicitly_required_avatar_ids |= avatar_ids_by_required_relations
 
         # Normalize avatars (fix them if there are no user-managed ones)
@@ -527,7 +534,7 @@ class DataQuerySpecFormalizer(SimpleQuerySpecFormalizer):  # noqa
         relation_specs = [RelationSpec(relation_id=relation_id) for relation_id in sorted(required_relation_ids)]
         return relation_specs, required_avatar_ids, root_avatar_id
 
-    def make_limit_offset(self, block_spec: BlockSpec) -> tuple[Optional[int], Optional[int]]:
+    def make_limit_offset(self, block_spec: BlockSpec) -> tuple[int | None, int | None]:
         # Make defaults
         limit, offset = super().make_limit_offset(block_spec=block_spec)
 
@@ -542,7 +549,7 @@ class DataQuerySpecFormalizer(SimpleQuerySpecFormalizer):  # noqa
         block_spec: BlockSpec,
         phantom_select_ids: list[FieldId],
         select_specs: list[SelectFieldSpec],
-        root_avatar_id: Optional[AvatarId],
+        root_avatar_id: AvatarId | None,
     ) -> QueryMetaInfo:
         query_meta = super().make_query_meta(
             block_spec=block_spec,
@@ -611,7 +618,7 @@ class SingleRowQuerySpecFormalizerBase(NoGroupByQuerySpecFormalizerBase):
     ) -> list[OrderByFieldSpec]:
         return []
 
-    def make_limit_offset(self, block_spec: BlockSpec) -> tuple[Optional[int], Optional[int]]:
+    def make_limit_offset(self, block_spec: BlockSpec) -> tuple[int | None, int | None]:
         return (None, None)
 
 

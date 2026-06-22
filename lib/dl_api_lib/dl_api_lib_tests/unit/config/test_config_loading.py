@@ -20,12 +20,6 @@ from dl_configs.rqe import RQEConfig
 from dl_configs.settings_loaders.loader_env import load_settings_from_env_with_fallback
 from dl_core.core_connectors import load_all_connectors
 
-from dl_connector_bundle_chs3.chs3_base.core.settings import (
-    FileS3ConnectorSettingsBase,
-    _RootSettings,
-)
-
-
 TEST_CONFIG_PATH = Path(test_directory.__file__).parent / "config.yaml"
 
 CRYPTO_KEYS_CONFIG = CryptoKeysConfig(
@@ -54,20 +48,6 @@ EXPECTED_DATA_API_SETTINGS = DeprecatedDataApiAppSettings(
     US_MASTER_TOKEN=US_MASTER_TOKEN,
 )
 
-EXPECTED_FILE_SETTINGS = FileS3ConnectorSettingsBase(
-    SECURE=True,
-    HOST="localhost",
-    PORT=8443,
-    USERNAME="datalens",
-    PASSWORD="qwerty",
-    ACCESS_KEY_ID="key_id",
-    SECRET_ACCESS_KEY="access_key",
-    root=_RootSettings(
-        S3_ENDPOINT_URL="http://s3-storage:8000",
-        FILE_UPLOADER_S3_PERSISTENT_BUCKET_NAME="bucket",
-    ),
-)
-
 
 @pytest.fixture
 def expected_settings(request):
@@ -90,20 +70,20 @@ def expected_settings(request):
 
 @pytest.mark.parametrize(
     "expected_settings",
-    argvalues=(EXPECTED_CONTROL_API_SETTINGS, EXPECTED_DATA_API_SETTINGS),
+    argvalues=[EXPECTED_CONTROL_API_SETTINGS, EXPECTED_DATA_API_SETTINGS],
     ids=("control_api", "data_api"),
     indirect=True,
 )
 def test_config_loading(expected_settings):
-    env = dict(
-        CONFIG_PATH=TEST_CONFIG_PATH,
-        EXT_QUERY_EXECUTER_SECRET_KEY="123",
-        DL_CRY_ACTUAL_KEY_ID="1",
-        DL_CRY_FALLBACK_KEY_ID="0",
-        DL_CRY_KEY_VAL_ID_0="asdasd",
-        DL_CRY_KEY_VAL_ID_1="asd",
-        US_HOST=US_HOST,
-        US_MASTER_TOKEN=US_MASTER_TOKEN,
-    )
+    env = {
+        "CONFIG_PATH": TEST_CONFIG_PATH,
+        "EXT_QUERY_EXECUTER_SECRET_KEY": "123",
+        "DL_CRY_ACTUAL_KEY_ID": "1",
+        "DL_CRY_FALLBACK_KEY_ID": "0",
+        "DL_CRY_KEY_VAL_ID_0": "asdasd",
+        "DL_CRY_KEY_VAL_ID_1": "asd",
+        "US_HOST": US_HOST,
+        "US_MASTER_TOKEN": US_MASTER_TOKEN,
+    }
     settings = load_settings_from_env_with_fallback(settings_type=expected_settings.__class__, env=env)
     assert settings == expected_settings

@@ -1,16 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 import itertools
 import logging
 import re
 from typing import (
     ClassVar,
-    Iterable,
     NamedTuple,
-    Optional,
 )
 
-from dl_constants.enums import RLSSubjectType
+from dl_constants import RLSSubjectType
 from dl_rls import exc
 from dl_rls.models import (
     RLS_FAILED_USER_NAME_PREFIX,
@@ -24,7 +23,6 @@ from dl_rls.utils import (
     quote_by_quote,
     split_by_quoted_quote,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,12 +59,12 @@ class FieldRLSSerializer:
         for (pattern_type, allowed_value), rls_entries in rls_entries_by_value:
             subjects_text = ", ".join(rls_entry.subject.subject_name for rls_entry in rls_entries)
             if pattern_type == RLSPatternType.all:
-                line = "*: {}".format(subjects_text)
+                line = f"*: {subjects_text}"
             elif pattern_type == RLSPatternType.userid:
                 line = cls.userid_line
             elif pattern_type == RLSPatternType.value:
                 assert allowed_value is not None
-                line = "{}: {}".format(quote_by_quote(allowed_value), subjects_text)
+                line = f"{quote_by_quote(allowed_value)}: {subjects_text}"
             else:
                 raise Exception("RLS pattern type not yet supported", type(pattern_type), pattern_type)
             lines.append(line)
@@ -85,13 +83,13 @@ class FieldRLSSerializer:
     )
     # allow_all line `*: user1, user2, …`
     _aa_line_re = re.compile(r"^\s*\*\s*:" + _subjects_re_s)
-    _uid_line_re = re.compile(r"\s*".join(("^", "userid", ":", "userid", "$")))  # 'userid: userid'
+    _uid_line_re = re.compile(r"^\s*userid\s*:\s*userid\s*$")  # 'userid: userid'
     assert _uid_line_re.match(userid_line)  # self-check
     # 'value': user1, user2, …`. Note that the value might contain more quotes.
     _line_re = re.compile(r"^'.+': " + _subjects_re_s)
 
     @classmethod
-    def _parse_single_line(cls, line: str) -> tuple[RLSPatternType, Optional[str], list[str]]:
+    def _parse_single_line(cls, line: str) -> tuple[RLSPatternType, str | None, list[str]]:
         """
         `'value: subjects'` line to `pattern_type, value, subject_names` tuple.
         """
@@ -136,12 +134,12 @@ class FieldRLSSerializer:
         return pattern_type, value, subject_names
 
     @classmethod
-    def _try_parse_single_line(cls, line: str, idx: int) -> tuple[RLSPatternType, Optional[str], list[str]]:
+    def _try_parse_single_line(cls, line: str, idx: int) -> tuple[RLSPatternType, str | None, list[str]]:
         try:
             return cls._parse_single_line(line)
         except ValueError as exc_value:
             raise exc.RLSConfigParsingError(
-                f"RLS: Parsing failed at line {idx + 1}", details=dict(description=str(exc_value))
+                f"RLS: Parsing failed at line {idx + 1}", details={"description": str(exc_value)}
             ) from exc_value
 
     class AccountGroups(NamedTuple):
@@ -243,7 +241,7 @@ class FieldRLSSerializer:
 
     @classmethod
     def from_text_config(
-        cls, config: str, field_guid: str, subject_resolver: Optional[BaseSubjectResolver]
+        cls, config: str, field_guid: str, subject_resolver: BaseSubjectResolver | None
     ) -> list[RLSEntry]:
         if not config:
             return []
@@ -260,11 +258,11 @@ class FieldRLSSerializer:
         #     value: user1
         # lines.
 
-        all_names = set(
+        all_names = {
             name
             for value_item in itertools.chain(value_to_item.values(), [allow_all_item])  # wildcard value
             for name in value_item.names
-        )
+        }
         all_names -= {cls.allow_all_subject_name}  # wildcard subject
         all_names_lst = sorted(all_names)
 
@@ -279,28 +277,28 @@ class FieldRLSSerializer:
         name_to_subject[cls.allow_all_subject_name] = cls.allow_all_subject
 
         # Combine the results.
-        rls_entries = []
+        rls_entries: list[RLSEntry] = []
         for value, value_info in value_to_item.items():
             names = sorted(set(value_info.names))
-            for name in names:
-                # TODO?: write down the source config line idx too.
-                rls_entries.append(
-                    RLSEntry(
-                        field_guid=field_guid,
-                        allowed_value=value,
-                        subject=name_to_subject[name],
-                        pattern_type=RLSPatternType.value,
-                    )
-                )
-        for name in allow_all_item.names:
-            rls_entries.append(
+            # TODO?: write down the source config line idx too.
+            rls_entries.extend(
                 RLSEntry(
                     field_guid=field_guid,
-                    allowed_value=None,
+                    allowed_value=value,
                     subject=name_to_subject[name],
-                    pattern_type=RLSPatternType.all,
+                    pattern_type=RLSPatternType.value,
                 )
+                for name in names
             )
+        rls_entries.extend(
+            RLSEntry(
+                field_guid=field_guid,
+                allowed_value=None,
+                subject=name_to_subject[name],
+                pattern_type=RLSPatternType.all,
+            )
+            for name in allow_all_item.names
+        )
         for name in userid_item.names:
             assert name == cls.userid_subject_name
             rls_entries.append(

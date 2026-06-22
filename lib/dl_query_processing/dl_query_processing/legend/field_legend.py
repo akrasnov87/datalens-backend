@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import (
-    Any,
+from collections.abc import (
     Collection,
     Iterator,
-    Optional,
     Sequence,
 )
+from typing import Any
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     FieldRole,
     FieldType,
     FieldVisibility,
@@ -71,7 +70,7 @@ class RowRoleSpec(DimensionRoleSpec):
 
 @attr.s(frozen=True)
 class TemplateRoleSpec(DimensionRoleSpec):
-    template: Optional[str] = attr.ib(kw_only=True, default=None)
+    template: str | None = attr.ib(kw_only=True, default=None)
 
 
 @attr.s(frozen=True)
@@ -115,7 +114,7 @@ class LegendItem:
     role_spec: RoleSpec = attr.ib(kw_only=True, factory=RoleSpec)
     data_type: UserDataType = attr.ib(kw_only=True)
     field_type: FieldType = attr.ib(kw_only=True)
-    block_id: Optional[int] = attr.ib(kw_only=True, default=None)
+    block_id: int | None = attr.ib(kw_only=True, default=None)
 
     @property
     def item_type(self) -> LegendItemType:
@@ -219,18 +218,16 @@ class Legend:
 
     def list_selectable_items(self) -> list[LegendItem]:
         """List the items that can be selected from the data source"""
-        items = [
+        return [
             item
             for item in self.items
             if item.role_spec.role in SELECTABLE_ROLES and isinstance(item.obj, FieldObjSpec)
         ]
-        return items
 
     def list_streamable_items(self) -> Sequence[LegendItem]:
         """List streamable items + special derived ones like templates"""
-        items = [
+        return [
             item
             for item in self.items
             if item.role_spec.role in SELECTABLE_ROLES and isinstance(item.obj, (FieldObjSpec, PlaceholderObjSpec))
         ]
-        return items

@@ -2,9 +2,7 @@ import asyncio
 import logging
 from typing import (
     Any,
-    Optional,
     Protocol,
-    TypeAlias,
     runtime_checkable,
 )
 
@@ -29,13 +27,12 @@ from dl_task_processor.task import (
     Retry,
 )
 
-
 EXECUTOR_KEY = "bi_executor"
 
 LOGGER = logging.getLogger(__name__)
 
 
-CronTask: TypeAlias = _CronJob
+type CronTask = _CronJob
 
 
 @attr.s
@@ -74,7 +71,7 @@ class _BIRedisSettings(Protocol):
     PASSWORD: str | None
     DB: int
     CLUSTER_NAME: str
-    SSL: Optional[bool]
+    SSL: bool | None
 
 
 def create_arq_redis_settings(settings: _BIRedisSettings) -> ArqRedisSettings:
@@ -87,7 +84,7 @@ def create_arq_redis_settings(settings: _BIRedisSettings) -> ArqRedisSettings:
             database=settings.DB,
             ssl=settings.SSL or False,
         )
-    elif settings.MODE == RedisMode.sentinel:
+    if settings.MODE == RedisMode.sentinel:
         redis_targets = [(host, settings.PORT) for host in settings.HOSTS]
         return ArqRedisSettings(
             host=redis_targets,
@@ -97,8 +94,7 @@ def create_arq_redis_settings(settings: _BIRedisSettings) -> ArqRedisSettings:
             database=settings.DB,
             ssl=settings.SSL or False,
         )
-    else:
-        raise ValueError(f"Unknown redis mode {settings.MODE}")
+    raise ValueError(f"Unknown redis mode {settings.MODE}")
 
 
 @attr.s
@@ -112,21 +108,20 @@ class CronSchedule:
     month: month(s) to run the job on, 1 - 12
     """
 
-    second: Optional[set[int]] = attr.ib(default=None)
-    minute: Optional[set[int]] = attr.ib(default=None)
-    hour: Optional[set[int]] = attr.ib(default=None)
-    day: Optional[set[int]] = attr.ib(default=None)
-    weekday: Optional[set[int]] = attr.ib(default=None)
-    month: Optional[set[int]] = attr.ib(default=None)
+    second: set[int] | None = attr.ib(default=None)
+    minute: set[int] | None = attr.ib(default=None)
+    hour: set[int] | None = attr.ib(default=None)
+    day: set[int] | None = attr.ib(default=None)
+    weekday: set[int] | None = attr.ib(default=None)
+    month: set[int] | None = attr.ib(default=None)
 
 
 def make_cron_task(task: BaseTaskMeta, schedule: CronSchedule) -> CronTask:
-    cron_task = cron(
+    return cron(
         ArqCronWrapper(task=task),
         name=task.name,
         **attr.asdict(schedule),
     )
-    return cron_task
 
 
 async def arq_base_task(context: dict, params: dict) -> None:

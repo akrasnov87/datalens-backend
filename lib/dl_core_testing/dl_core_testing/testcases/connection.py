@@ -1,19 +1,16 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import Callable
 from typing import (
     TYPE_CHECKING,
-    Callable,
     ClassVar,
-    Generic,
-    Optional,
-    TypeVar,
     cast,
 )
 
 import pytest
 
-from dl_constants.enums import RawSQLLevel
+from dl_constants import RawSQLLevel
 from dl_core.exc import InvalidRequestError
 from dl_core.us_connection_base import (
     ConnectionBase,
@@ -34,50 +31,45 @@ from dl_core_testing.testcases.service_base import (
 )
 from dl_testing.regulated_test import RegulatedTestCase
 
-
 if TYPE_CHECKING:
     from dl_core.connection_executors.async_base import AsyncConnExecutorBase
     from dl_core.connection_executors.sync_base import SyncConnExecutorBase
     from dl_core.services_registry.top_level import ServicesRegistry
 
 
-_CONN_TV = TypeVar("_CONN_TV", bound=ConnectionBase)
-
-
-class BaseConnectionTestClass(
+class BaseConnectionTestClass[CONN_TV: ConnectionBase](
     ServiceFixtureTextClass,
     DbServiceFixtureTextClass,
-    Generic[_CONN_TV],
     metaclass=abc.ABCMeta,
 ):
-    raw_sql_level: ClassVar[Optional[RawSQLLevel]] = None
+    raw_sql_level: ClassVar[RawSQLLevel | None] = None
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def sync_us_manager(self, conn_default_sync_us_manager: SyncUSManager) -> SyncUSManager:
         return conn_default_sync_us_manager
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def async_us_manager(self, conn_default_async_us_manager: AsyncUSManager) -> AsyncUSManager:
         return conn_default_async_us_manager
 
     @abc.abstractmethod
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def connection_creation_params(self) -> dict:
         raise NotImplementedError
 
-    @pytest.fixture(scope="function")
-    def saved_connection(self, sync_us_manager: SyncUSManager, connection_creation_params: dict) -> _CONN_TV:
+    @pytest.fixture
+    def saved_connection(self, sync_us_manager: SyncUSManager, connection_creation_params: dict) -> CONN_TV:
         conn = make_saved_connection(
             sync_usm=sync_us_manager,
             conn_type=self.conn_type,
             data_dict=connection_creation_params,
         )
-        return cast(_CONN_TV, conn)
+        return cast(CONN_TV, conn)
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def sync_conn_executor_factory(
         self,
-        saved_connection: _CONN_TV,
+        saved_connection: CONN_TV,
         conn_sync_service_registry: ServicesRegistry,
     ) -> Callable[[], SyncConnExecutorBase]:
         def factory() -> SyncConnExecutorBase:
@@ -86,10 +78,10 @@ class BaseConnectionTestClass(
 
         return factory
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def async_conn_executor_factory(
         self,
-        saved_connection: _CONN_TV,
+        saved_connection: CONN_TV,
         conn_async_service_registry: ServicesRegistry,
     ) -> Callable[[], AsyncConnExecutorBase]:
         def factory() -> AsyncConnExecutorBase:
@@ -99,7 +91,7 @@ class BaseConnectionTestClass(
         return factory
 
     @pytest.fixture(scope="class")
-    def sample_table_schema(self) -> Optional[str]:
+    def sample_table_schema(self) -> str | None:
         return None
 
     @pytest.fixture(scope="class")
@@ -109,27 +101,27 @@ class BaseConnectionTestClass(
     @pytest.fixture(scope="class")
     def sample_table(
         self,
-        sample_table_schema: Optional[str],
+        sample_table_schema: str | None,
         sample_table_spec: FixtureTableSpec,
         db: Db,
     ) -> DbTable:
         return self.db_table_dispenser.get_csv_table(db=db, spec=sample_table_spec, schema_name=sample_table_schema)
 
 
-class DefaultConnectionTestClass(RegulatedTestCase, BaseConnectionTestClass[_CONN_TV], Generic[_CONN_TV]):
+class DefaultConnectionTestClass[CONN_TV: ConnectionBase](RegulatedTestCase, BaseConnectionTestClass[CONN_TV]):
     do_check_data_export_flag: ClassVar[bool] = False
 
     @abc.abstractmethod
-    def check_saved_connection(self, conn: _CONN_TV, params: dict) -> None:
+    def check_saved_connection(self, conn: CONN_TV, params: dict) -> None:
         raise NotImplementedError
 
-    def test_make_connection(self, saved_connection: _CONN_TV, connection_creation_params: dict) -> None:
+    def test_make_connection(self, saved_connection: CONN_TV, connection_creation_params: dict) -> None:
         conn = saved_connection
         self.check_saved_connection(conn=conn, params=connection_creation_params)
 
     def test_connection_test(
         self,
-        saved_connection: _CONN_TV,
+        saved_connection: CONN_TV,
         sync_conn_executor_factory: Callable[[], SyncConnExecutorBase],
     ) -> None:
         def sync_conn_executor_factory_for_conn(connection: ConnectionBase) -> SyncConnExecutorBase:
@@ -140,13 +132,13 @@ class DefaultConnectionTestClass(RegulatedTestCase, BaseConnectionTestClass[_CON
         conn.test(conn_executor_factory=sync_conn_executor_factory_for_conn)
 
     @abc.abstractmethod
-    def check_data_source_templates(self, conn: _CONN_TV, dsrc_templates: list[DataSourceTemplate]) -> None:
+    def check_data_source_templates(self, conn: CONN_TV, dsrc_templates: list[DataSourceTemplate]) -> None:
         # In case of disabled templates, explicitly assert `not dsrc_templates`
         raise NotImplementedError
 
     def test_connection_get_data_source_templates(
         self,
-        saved_connection: _CONN_TV,
+        saved_connection: CONN_TV,
         sync_conn_executor_factory: Callable[[], SyncConnExecutorBase],
     ) -> None:
         def sync_conn_executor_factory_for_conn(connection: ConnectionBase) -> SyncConnExecutorBase:
@@ -180,7 +172,7 @@ class DefaultConnectionTestClass(RegulatedTestCase, BaseConnectionTestClass[_CON
 
     def test_get_source_templates_paginated_fail_when_db_name_is_required(
         self,
-        saved_connection: _CONN_TV,
+        saved_connection: CONN_TV,
         sync_conn_executor_factory: Callable[[], SyncConnExecutorBase],
     ) -> None:
         conn = saved_connection
@@ -193,13 +185,13 @@ class DefaultConnectionTestClass(RegulatedTestCase, BaseConnectionTestClass[_CON
             with pytest.raises(InvalidRequestError, match="db_name parameter is required when search_text is provided"):
                 conn.get_data_source_templates_paginated(
                     sync_conn_executor_factory_for_conn,
-                    search_text="some_search_term"
+                    search_text="some_search_term",
                     # db_name is intentionally omitted
                 )
 
     def test_get_source_templates_paginated_fail_when_search_is_not_supported(
         self,
-        saved_connection: _CONN_TV,
+        saved_connection: CONN_TV,
         sync_conn_executor_factory: Callable[[], SyncConnExecutorBase],
     ) -> None:
         conn = saved_connection
@@ -216,7 +208,7 @@ class DefaultConnectionTestClass(RegulatedTestCase, BaseConnectionTestClass[_CON
 
     def test_get_source_templates_paginated_fail_with_unsupported_offset(
         self,
-        saved_connection: _CONN_TV,
+        saved_connection: CONN_TV,
         sync_conn_executor_factory: Callable[[], SyncConnExecutorBase],
     ) -> None:
         conn = saved_connection
@@ -231,7 +223,7 @@ class DefaultConnectionTestClass(RegulatedTestCase, BaseConnectionTestClass[_CON
 
     def test_get_source_templates_paginated_fail_with_unsupported_db_names(
         self,
-        saved_connection: _CONN_TV,
+        saved_connection: CONN_TV,
         sync_conn_executor_factory: Callable[[], SyncConnExecutorBase],
     ) -> None:
         conn = saved_connection

@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import abc
 import asyncio
-from typing import (
-    Callable,
-    TypeVar,
-)
+from collections.abc import Callable
+from typing import TypeVar
 
 from dl_utils.aio import ContextVarExecutor
-
 
 _IDENTITY_TV = TypeVar("_IDENTITY_TV")
 

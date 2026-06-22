@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 from collections import ChainMap
+from collections.abc import (
+    MutableMapping,
+    Sequence,
+)
 import logging
 import random
 from typing import (
     TYPE_CHECKING,
+    Any,
     ClassVar,
-    MutableMapping,
-    Optional,
-    Sequence,
+    Self,
 )
 
 import attr
 
+from dl_api_commons.base_models import RequestContextInfo
 from dl_configs.rqe import (
     RQEBaseURL,
     RQEConfig,
@@ -25,6 +29,7 @@ from dl_core.connection_executors import (
 )
 from dl_core.connection_executors.async_base import AsyncConnExecutorBase
 from dl_core.connection_executors.models.common import RemoteQueryExecutorData
+from dl_core.connection_executors.secret_extraction import data_model_secret_fields
 from dl_core.connection_models import (
     ConnDTO,
     ConnectOptions,
@@ -36,8 +41,8 @@ from dl_core.services_registry.conn_executor_factory_base import (
     ConnExecutorRecipe,
 )
 from dl_core.us_connection_base import ConnectionBase
+from dl_obfuscator import get_secret_strings
 from dl_utils.aio import ContextVarExecutor
-
 
 if TYPE_CHECKING:
     from dl_core.connection_executors.common_base import ConnExecutorBase
@@ -51,26 +56,39 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 
+def _populate_keeper_from_connection(
+    req_ctx_info: RequestContextInfo | None,
+    conn: ConnectionBase,
+) -> None:
+    if req_ctx_info is None or not conn.has_data():
+        return
+    keeper = req_ctx_info.secret_keeper
+    keeper.add_secrets(
+        get_secret_strings(conn.data, extra_secret_fields=data_model_secret_fields),
+        prefix="connection",
+    )
+
+
 @attr.s(frozen=True)
 class DefaultConnExecutorFactory(BaseClosableExecutorFactory):
-    rqe_config: Optional[RQEConfig] = attr.ib()
-    tpe: Optional[ContextVarExecutor] = attr.ib()
+    rqe_config: RQEConfig | None = attr.ib()
+    tpe: ContextVarExecutor | None = attr.ib()
     conn_sec_mgr: ConnectionSecurityManager = attr.ib()
     ca_data: bytes = attr.ib()
 
     is_bleeding_edge_user: bool = attr.ib(default=False)
-    conn_cls_whitelist: Optional[frozenset[type[ConnectionBase]]] = attr.ib(default=None)
+    conn_cls_whitelist: frozenset[type[ConnectionBase]] | None = attr.ib(default=None)
     # User function that can override connect options.
     #  If factory returns `None` default connection connect options will be used
-    connect_options_factory: Optional[ConnectOptionsFactory] = attr.ib(default=None)
+    connect_options_factory: ConnectOptionsFactory | None = attr.ib(default=None)
     # User function that can alter connect options (whether they were generated
     # by factory or from the conn).
-    connect_options_mutator: Optional[ConnectOptionsMutator] = attr.ib(default=None)
+    connect_options_mutator: ConnectOptionsMutator | None = attr.ib(default=None)
     force_non_rqe_mode: bool = attr.ib(default=False)
 
-    DEFAULT_MAP_CONN_TYPE_SYNC_CE_TYPE: dict[type[ConnectionBase], type[ConnExecutorBase]] = {}
+    DEFAULT_MAP_CONN_TYPE_SYNC_CE_TYPE: ClassVar[dict[type[ConnectionBase], type[ConnExecutorBase]]] = {}
 
-    DEFAULT_MAP_CONN_TYPE_ASYNC_CE_TYPE: dict[type[ConnectionBase], type[AsyncConnExecutorBase]] = {}
+    DEFAULT_MAP_CONN_TYPE_ASYNC_CE_TYPE: ClassVar[dict[type[ConnectionBase], type[AsyncConnExecutorBase]]] = {}
 
     SINGLE_HOST_RETRY_ATTEMPTS: ClassVar[int] = 3
     MAX_HOST_RETRY_ATTEMPTS: ClassVar[int] = 3
@@ -108,12 +126,11 @@ class DefaultConnExecutorFactory(BaseClosableExecutorFactory):
             if len(hosts) == 1:
                 hosts = hosts * self.SINGLE_HOST_RETRY_ATTEMPTS
             elif len(hosts) > self.MAX_HOST_RETRY_ATTEMPTS:
-                LOGGER.info(f"Hosts list truncated from {len(hosts)} to {self.MAX_HOST_RETRY_ATTEMPTS}")
+                LOGGER.info("Hosts list truncated from %s to %s", len(hosts), self.MAX_HOST_RETRY_ATTEMPTS)
                 hosts = hosts[: self.MAX_HOST_RETRY_ATTEMPTS]
 
             return tuple(hosts)
-        else:
-            return ()
+        return ()
 
     def _get_async_conn_executor_recipe(
         self,
@@ -122,13 +139,14 @@ class DefaultConnExecutorFactory(BaseClosableExecutorFactory):
         assert conn._context is self.req_ctx_info, "Divergence in RCI between CE factory and US connection"
 
         dto = conn.get_conn_dto()
+        _populate_keeper_from_connection(self.req_ctx_info, conn)
         conn_hosts_pool = self._get_conn_hosts_pool(dto)
 
         executor_cls = self.get_async_conn_executor_cls(conn)
         exec_mode, rqe_data = self._get_exec_mode_and_rqe_attrs(conn, executor_cls)
         LOGGER.info("Connection executor exec_mode = %s", exec_mode)
 
-        overridden_connect_options: Optional[ConnectOptions] = None
+        overridden_connect_options: ConnectOptions | None = None
         if self.connect_options_factory is not None:
             overridden_connect_options = self.connect_options_factory(conn)
 
@@ -172,12 +190,11 @@ class DefaultConnExecutorFactory(BaseClosableExecutorFactory):
                 services_registry=self._services_registry_ref.ref,  # Do not use. To be deprecated. Somehow.
                 ca_data=recipe.ca_data,
             )
-        else:
-            raise CEFactoryError(f"Can not instantiate {executor_cls}")
+        raise CEFactoryError(f"Can not instantiate {executor_cls}")
 
     def _get_exec_mode_and_rqe_attrs(
         self, conn: ConnectionBase, executor_cls: type[AsyncConnExecutorBase]
-    ) -> tuple[ExecutionMode, Optional[RemoteQueryExecutorData]]:
+    ) -> tuple[ExecutionMode, RemoteQueryExecutorData | None]:
         conn_dto = conn.get_conn_dto()
         conn_options = conn.get_conn_options()
         ce_cls = self.get_async_conn_executor_cls(conn)
@@ -234,7 +251,7 @@ class DefaultConnExecutorFactory(BaseClosableExecutorFactory):
     def conn_security_manager(self) -> ConnectionSecurityManager:
         return self.conn_sec_mgr
 
-    def clone(self, **kwargs):  # type: ignore  # TODO: fix
+    def clone(self, **kwargs: Any) -> Self:
         return attr.evolve(self, **kwargs)
 
 

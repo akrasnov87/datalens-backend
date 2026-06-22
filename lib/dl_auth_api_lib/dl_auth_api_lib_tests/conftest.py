@@ -14,7 +14,6 @@ from dl_auth_api_lib.oauth.yandex import YandexOAuthClient
 from dl_auth_api_lib.settings import AuthAPISettings
 from dl_testing.utils import get_default_aiohttp_session
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -22,52 +21,51 @@ LOGGER = logging.getLogger(__name__)
 aiohttp_client = aiohttp_client
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def config_path() -> str:
     dir_path = os.path.dirname(os.path.realpath(__file__))
     return os.path.join(dir_path, "config.yaml")
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def oauth_app_settings(monkeypatch, config_path):
     monkeypatch.setenv("CONFIG_PATH", config_path)
     monkeypatch.setenv("AUTH_CLIENTS__APP_METRICA__CLIENT_SECRET", "123pass")
     monkeypatch.setenv("AUTH_CLIENTS__YA_CLIENT__CLIENT_SECRET", "pass1234")
-    settings = AuthAPISettings(
-        auth_clients=dict(
-            metrica=YandexOAuthClient(
+    return AuthAPISettings(
+        auth_clients={
+            "metrica": YandexOAuthClient(
                 conn_type="metrica",
                 client_id="metrica",
                 client_secret="pass123",
                 redirect_uri="localhost",
                 scope="read",
             ),
-            app_metrica=dict(
-                auth_type="yandex",
-                conn_type="app_metrica",
-                client_id="app_metrica",
-                redirect_uri="localhost",
-            ),
-            custom_conn=dict(
-                auth_type="yandex",
-                conn_type="custom_conn",
-                client_id="custom_conn",
-                client_secret="pass321",
-                redirect_uri="localhost",
-                auth_url="https://oauth.yandex.com/authorize?",
-                token_url="https://oauth.yandex.com/token",
-            ),
-            gsheets=dict(
-                auth_type="google",
-                conn_type="gsheets",
-                client_id="gsheets_id",
-                client_secret="gsheets_pass",
-                redirect_uri="localhost",
-                scope="https://www.googleapis.com/auth/spreadsheets.readonly",
-            ),
-        )
+            "app_metrica": {
+                "auth_type": "yandex",
+                "conn_type": "app_metrica",
+                "client_id": "app_metrica",
+                "redirect_uri": "localhost",
+            },
+            "custom_conn": {
+                "auth_type": "yandex",
+                "conn_type": "custom_conn",
+                "client_id": "custom_conn",
+                "client_secret": "pass321",
+                "redirect_uri": "localhost",
+                "auth_url": "https://oauth.yandex.com/authorize?",
+                "token_url": "https://oauth.yandex.com/token",
+            },
+            "gsheets": {
+                "auth_type": "google",
+                "conn_type": "gsheets",
+                "client_id": "gsheets_id",
+                "client_secret": "gsheets_pass",
+                "redirect_uri": "localhost",
+                "scope": "https://www.googleapis.com/auth/spreadsheets.readonly",
+            },
+        }
     )
-    yield settings
 
 
 class TestingOAuthApiAppFactory(OAuthApiAppFactory[AuthAPISettings]):
@@ -75,7 +73,7 @@ class TestingOAuthApiAppFactory(OAuthApiAppFactory[AuthAPISettings]):
         return []
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def oauth_app(loop, aiohttp_client, oauth_app_settings):
     app_factory = TestingOAuthApiAppFactory(settings=oauth_app_settings)
     app = app_factory.create_app()
@@ -93,11 +91,10 @@ async def oauth_app_client(oauth_app) -> DLCommonAPIClient:
         )
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def snowflake_payload() -> dict[str, str]:
-    payload = {
+    return {
         "conn_type": "snowflake",
         "account": "gg36894.eu-central-1",
         "client_id": "snowflake_client_id",
     }
-    return payload

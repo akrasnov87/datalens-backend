@@ -3,7 +3,6 @@ import os
 import typing
 from typing import (
     ClassVar,
-    Optional,
     final,
 )
 
@@ -43,7 +42,7 @@ class ConnectionFormTestBase:
         return Settings()
 
     @pytest.fixture
-    def connectors_settings(self) -> Optional[ConnectorSettings]:
+    def connectors_settings(self) -> ConnectorSettings | None:
         """Parametrize if a form has extra settings"""
 
         return None
@@ -68,7 +67,7 @@ class ConnectionFormTestBase:
     @pytest.fixture
     def form_config(
         self,
-        connectors_settings: Optional[ConnectorSettings],
+        connectors_settings: ConnectorSettings | None,
         tenant: TenantDef,
         mode: ConnectionFormMode,
         service_registry: ApiServiceRegistry,
@@ -81,8 +80,7 @@ class ConnectionFormTestBase:
         form_params = FormConfigParams(user_id="test_user_id")
         form_factory = self.CONN_FORM_FACTORY_CLS(mode=mode, localizer=localizer, form_params=form_params)
         form_factory.preprocess_form_params(service_registry=service_registry)
-        form_config = form_factory.get_form_config(connectors_settings, tenant)
-        return form_config
+        return form_factory.get_form_config(connectors_settings, tenant)
 
     @pytest.fixture(name="config_dir")
     def fixture_config_dir(self, request: pytest.FixtureRequest) -> str:
@@ -96,7 +94,7 @@ class ConnectionFormTestBase:
     def fixture_expected_form_config_file(
         self,
         config_dir: str,
-        connectors_settings: Optional[ConnectorSettings],
+        connectors_settings: ConnectorSettings | None,
         tenant: TenantDef,
         mode: ConnectionFormMode,
     ) -> str:
@@ -126,7 +124,7 @@ class ConnectionFormTestBase:
         if not os.path.exists(expected_form_config_file):
             pytest.fail(f"Expected form config file does not exist: {expected_form_config_file}")
 
-        with open(expected_form_config_file, mode="r") as f:
+        with open(expected_form_config_file) as f:
             return json.load(f)
 
     def test_validate_conditional_fields(self, form_config: ConnectionForm) -> None:
@@ -155,4 +153,10 @@ class ConnectionFormTestBase:
 class DatasourceTemplateConnectionFormTestMixin:
     @pytest.fixture(name="enable_datasource_template", params=[True, False])
     def fixture_enable_datasource_template(self, request: pytest.FixtureRequest) -> bool:
+        return request.param
+
+
+class RawSQLReadWriteConnectionFormTestMixin:
+    @pytest.fixture(name="enable_raw_sql_readwrite", params=[True, False])
+    def fixture_enable_raw_sql_readwrite(self, request: pytest.FixtureRequest) -> bool:
         return request.param

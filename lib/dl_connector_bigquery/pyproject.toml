@@ -19,6 +19,7 @@ dl-i18n = {path = "../dl_i18n"}
 dl-model-tools = {path = "../dl_model_tools"}
 dl-type-transformer = {path = "../dl_type_transformer"}
 dl-utils = {path = "../dl_utils"}
+frozendict = "*"
 google-api-core = "*"
 google-auth = "*"
 google-cloud-bigquery = "*"
@@ -26,7 +27,7 @@ google-cloud-bigquery-storage = {extras = ["pyarrow"], version = "*"}
 google-cloud-core = "*"
 google-resumable-media = "*"
 marshmallow = "*"
-python = ">=3.10, <3.13"
+python = ">=3.12, <3.13"
 sqlalchemy = "*"
 sqlalchemy-bigquery = "*"
 
@@ -95,6 +96,5 @@ skip_compose = "true"
 skip_tests = true # TODO: BI-5317
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_connector_bigquery_tests/unit"
 skip_compose = "true"

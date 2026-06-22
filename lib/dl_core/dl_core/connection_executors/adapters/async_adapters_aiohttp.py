@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import abc
 import asyncio
+from collections.abc import (
+    Generator,
+    Sequence,
+)
 import contextlib
 import ssl
 from typing import (
     TYPE_CHECKING,
-    Generator,
-    Optional,
-    Sequence,
     TypeVar,
 )
 
@@ -21,7 +22,6 @@ import attr
 
 from dl_core import exc
 from dl_core.connection_executors.adapters.async_adapters_base import AsyncDirectDBAdapter
-
 
 if TYPE_CHECKING:
     from aiohttp import BasicAuth
@@ -61,7 +61,7 @@ class AiohttpDBAdapter(AsyncDirectDBAdapter, metaclass=abc.ABCMeta):
         )
         super().__attrs_post_init__()
 
-    def create_aiohttp_connector(self, ssl_context: Optional[ssl.SSLContext]) -> aiohttp.TCPConnector:
+    def create_aiohttp_connector(self, ssl_context: ssl.SSLContext | None) -> aiohttp.TCPConnector:
         return aiohttp.TCPConnector(
             ssl_context=ssl_context,
         )
@@ -83,7 +83,7 @@ class AiohttpDBAdapter(AsyncDirectDBAdapter, metaclass=abc.ABCMeta):
         # Sime default large-ish timeout.
         return ClientTimeout(total=3600.0)
 
-    def get_session_auth(self) -> Optional[BasicAuth]:
+    def get_session_auth(self) -> BasicAuth | None:
         return None
 
     def get_session_headers(self) -> dict[str, str]:
@@ -95,7 +95,7 @@ class AiohttpDBAdapter(AsyncDirectDBAdapter, metaclass=abc.ABCMeta):
     def get_session_cookies(self) -> dict[str, str]:
         return {}
 
-    def get_target_host(self) -> Optional[str]:
+    def get_target_host(self) -> str | None:
         return self._target_dto.get_effective_host()
 
     async def close(self) -> None:
@@ -104,15 +104,15 @@ class AiohttpDBAdapter(AsyncDirectDBAdapter, metaclass=abc.ABCMeta):
     execute_err_map: Sequence[tuple[type[Exception], type[exc.DatabaseQueryError]]] = (
         (aiohttp.client_exceptions.ClientConnectorError, exc.SourceConnectError),
         (exc.AIOHttpConnTimeoutError, exc.SourceConnectError),
-        (aiohttp.client_exceptions.ServerTimeoutError, exc.SourceTimeout),
-        (asyncio.exceptions.TimeoutError, exc.SourceTimeout),
-        (aiohttp.client_exceptions.ServerDisconnectedError, exc.SourceClosedPrematurely),
-        (exc.RSTError, exc.SourceClosedPrematurely),
+        (aiohttp.client_exceptions.ServerTimeoutError, exc.SourceTimeoutError),
+        (asyncio.exceptions.TimeoutError, exc.SourceTimeoutError),
+        (aiohttp.client_exceptions.ServerDisconnectedError, exc.SourceClosedPrematurelyError),
+        (exc.RSTError, exc.SourceClosedPrematurelyError),
         (aiohttp.client_exceptions.ClientPayloadError, exc.SourceProtocolError),
     )
 
     @contextlib.contextmanager
-    def wrap_execute_excs(self, query: DBAdapterQuery, stage: Optional[str]) -> Generator[None, None, None]:
+    def wrap_execute_excs(self, query: DBAdapterQuery, stage: str | None) -> Generator[None, None, None]:
         try:
             try:
                 yield None

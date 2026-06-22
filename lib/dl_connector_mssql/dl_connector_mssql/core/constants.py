@@ -1,9 +1,8 @@
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DataSourceType,
     SourceBackendType,
 )
-
 
 BACKEND_TYPE_MSSQL = SourceBackendType.declare("MSSQL")
 CONNECTION_TYPE_MSSQL = ConnectionType.declare("mssql")

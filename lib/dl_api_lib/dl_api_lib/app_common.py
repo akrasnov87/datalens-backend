@@ -4,9 +4,6 @@ import abc
 import logging.config
 from typing import (
     TYPE_CHECKING,
-    Generic,
-    Optional,
-    TypeVar,
     final,
 )
 
@@ -14,7 +11,10 @@ import attr
 
 from dl_api_commons.base_models import FeatureFlags
 from dl_api_lib.app_common_settings import ConnOptionsMutatorsFactory
-from dl_api_lib.app_settings import AppSettings
+from dl_api_lib.app_settings import (
+    AppSettings,
+    ConstraintsSettings,
+)
 from dl_api_lib.connector_availability.base import ConnectorAvailabilityConfig
 from dl_api_lib.i18n.registry import (
     LOCALIZATION_CONFIGS,
@@ -34,6 +34,7 @@ from dl_core.services_registry.inst_specific_sr import (
 from dl_core.services_registry.rqe_caches import RQECachesSetting
 from dl_core.services_registry.top_level import ServicesRegistry
 from dl_core.utils import FutureRef
+import dl_extract
 from dl_i18n.localizer_base import (
     LocalizerLoader,
     TranslationConfig,
@@ -45,7 +46,6 @@ from dl_rls.subject_resolver import (
     NotFoundSubjectResolver,
 )
 from dl_task_processor.arq_wrapper import create_arq_redis_settings
-
 
 if TYPE_CHECKING:
     from dl_core.services_registry.env_manager_factory_base import EnvManagerFactory
@@ -66,10 +66,7 @@ class StandaloneServiceRegistryFactory(InstallationSpecificServiceRegistryFactor
         return StandaloneServiceRegistry(service_registry_ref=sr_ref)
 
 
-TSettings = TypeVar("TSettings", bound=AppSettings)
-
-
-class SRFactoryBuilder(Generic[TSettings], abc.ABC):
+class SRFactoryBuilder[TSettings: AppSettings](abc.ABC):
     @property
     @abc.abstractmethod
     def _is_async_env(self) -> bool:
@@ -88,11 +85,11 @@ class SRFactoryBuilder(Generic[TSettings], abc.ABC):
         self,
         settings: TSettings,
         ca_data: bytes,
-    ) -> Optional[InstallationSpecificServiceRegistryFactory]:
+    ) -> InstallationSpecificServiceRegistryFactory | None:
         raise NotImplementedError
 
     @abc.abstractmethod
-    def _get_entity_usage_checker(self, settings: TSettings) -> Optional[EntityUsageChecker]:
+    def _get_entity_usage_checker(self, settings: TSettings) -> EntityUsageChecker | None:
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -100,19 +97,25 @@ class SRFactoryBuilder(Generic[TSettings], abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def _get_rqe_caches_settings(self, settings: TSettings) -> Optional[RQECachesSetting]:
+    def _get_rqe_caches_settings(self, settings: TSettings) -> RQECachesSetting | None:
         raise NotImplementedError
 
     @abc.abstractmethod
-    def _get_default_cache_ttl_settings(self, settings: TSettings) -> Optional[CacheTTLConfig]:
+    def _get_default_cache_ttl_settings(self, settings: TSettings) -> CacheTTLConfig | None:
         raise NotImplementedError
 
     @abc.abstractmethod
-    def _get_connector_availability(self, settings: TSettings) -> Optional[ConnectorAvailabilityConfig]:
+    def _get_connector_availability(self, settings: TSettings) -> ConnectorAvailabilityConfig | None:
         raise NotImplementedError
 
     def _get_feature_flags(self, settings: TSettings) -> FeatureFlags:
         return FeatureFlags()
+
+    def _get_constraints(self, settings: TSettings) -> ConstraintsSettings:
+        return settings.CONSTRAINTS
+
+    def _get_extract_clickhouse_provider(self, settings: TSettings) -> dl_extract.ExtractClickhouseProvider | None:
+        return None
 
     @property
     def _extra_translation_configs(self) -> set[TranslationConfig]:
@@ -148,14 +151,14 @@ class SRFactoryBuilder(Generic[TSettings], abc.ABC):
             localization_factory.get_for_locale(locale=settings.DEFAULT_LOCALE) if settings.DEFAULT_LOCALE else None
         )
 
-        pivot_transformer_factory: Optional[PivotTransformerFactory] = None
+        pivot_transformer_factory: PivotTransformerFactory | None = None
         if settings.PIVOT_ENGINE_TYPE is not None:
             pivot_transformer_factory_cls = get_pivot_transformer_factory_cls(
                 pivot_engine_type=settings.PIVOT_ENGINE_TYPE
             )
             pivot_transformer_factory = pivot_transformer_factory_cls()
 
-        sr_factory = DefaultApiSRFactory(
+        return DefaultApiSRFactory(
             async_env=self._is_async_env,
             rqe_config=settings.RQE_CONFIG,
             default_cache_ttl_config=self._get_default_cache_ttl_settings(settings),  # type: ignore  # 2024-01-24 # TODO: Argument "default_cache_ttl_config" to "DefaultApiSRFactory" has incompatible type "CacheTTLConfig | None"; expected "CacheTTLConfig"  [arg-type]
@@ -184,5 +187,6 @@ class SRFactoryBuilder(Generic[TSettings], abc.ABC):
             pivot_transformer_factory=pivot_transformer_factory,
             exports_history_url_path=settings.EXPORTS_HISTORY_URL_PATH,
             feature_flags=self._get_feature_flags(settings),
+            constraints=self._get_constraints(settings),
+            extract_clickhouse_provider=self._get_extract_clickhouse_provider(settings),
         )
-        return sr_factory

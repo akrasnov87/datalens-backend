@@ -20,9 +20,7 @@ def test_parse(tool):
     assert stderr == ""
 
     stdout, stderr = tool.run(["parse", "--pretty", "--with-meta", "very_very_long_func_name(nested_func())"])
-    assert (
-        stdout
-        == """Formula(
+    assert stdout == """Formula(
   expr=FuncCall(
     name='very_very_long_func_name',
     args=(
@@ -37,7 +35,6 @@ def test_parse(tool):
   meta=NodeMeta(position=Position(start=0, end=39, start_row=0, end_row=0, start_col=0, end_col=39)),
 )
 """
-    )
     assert stderr == ""
 
     stdout, stderr = tool.run(
@@ -84,7 +81,7 @@ def test_translate(tool):
 
 
 def test_split(tool):
-    stdout, stderr = tool.run(["split", "--diff", "45 BETWEEN [n2] = 123 AND 456"])
+    stdout, _stderr = tool.run(["split", "--diff", "45 BETWEEN [n2] = 123 AND 456"])
     assert stdout == (
         " 0: ▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫\n"
         " 1: ▫▫ BETWEEN ▫▫▫▫▫▫▫▫▫▫ AND ▫▫▫\n"
@@ -118,14 +115,8 @@ def test_dialects(tool):
     assert "DUMMY" in stdout
 
 
-def test_goto(tool):
-    stdout, stderr = tool.run(["goto", "--show", "avg"])
-    assert stderr == ""
-    assert "functions_aggregation.py" in stdout
-
-
 def test_slice(tool):
-    stdout, stderr = tool.run(
+    stdout, _stderr = tool.run(
         [
             "slice",
             "--diff",

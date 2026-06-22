@@ -1,16 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
-    Optional,
-    Sequence,
     cast,
 )
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     OrderDirection,
     PivotHeaderRole,
     PivotRole,
@@ -30,7 +29,6 @@ from dl_pivot.primitives import (
 )
 from dl_pivot.sort_helpers import invert
 import dl_query_processing.exc as exc
-
 
 if TYPE_CHECKING:
     from dl_pivot.primitives import PivotMeasureSortingSettings
@@ -97,7 +95,7 @@ class NativePivotSorter(PivotSorter):
         self._sort_key_list(key_list=key_list, directions=directions)
 
     def _sort_by_measure(self, axis: SortAxis, sorting_piid: int, settings: PivotMeasureSortingSettings) -> None:
-        sorting_dim_values: Optional[tuple[DataCellVector, ...]] = None
+        sorting_dim_values: tuple[DataCellVector, ...] | None = None
         other_axis = self._complementary_axis(axis)
 
         for header in self._pivot_dframe.iter_axis_headers(axis):
@@ -106,9 +104,9 @@ class NativePivotSorter(PivotSorter):
                     sorting_dim_values = header.values
                     header.info.sorting_direction = settings.direction
                 else:  # should never actually occur, as header_values + role_spec uniquely identify sorting_idx
-                    raise exc.PivotSortingRowOrColumnIsAmbiguous()
+                    raise exc.PivotSortingRowOrColumnIsAmbiguousError()
         if sorting_dim_values is None:
-            raise exc.PivotSortingRowOrColumnNotFound()
+            raise exc.PivotSortingRowOrColumnNotFoundError()
 
         normalizer = self._measure_sort_strategy.get_normalizer(
             pivot_item_id=sorting_piid, direction=settings.direction
@@ -139,7 +137,7 @@ class NativePivotSorter(PivotSorter):
 
         if self._axis_has_total(other_axis):  # hack for totals
             # Find the key
-            total_key: Optional[FlatPivotDataKey] = None
+            total_key: FlatPivotDataKey | None = None
             for dim_header in self._pivot_dframe.iter_axis_headers(other_axis):
                 if dim_header.info.role_spec.role == PivotHeaderRole.total:
                     total_key = FlatPivotDataKey(values=dim_header.values)

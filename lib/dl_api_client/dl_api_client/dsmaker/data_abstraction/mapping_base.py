@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import abc
-from itertools import chain
-from typing import (
-    AbstractSet,
+from collections.abc import (
     Callable,
     Iterable,
+    Set,
 )
+from itertools import chain
 
 import attr
 
@@ -28,7 +28,7 @@ class DataCellMapper1D(abc.ABC):
         raise NotImplementedError
 
     def as_dict(self) -> dict[DataCellTuple, DataItem]:
-        return {key: value for key, value in self.items()}
+        return dict(self.items())
 
     @abc.abstractmethod
     def get_value_count(self) -> int:
@@ -36,14 +36,14 @@ class DataCellMapper1D(abc.ABC):
 
     def apply_tagger(
         self,
-        tagger: Callable[[DataCellTuple, DataItem], AbstractSet[DataItemTag]],
+        tagger: Callable[[DataCellTuple, DataItem], Set[DataItemTag]],
     ) -> DataCellMapper1D:
         return TaggerProxyDataCellMapper1D(nested=self, tagger=tagger)
 
     def apply_filter(
         self,
-        require_tag_combos: AbstractSet[frozenset[DataItemTag]] = frozenset(),
-        exclude_tag_combos: AbstractSet[frozenset[DataItemTag]] = frozenset(),
+        require_tag_combos: Set[frozenset[DataItemTag]] = frozenset(),
+        exclude_tag_combos: Set[frozenset[DataItemTag]] = frozenset(),
     ) -> DataCellMapper1D:
         return FilterProxyDataCellMapper1D(
             nested=self,
@@ -77,7 +77,7 @@ class TaggerProxyDataCellMapper1D(DataCellMapper1D):
     """
 
     nested: DataCellMapper1D = attr.ib(kw_only=True)
-    tagger: Callable[[DataCellTuple, DataItem], AbstractSet[DataItemTag]] = attr.ib(kw_only=True)
+    tagger: Callable[[DataCellTuple, DataItem], Set[DataItemTag]] = attr.ib(kw_only=True)
 
     def items(self) -> Iterable[tuple[DataCellTuple, DataItem]]:
         for dims, item in self.nested.items():
@@ -98,11 +98,12 @@ class FilterProxyDataCellMapper1D(DataCellMapper1D):
     """
 
     nested: DataCellMapper1D = attr.ib(kw_only=True)
-    require_tag_combos: AbstractSet[frozenset[DataItemTag]] = attr.ib(kw_only=True, factory=frozenset)
-    exclude_tag_combos: AbstractSet[frozenset[DataItemTag]] = attr.ib(kw_only=True, factory=frozenset)
+    require_tag_combos: Set[frozenset[DataItemTag]] = attr.ib(kw_only=True, factory=frozenset)
+    exclude_tag_combos: Set[frozenset[DataItemTag]] = attr.ib(kw_only=True, factory=frozenset)
 
     def __attrs_post_init__(self) -> None:
-        assert not self.require_tag_combos and self.exclude_tag_combos, "Cannot specify both requirements and excludes"
+        assert not self.require_tag_combos, "Cannot specify both requirements and excludes"
+        assert self.exclude_tag_combos, "Cannot specify both requirements and excludes"
 
     def items(self) -> Iterable[tuple[DataCellTuple, DataItem]]:
         for dims, item in self.nested.items():
@@ -134,7 +135,7 @@ class DataCellMapper2D(abc.ABC):
         raise NotImplementedError
 
     def as_dict(self) -> dict[tuple[DataCellTuple, DataCellTuple], DataItem]:
-        return {key: value for key, value in self.items()}
+        return dict(self.items())
 
     def _make_1d_coords(self, orig_dim_coords: tuple[DataCellTuple, DataCellTuple]) -> DataCellTuple:
         """

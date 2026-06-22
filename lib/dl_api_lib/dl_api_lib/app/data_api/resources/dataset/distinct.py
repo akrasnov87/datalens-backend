@@ -20,7 +20,6 @@ from dl_app_tools.profiling_base import generic_profiler_async
 from dl_constants.api_constants import DLHeadersCommon
 from dl_query_processing.merging.primitives import MergedQueryDataStream
 
-
 if TYPE_CHECKING:
     from aiohttp.web_response import Response
 
@@ -95,7 +94,7 @@ class DatasetDistinctViewV1(DatasetDistinctView):
         return self._make_response_v1(req_model=req_model, merged_stream=merged_stream)
 
 
-class DatasetDistinctViewV1_5(DatasetDistinctView):
+class DatasetDistinctViewV1p5(DatasetDistinctView):
     """
     Same as v1, for full v1.5 coverage
     """

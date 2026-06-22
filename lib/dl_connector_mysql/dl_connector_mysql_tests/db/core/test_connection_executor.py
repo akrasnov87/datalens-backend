@@ -1,7 +1,5 @@
-from typing import (
-    Optional,
-    Sequence,
-)
+from collections.abc import Sequence
+from typing import Any
 
 from aiomysql.sa.result import (
     ResultMetaData,
@@ -10,10 +8,11 @@ from aiomysql.sa.result import (
 import pytest
 from sqlalchemy.dialects import mysql as mysql_types
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_core.connection_models.common_models import DBIdent
 from dl_core_testing.testcases.connection_executor import (
     DefaultAsyncConnectionExecutorTestSuite,
+    DefaultIndexDiscoveryTestSuite,
     DefaultSyncAsyncConnectionExecutorCheckBase,
     DefaultSyncConnectionExecutorTestSuite,
 )
@@ -37,11 +36,11 @@ class MySQLSyncAsyncConnectionExecutorCheckBase(
         },
     )
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def db_ident(self) -> DBIdent:
         return DBIdent(db_name=CoreConnectionSettings.DB_NAME)
 
-    def check_db_version(self, db_version: Optional[str]) -> None:
+    def check_db_version(self, db_version: str | None) -> None:
         assert db_version is not None
         assert "." in db_version
 
@@ -49,6 +48,7 @@ class MySQLSyncAsyncConnectionExecutorCheckBase(
 class TestMySQLSyncConnectionExecutor(
     MySQLSyncAsyncConnectionExecutorCheckBase,
     DefaultSyncConnectionExecutorTestSuite[ConnectionMySQL],
+    DefaultIndexDiscoveryTestSuite[ConnectionMySQL],
 ):
     def get_schemas_for_type_recognition(self) -> dict[str, Sequence[DefaultSyncConnectionExecutorTestSuite.CD]]:
         return {
@@ -89,7 +89,7 @@ class TestMySQLAsyncConnectionExecutor(
     MySQLSyncAsyncConnectionExecutorCheckBase,
     DefaultAsyncConnectionExecutorTestSuite[ConnectionMySQL],
 ):
-    @pytest.fixture(autouse=True, scope="function")
+    @pytest.fixture(autouse=True)
     def mock_aiomysql_prepare(self, monkeypatch):
         """
         Replace for
@@ -111,7 +111,7 @@ class TestMySQLAsyncConnectionExecutor(
         skipping a destructor in tests doesn't sound like a terrible idea
         """
 
-        async def _prepare(self, *args, **kwargs):
+        async def _prepare(self, *args: Any, **kwargs: Any):
             cursor = self._cursor
             self._weak = None
             if cursor.description is not None:

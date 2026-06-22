@@ -1,7 +1,5 @@
-from typing import (
-    ClassVar,
-    Iterable,
-)
+from collections.abc import Iterable
+from typing import ClassVar
 
 from frozendict import frozendict
 import pytest
@@ -13,7 +11,7 @@ from dl_api_lib_testing.data_api_base import (
     StandardizedDataApiTestBase,
 )
 from dl_api_lib_testing.dataset_base import DatasetTestBase
-from dl_constants.enums import RawSQLLevel
+from dl_constants import RawSQLLevel
 from dl_core_testing.database import (
     C,
     Db,
@@ -49,15 +47,15 @@ class YDBConnectionTestBase(ConnectionTestBase):
 
     @pytest.fixture(scope="class")
     def engine_params(self) -> dict:
-        return dict(
-            connect_args=frozendict(
-                dict(
-                    host=CoreConnectionSettings.HOST,
-                    port=CoreConnectionSettings.PORT,
-                    protocol="grpc",
-                )
+        return {
+            "connect_args": frozendict(
+                {
+                    "host": CoreConnectionSettings.HOST,
+                    "port": CoreConnectionSettings.PORT,
+                    "protocol": "grpc",
+                }
             ),
-        )
+        }
 
     @pytest.fixture(scope="class")
     def bi_test_config(self) -> ApiTestEnvironmentConfiguration:
@@ -69,7 +67,7 @@ class YDBConnectionTestBase(ConnectionTestBase):
             db_name=CoreConnectionSettings.DB_NAME,
             host=CoreConnectionSettings.HOST,
             port=CoreConnectionSettings.PORT,
-            **(dict(raw_sql_level=self.raw_sql_level.value) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level.value} if self.raw_sql_level is not None else {}),
         )
 
     @pytest.fixture(scope="class")
@@ -89,23 +87,23 @@ class YDBConnectionTestBase(ConnectionTestBase):
 class YDBDashSQLConnectionTest(YDBConnectionTestBase):
     @pytest.fixture(scope="class")
     def connection_params(self) -> dict:
-        return dict(
-            db_name=CoreConnectionSettings.DB_NAME,
-            host=CoreConnectionSettings.HOST,
-            port=CoreConnectionSettings.PORT,
-            raw_sql_level=RawSQLLevel.dashsql.value,
-        )
+        return {
+            "db_name": CoreConnectionSettings.DB_NAME,
+            "host": CoreConnectionSettings.HOST,
+            "port": CoreConnectionSettings.PORT,
+            "raw_sql_level": RawSQLLevel.dashsql.value,
+        }
 
 
 class YDBDatasetTestBase(YDBConnectionTestBase, DatasetTestBase):
     @pytest.fixture(scope="class")
     def dataset_params(self, sample_table: DbTable) -> dict:
-        return dict(
-            source_type=SOURCE_TYPE_YDB_TABLE.name,
-            parameters=dict(
-                table_name=sample_table.name,
-            ),
-        )
+        return {
+            "source_type": SOURCE_TYPE_YDB_TABLE.name,
+            "parameters": {
+                "table_name": sample_table.name,
+            },
+        }
 
 
 class YDBViewDatasetTestBase(YDBConnectionTestBase, DatasetTestBase):
@@ -130,12 +128,12 @@ class YDBViewDatasetTestBase(YDBConnectionTestBase, DatasetTestBase):
         self,
         sample_view_name: str,
     ) -> dict:
-        return dict(
-            source_type=SOURCE_TYPE_YDB_TABLE.name,
-            parameters=dict(
-                table_name=sample_view_name,
-            ),
-        )
+        return {
+            "source_type": SOURCE_TYPE_YDB_TABLE.name,
+            "parameters": {
+                "table_name": sample_view_name,
+            },
+        }
 
 
 class YDBColumnDatasetTestBase(YDBDatasetTestBase):

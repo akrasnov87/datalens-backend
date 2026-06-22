@@ -1,22 +1,20 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
-    Optional,
-    Sequence,
+    Self,
 )
 
 import attr
-from typing_extensions import Self
 
-from dl_constants.enums import OrderDirection
-
+from dl_constants import OrderDirection
 
 if TYPE_CHECKING:
     from sqlalchemy.sql.elements import ClauseElement
 
-    from dl_constants.enums import (
+    from dl_constants import (
         JoinType,
         UserDataType,
     )
@@ -26,10 +24,10 @@ if TYPE_CHECKING:
 @attr.s(auto_attribs=True, frozen=True)
 class ExpressionCtx:
     expression: ClauseElement
-    avatar_ids: Optional[Sequence[str]] = None  # TODO: make required
-    user_type: Optional[UserDataType] = None
-    alias: Optional[str] = None
-    original_field_id: Optional[Any] = None
+    avatar_ids: Sequence[str] | None = None  # TODO: make required
+    user_type: UserDataType | None = None
+    alias: str | None = None
+    original_field_id: Any | None = None
 
     def clone(self, **kwargs: Any) -> Self:
         return attr.evolve(self, **kwargs)
@@ -41,7 +39,7 @@ class OrderByExpressionCtx(ExpressionCtx):
 
 
 @attr.s(auto_attribs=True, frozen=True)
-class JoinOnExpressionCtx(ExpressionCtx):  # noqa
-    left_id: Optional[AvatarId] = attr.ib(kw_only=True)  # can be None for feature-managed relations
+class JoinOnExpressionCtx(ExpressionCtx):
+    left_id: AvatarId | None = attr.ib(kw_only=True)  # can be None for feature-managed relations
     right_id: AvatarId = attr.ib(kw_only=True)
     join_type: JoinType = attr.ib(kw_only=True)

@@ -2,20 +2,15 @@ from __future__ import annotations
 
 import enum
 import logging
-from typing import (
-    ClassVar,
-    Optional,
-    Union,
-)
+from typing import ClassVar
 
 from aiohttp import web
 import attr
 
-
 LOGGER = logging.getLogger(__name__)
 
 
-class NumberFormatType(str, enum.Enum):
+class NumberFormatType(enum.StrEnum):
     """
     According to Google API Docs + several custom types
     https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/cells#CellFormat
@@ -41,7 +36,7 @@ class NumberFormatType(str, enum.Enum):
 
 @attr.s(auto_attribs=True)
 class Cell:
-    value: Optional[Union[str, int, float, bool]]
+    value: str | int | float | bool | None
     number_format_type: NumberFormatType = NumberFormatType.NUMBER_FORMAT_TYPE_UNSPECIFIED
     empty: bool = False  # means this is an actually unfilled cell, not just clear
 
@@ -77,14 +72,14 @@ class Sheet:
     row_count: int
     column_count: int
     batch_size_rows: int = 50
-    data: Optional[list[list[Cell]]] = None
+    data: list[list[Cell]] | None = None
 
     def col_is_time(self, idx: int, has_header: bool) -> bool:
         """
         Check if column with given idx contains only TIME values (or TIME and nulls)
         """
 
-        if not self.data or has_header and len(self.data) < 2:
+        if not self.data or (has_header and len(self.data) < 2):
             return False
         data_iter = iter(self.data)
         if has_header:

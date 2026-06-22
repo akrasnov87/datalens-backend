@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Callable,
-    Optional,
-)
+from collections.abc import Callable
+from typing import Any
 
 import attr
+from frozendict import frozendict
 from snowflake import sqlalchemy as ssa
 from snowflake.connector import connect as sf_connect
 import sqlalchemy as sa
@@ -32,20 +30,18 @@ from dl_connector_snowflake.core.target_dto import SnowFlakeConnTargetDTO
 
 def construct_creator_func(target_dto: SnowFlakeConnTargetDTO) -> Callable:
     def get_connection() -> Any:
-        params = dict(
-            user=target_dto.user_name,
-            account=target_dto.account_name,
-            authenticator="oauth",
-            token=target_dto.access_token,
-            cache_column_metadata=True,
-            database=target_dto.db_name,
-            schema=target_dto.schema,
-            warehouse=target_dto.warehouse,
-        )
+        params = {
+            "user": target_dto.user_name,
+            "account": target_dto.account_name,
+            "authenticator": "oauth",
+            "token": target_dto.access_token,
+            "cache_column_metadata": True,
+            "database": target_dto.db_name,
+            "schema": target_dto.schema,
+            "warehouse": target_dto.warehouse,
+        }
         if target_dto.user_role:
             params["role"] = target_dto.user_role
-
-        conn = sf_connect(**params)
 
         # note: let's keep following lines commented for some time,
         #   at one point SF adapter did not respect db/schema/wh passed to connect
@@ -53,7 +49,7 @@ def construct_creator_func(target_dto: SnowFlakeConnTargetDTO) -> Callable:
         # conn.cursor().execute(f"use database {target_dto.db_name}")
         # conn.cursor().execute(f"use schema {target_dto.schema}")
         # conn.cursor().execute(f"use warehouse {target_dto.warehouse}")
-        return conn
+        return sf_connect(**params)
 
     return get_connection
 
@@ -64,24 +60,26 @@ class SnowFlakeDefaultAdapter(BaseClassicAdapter, BaseSAAdapter[SnowFlakeConnTar
     _error_transformer = snowflake_error_transformer
 
     # https://docs.snowflake.com/en/user-guide/python-connector-api#type-codes
-    _type_code_to_sa = {
-        0: ssa.DECIMAL,
-        1: ssa.REAL,
-        2: ssa.STRING,
-        3: ssa.DATE,
-        4: ssa.TIMESTAMP,
-        5: ssa.VARIANT,
-        6: ssa.TIMESTAMP_LTZ,
-        7: ssa.TIMESTAMP_TZ,
-        8: ssa.TIMESTAMP_TZ,
-        9: ssa.OBJECT,
-        10: ssa.ARRAY,
-        11: ssa.BINARY,
-        12: ssa.TIME,
-        13: ssa.BOOLEAN,
-    }
+    _type_code_to_sa = frozendict(
+        {
+            0: ssa.DECIMAL,
+            1: ssa.REAL,
+            2: ssa.STRING,
+            3: ssa.DATE,
+            4: ssa.TIMESTAMP,
+            5: ssa.VARIANT,
+            6: ssa.TIMESTAMP_LTZ,
+            7: ssa.TIMESTAMP_TZ,
+            8: ssa.TIMESTAMP_TZ,
+            9: ssa.OBJECT,
+            10: ssa.ARRAY,
+            11: ssa.BINARY,
+            12: ssa.TIME,
+            13: ssa.BOOLEAN,
+        }
+    )
 
-    def _cursor_column_to_sa(self, cursor_col, require: bool = True) -> Optional[SATypeSpec]:  # type: ignore  # TODO: fix
+    def _cursor_column_to_sa(self, cursor_col, require: bool = True) -> SATypeSpec | None:  # type: ignore  # TODO: fix
         """
         cursor_col:
 
@@ -109,16 +107,16 @@ class SnowFlakeDefaultAdapter(BaseClassicAdapter, BaseSAAdapter[SnowFlakeConnTar
             # # Going by the comparison with the 'create view' -> SA logic.
             # if scale == -127:
             #     scale = 0
-            sa_type = sa_cls(precision, scale)  # type: ignore  # 2024-01-24 # TODO: Too many arguments for "TypeEngine"  [call-arg]
+            sa_type = sa_cls(precision, scale)
         else:
             sa_type = sa_cls
 
         return sa_type
 
-    def get_default_db_name(self) -> Optional[str]:
+    def get_default_db_name(self) -> str | None:
         return None
 
-    def get_db_name_for_query(self, db_name_from_query: Optional[str]) -> str:
+    def get_db_name_for_query(self, db_name_from_query: str | None) -> str:
         return self._target_dto.db_name
 
     def _get_db_engine(self, db_name: str, disable_streaming: bool = False) -> Engine:
@@ -129,7 +127,7 @@ class SnowFlakeDefaultAdapter(BaseClassicAdapter, BaseSAAdapter[SnowFlakeConnTar
             creator=construct_creator_func(self._target_dto),
         ).execution_options(compiled_cache=None)
 
-    def _get_db_version(self, db_ident: DBIdent) -> Optional[str]:
+    def _get_db_version(self, db_ident: DBIdent) -> str | None:
         return self.execute(DBAdapterQuery("SELECT CURRENT_VERSION()", db_name=db_ident.db_name)).get_all()[0][0]
 
     def normalize_sa_col_type(self, sa_col_type: TypeEngine) -> TypeEngine:

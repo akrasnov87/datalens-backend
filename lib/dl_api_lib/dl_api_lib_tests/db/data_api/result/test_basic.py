@@ -1,5 +1,3 @@
-from typing import Optional
-
 from dl_api_client.dsmaker.shortcuts.result_data import get_data_rows
 from dl_api_lib_tests.db.base import DefaultApiTestBase
 
@@ -43,7 +41,7 @@ class TestResult(DefaultApiTestBase):
         limit_ = 10
         offset_ = 5
 
-        def get_data(limit: Optional[int] = None, offset: Optional[int] = None) -> list[list]:
+        def get_data(limit: int | None = None, offset: int | None = None) -> list[list]:
             result_resp = data_api.get_result(
                 dataset=ds,
                 fields=[
@@ -65,7 +63,7 @@ class TestResult(DefaultApiTestBase):
 
     def test_result_with_duplicated_fields(self, saved_dataset, data_api):
         ds = saved_dataset
-        result_resp = data_api.get_result(dataset=ds, fields=[field for field in ds.result_schema] * 2)
+        result_resp = data_api.get_result(dataset=ds, fields=list(ds.result_schema) * 2)
         assert result_resp.status_code == 200
         assert get_data_rows(result_resp)
 

@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import logging
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any
 
 from dl_api_lib.api_common.dataset_loader import (
     DatasetApiLoader,
@@ -20,6 +17,7 @@ from dl_api_lib.dataset.utils import (
 from dl_api_lib.enums import (
     BI_TYPE_AGGREGATIONS,
     CASTS_BY_TYPE,
+    USPermissionKind,
 )
 from dl_api_lib.exc import DatasetExportError
 from dl_api_lib.query.registry import (
@@ -27,18 +25,16 @@ from dl_api_lib.query.registry import (
     is_compeng_executable,
 )
 from dl_api_lib.service_registry.service_registry import ApiServiceRegistry
-from dl_constants.enums import (
+from dl_api_lib.utils.base import check_permission_on_entry
+from dl_constants import (
     AggregationFunction,
     BinaryJoinOperator,
     ConnectionType,
     ManagedBy,
-    RLSSubjectType,
+    USEntryBranch,
     UserDataType,
 )
-from dl_constants.exc import (
-    DEFAULT_ERR_CODE_API_PREFIX,
-    GLOBAL_ERR_PREFIX,
-)
+from dl_constants.exc import DEFAULT_GLOBAL_ERR_CODE_API_PREFIX
 from dl_core.backend_types import get_backend_type
 from dl_core.components.accessor import DatasetComponentAccessor
 from dl_core.data_source.base import DbInfo
@@ -46,10 +42,10 @@ from dl_core.data_source.collection import DataSourceCollectionFactory
 from dl_core.dataset_capabilities import DatasetCapabilities
 from dl_core.exc import (
     DatasetConfigurationError,
-    ReferencedUSEntryAccessDenied,
-    ReferencedUSEntryNotFound,
-    UnexpectedUSEntryType,
-    USObjectNotFoundException,
+    ReferencedUSEntryAccessDeniedError,
+    ReferencedUSEntryNotFoundError,
+    UnexpectedUSEntryTypeError,
+    USObjectNotFoundError,
 )
 from dl_core.services_registry.top_level import ServicesRegistry
 from dl_core.us_connection import get_connection_class
@@ -65,11 +61,9 @@ from dl_formula.core.dialect import (
 )
 from dl_rls.serializer import FieldRLSSerializer
 
-
 LOGGER = logging.getLogger(__name__)
 
 DEFAULT_DATABASE_DIALECT = StandardDialect.DUMMY
-DEFAULT_MAX_AVATARS = 32
 DEFAULT_MAX_CONNECTIONS = 20
 UNAVAILABLE = object()
 
@@ -86,14 +80,23 @@ class DatasetResource(BIResource):
         )
 
     @classmethod
+    def is_dataset_edit_allowed(cls, dataset: Dataset) -> bool:
+        # In-memory datasets have no permissions attached; the caller is by
+        # definition entitled to mutate them.
+        if dataset.permissions is None:
+            return True
+        return check_permission_on_entry(dataset, USPermissionKind.edit)
+
+    @classmethod
     def get_dataset(
         cls,
-        dataset_id: Optional[str],
+        dataset_id: str | None,
         body: dict,
         load_dependencies: bool = True,
-        params: Optional[dict] = None,
+        params: dict | None = None,
     ) -> tuple[Dataset, DatasetUpdateInfo]:
         us_manager = cls.get_us_manager_based_on_required_resources()
+        latest_revision_id = None
         if dataset_id:
             try:
                 dataset = us_manager.get_by_id(
@@ -102,8 +105,11 @@ class DatasetResource(BIResource):
                     params=params,
                     context_name="dataset",
                 )
-            except UnexpectedUSEntryType as e:
-                raise USObjectNotFoundException("Dataset with id {} does not exist".format(dataset_id)) from e
+                # raw entry to avoid double deserialization
+                ds_raw = us_manager.get_migrated_entry(dataset_id, branch=USEntryBranch.saved, context_name="dataset")
+                latest_revision_id = ds_raw["data"].get("revision_id")
+            except UnexpectedUSEntryTypeError as e:
+                raise USObjectNotFoundError(f"Dataset with id {dataset_id} does not exist") from e
         else:
             dataset = Dataset.create_from_dict(
                 Dataset.DataModel(name=""),  # TODO: Remove name - it's not used, but is required
@@ -111,14 +117,23 @@ class DatasetResource(BIResource):
             )
 
         if load_dependencies:
-            us_manager.load_dependencies(dataset)
+            us_manager.load_dataset_dependencies(
+                dataset,
+                respect_sources=True,
+            )
+
+        dataset_edit_allowed = cls.is_dataset_edit_allowed(dataset)
 
         loader = cls.create_dataset_api_loader()
+        latest_revision_id = latest_revision_id or dataset.revision_id
         update_info = loader.update_dataset_from_body(
             dataset=dataset,
             us_manager=us_manager,
             dataset_data=body.get("dataset"),
-            allow_settings_change=True,  # TODO: BI-6307 disable in the future
+            allow_rls_change=dataset_edit_allowed,
+            allow_settings_change=dataset_edit_allowed,
+            allow_query_settings_change=dataset_edit_allowed,
+            latest_revision_id=latest_revision_id,
         )
         return dataset, update_info
 
@@ -128,7 +143,7 @@ class DatasetResource(BIResource):
         dataset: Dataset,
         service_registry: ServicesRegistry,
         us_entry_buffer: USEntryBuffer,
-        conn_id_mapping: Optional[dict] = None,
+        conn_id_mapping: dict | None = None,
     ) -> dict:
         ds_accessor = DatasetComponentAccessor(dataset=dataset)
         dsrc_coll_factory = service_registry.get_data_source_collection_factory(us_entry_buffer=us_entry_buffer)
@@ -158,8 +173,7 @@ class DatasetResource(BIResource):
                         source_id,
                     )
                     raise DatasetExportError("Can not export dataset without a connection")  # TODO BI-6296
-                else:
-                    connection_id = conn_id_mapping[connection_id]
+                connection_id = conn_id_mapping[connection_id]
 
             sources.append(
                 {
@@ -196,9 +210,8 @@ class DatasetResource(BIResource):
             result_schema.append(field_data)
         data["result_schema"] = result_schema
         data["result_schema_aux"] = dataset.data.result_schema_aux
-
-        # cache_invalidation_source
         data["cache_invalidation_source"] = dataset.data.cache_invalidation_source
+        data["query_settings"] = dataset.data.query_settings
 
         # rls
         rls = {}
@@ -208,9 +221,7 @@ class DatasetResource(BIResource):
                 field_rls = [e for e in dataset.rls.items if e.field_guid == field.guid]
                 if field_rls:
                     rls[field.guid] = FieldRLSSerializer.to_text_config(field_rls)
-                field_rls2 = [e for e in field_rls if e.subject.subject_type != RLSSubjectType.notfound]
-                if field_rls2:
-                    rls_v2[field.guid] = field_rls2
+                    rls_v2[field.guid] = field_rls
         data["rls"] = rls
         data["rls2"] = rls_v2
 
@@ -219,8 +230,8 @@ class DatasetResource(BIResource):
         data["component_errors"] = deepcopy(dataset.error_registry)
         for item in data["component_errors"].items:
             for error in item.errors:
-                if error.code[:2] != [GLOBAL_ERR_PREFIX, DEFAULT_ERR_CODE_API_PREFIX]:
-                    error.code = [GLOBAL_ERR_PREFIX, DEFAULT_ERR_CODE_API_PREFIX] + error.code
+                if tuple(error.code[: len(DEFAULT_GLOBAL_ERR_CODE_API_PREFIX)]) != DEFAULT_GLOBAL_ERR_CODE_API_PREFIX:
+                    error.code = list(DEFAULT_GLOBAL_ERR_CODE_API_PREFIX) + error.code
 
         data["created_via"] = dataset.created_via
 
@@ -232,6 +243,9 @@ class DatasetResource(BIResource):
 
         # annotation
         data["annotation"] = dataset.annotation
+
+        # extract
+        data["extract"] = dataset.data.extract
 
         return {"dataset": data}
 
@@ -264,7 +278,37 @@ class DatasetResource(BIResource):
             try:
                 if not dsrc.is_cache_invalidation_enabled:
                     return False
-            except (ReferencedUSEntryNotFound, ReferencedUSEntryAccessDenied):
+            except (ReferencedUSEntryNotFoundError, ReferencedUSEntryAccessDeniedError):
+                return False
+        return True
+
+    @classmethod
+    def _check_query_settings_enabled_in_conn(
+        cls,
+        ds_accessor: DatasetComponentAccessor,
+        role: DataSourceRole,
+        dsrc_coll_factory: DataSourceCollectionFactory,
+        dataset_parameter_values: dict,
+        dataset_template_enabled: bool,
+    ) -> bool:
+        """
+        Check if query settings are enabled in all sources.
+        Returns True only if all sources have query settings enabled.
+        Default is False if there are no sources.
+        """
+        source_ids = ds_accessor.get_data_source_id_list()
+        if not source_ids:
+            return False
+
+        for source_id in source_ids:
+            dsrc_coll_spec = ds_accessor.get_data_source_coll_spec_strict(source_id=source_id)
+            dsrc_coll = dsrc_coll_factory.get_data_source_collection(
+                spec=dsrc_coll_spec,
+                dataset_parameter_values=dataset_parameter_values,
+                dataset_template_enabled=dataset_template_enabled,
+            )
+            dsrc = dsrc_coll.get_strict(role)
+            if not dsrc.is_query_settings_enabled:
                 return False
         return True
 
@@ -281,19 +325,19 @@ class DatasetResource(BIResource):
         capabilities = DatasetCapabilities(dataset=dataset, dsrc_coll_factory=dsrc_coll_factory)
 
         opt_data: dict[str, Any] = {}
-        opt_data["preview"] = dict(
-            enabled=capabilities.supports_preview(),
-        )
-        opt_data["join"] = dict(
-            types=capabilities.get_supported_join_types(),
-            operators=[BinaryJoinOperator.eq],
-        )
+        opt_data["preview"] = {
+            "enabled": capabilities.supports_preview(),
+        }
+        opt_data["join"] = {
+            "types": capabilities.get_supported_join_types(),
+            "operators": [BinaryJoinOperator.eq],
+        }
         role = capabilities.resolve_source_role()  # the "main" role, not for preview
 
         # Determine dialect
-        dialect: Optional[DialectCombo] = DEFAULT_DATABASE_DIALECT
+        dialect: DialectCombo | None = DEFAULT_DATABASE_DIALECT
         one_source_id = dataset.get_single_data_source_id()
-        db_info: Optional[DbInfo]
+        db_info: DbInfo | None
 
         dataset_parameter_values = ds_accessor.get_parameter_values()
         dataset_template_enabled = ds_accessor.get_template_enabled()
@@ -308,7 +352,7 @@ class DatasetResource(BIResource):
                 )
                 dsrc = dsrc_coll.get_strict(role=role)
                 db_info = dsrc.get_cached_db_info()
-            except ReferencedUSEntryNotFound:
+            except ReferencedUSEntryNotFoundError:
                 db_info = None
 
             if db_info is not None:
@@ -331,21 +375,21 @@ class DatasetResource(BIResource):
         if len(is_compeng_executable_set) == 1 and next(iter(is_compeng_executable_set)):
             funcs_dialect = get_compeng_dialect()
 
-        opt_data["data_types"] = dict(
-            items=[
-                dict(
-                    type=user_type,
-                    aggregations=sfm.get_supported_aggregations(dialect=funcs_dialect, user_type=user_type),
-                    casts=CASTS_BY_TYPE.get(user_type, []),
-                    filter_operations=sfm.get_supported_filters(dialect=funcs_dialect, user_type=user_type),
-                )
+        opt_data["data_types"] = {
+            "items": [
+                {
+                    "type": user_type,
+                    "aggregations": sfm.get_supported_aggregations(dialect=funcs_dialect, user_type=user_type),
+                    "casts": CASTS_BY_TYPE.get(user_type, []),
+                    "filter_operations": sfm.get_supported_filters(dialect=funcs_dialect, user_type=user_type),
+                }
                 for user_type in UserDataType
             ],
-        )
+        }
 
-        opt_data["sources"] = dict(items=[])
+        opt_data["sources"] = {"items": []}
         connection_ids = set()
-        connection_types: set[Optional[ConnectionType]] = set()
+        connection_types: set[ConnectionType | None] = set()
 
         for source_id in ds_accessor.get_data_source_id_list():
             dsrc_coll_spec = ds_accessor.get_data_source_coll_spec_strict(source_id=source_id)
@@ -358,10 +402,10 @@ class DatasetResource(BIResource):
                 continue
             dsrc = dsrc_coll.get_strict(role=DataSourceRole.origin)
             opt_data["sources"]["items"].append(
-                dict(
-                    id=source_id,
-                    schema_update_enabled=dsrc.supports_schema_update,
-                )
+                {
+                    "id": source_id,
+                    "schema_update_enabled": dsrc.supports_schema_update,
+                }
             )
             connection_id = dsrc_coll.get_connection_id(role=DataSourceRole.origin)
             if connection_id is not None:
@@ -369,12 +413,12 @@ class DatasetResource(BIResource):
                 connection_types.add(dsrc.conn_type)
 
         opt_data["sources"]["compatible_types"] = [
-            dict(source_type=source_type) for source_type in capabilities.get_compatible_source_types()
+            {"source_type": source_type} for source_type in capabilities.get_compatible_source_types()
         ]
 
         only_one_connection = len(connection_ids) <= 1
 
-        opt_data["connections"] = dict(items=[])
+        opt_data["connections"] = {"items": []}
         for conn_id in sorted(connection_ids):
             replacement_types = []
             repl_conn_types = capabilities.get_compatible_connection_types(ignore_connection_ids=[conn_id])
@@ -382,35 +426,35 @@ class DatasetResource(BIResource):
                 # it seems we can do this check once
                 if not only_one_connection:
                     continue
-                item = dict(conn_type=conn_type)
+                item = {"conn_type": conn_type}
                 if item not in replacement_types:
                     replacement_types.append(item)
 
             opt_data["connections"]["items"].append(
-                dict(
-                    id=conn_id,
-                    replacement_types=replacement_types,
-                )
+                {
+                    "id": conn_id,
+                    "replacement_types": replacement_types,
+                }
             )
 
         compatible_conn_types: list[dict] = []
         for conn_type in capabilities.get_compatible_connection_types():
             if connection_ids:  # There already are connections in the dataset
                 continue
-            compatible_conn_types.append(dict(conn_type=conn_type))
+            compatible_conn_types.append({"conn_type": conn_type})
         opt_data["connections"]["compatible_types"] = compatible_conn_types
 
         opt_data["connections"]["max"] = DEFAULT_MAX_CONNECTIONS if compatible_conn_types else 1
 
         opt_data["schema_update_enabled"] = any(
-            [dsrc_data["schema_update_enabled"] for dsrc_data in opt_data["sources"]["items"]]
+            dsrc_data["schema_update_enabled"] for dsrc_data in opt_data["sources"]["items"]
         )
 
-        opt_data["source_avatars"] = dict(
+        opt_data["source_avatars"] = {
             # if JOINs are supported, then new tables can be added
-            max=DEFAULT_MAX_AVATARS if capabilities.get_supported_join_types() else 1,
-            items=[],
-        )
+            "max": (service_registry.get_constraints().MAX_AVATARS if capabilities.get_supported_join_types() else 1),
+            "items": [],
+        }
         for avatar in ds_accessor.get_avatar_list():
             dsrc_coll_spec = ds_accessor.get_data_source_coll_spec_strict(source_id=avatar.source_id)
             dsrc_coll = dsrc_coll_factory.get_data_source_collection(
@@ -420,19 +464,19 @@ class DatasetResource(BIResource):
             )
             dsrc = dsrc_coll.get_strict(role=DataSourceRole.origin)
             opt_data["source_avatars"]["items"].append(
-                dict(
-                    id=avatar.id,
-                    schema_update_enabled=dsrc.supports_schema_update,
-                )
+                {
+                    "id": avatar.id,
+                    "schema_update_enabled": dsrc.supports_schema_update,
+                }
             )
 
         opt_data["supports_offset"] = capabilities.supports_offset(role)
 
         opt_data["supported_functions"] = sfm.get_supported_function_names(dialect=dialect)
 
-        opt_data["fields"] = dict(
-            items=[],
-        )
+        opt_data["fields"] = {
+            "items": [],
+        }
         for field in dataset.result_schema:
             if field.has_auto_aggregation or field.lock_aggregation:
                 # Aggregation is disabled
@@ -441,11 +485,11 @@ class DatasetResource(BIResource):
                 aggregations = BI_TYPE_AGGREGATIONS.get(field.cast, [])
 
             opt_data["fields"]["items"].append(
-                dict(
-                    guid=field.guid,
-                    casts=CASTS_BY_TYPE.get(field.initial_data_type, ()),
-                    aggregations=aggregations,
-                )
+                {
+                    "guid": field.guid,
+                    "casts": CASTS_BY_TYPE.get(field.initial_data_type, ()),
+                    "aggregations": aggregations,
+                }
             )
 
         # Add source_listing field with connection listing options
@@ -469,11 +513,18 @@ class DatasetResource(BIResource):
             dataset_parameter_values=dataset_parameter_values,
             dataset_template_enabled=dataset_template_enabled,
         )
+        opt_data["query_settings_enabled"] = cls._check_query_settings_enabled_in_conn(
+            ds_accessor=ds_accessor,
+            dsrc_coll_factory=dsrc_coll_factory,
+            role=role,
+            dataset_parameter_values=dataset_parameter_values,
+            dataset_template_enabled=dataset_template_enabled,
+        )
 
         return {"options": opt_data}
 
     def make_dataset_response_data(
-        self, dataset: Dataset, us_entry_buffer: USEntryBuffer, conn_id_mapping: Optional[dict] = None
+        self, dataset: Dataset, us_entry_buffer: USEntryBuffer, conn_id_mapping: dict | None = None
     ) -> dict:
         service_registry = self.get_service_registry()
         ds_dict = self.dump_dataset_data(
@@ -496,5 +547,9 @@ class DatasetResource(BIResource):
             ds_dict["full_permissions"] = dataset.full_permissions
         if dataset.operation is not None:
             ds_dict["operation"] = dataset.operation
+
+        ds_dict["rev_id"] = dataset.rev_id
+        ds_dict["saved_id"] = dataset.saved_id
+        ds_dict["published_id"] = dataset.published_id
 
         return ds_dict

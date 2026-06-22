@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Mapping,
-    Optional,
-)
+from collections.abc import Mapping
+from typing import Any
 
 import marshmallow
 from marshmallow import fields as ma_fields
@@ -39,11 +36,11 @@ class DBHostField(ma_fields.String):
                 try:
                     validate_hostname_or_ip_address(user_host)
                 except ValueError as err:
-                    raise marshmallow.ValidationError("Unable to parse host: {}".format(user_host)) from err
+                    raise marshmallow.ValidationError(f"Unable to parse host: {user_host}") from err
         else:
-            raise marshmallow.ValidationError("Unable to parse host: {}".format(user_hosts_str))
+            raise marshmallow.ValidationError(f"Unable to parse host: {user_hosts_str}")
 
-    def _deserialize(self, value: Any, attr: Optional[str], data: Optional[Mapping[str, Any]], **kwargs: Any) -> Any:
+    def _deserialize(self, value: Any, attr: str | None, data: Mapping[str, Any] | None, **kwargs: Any) -> Any:
         user_host_str = super()._deserialize(value, attr, data, **kwargs)
 
         schema = self.parent
@@ -59,7 +56,7 @@ class DBHostField(ma_fields.String):
         return user_host_str
 
 
-def db_name_no_query_params(value: Optional[str]) -> Optional[str]:
+def db_name_no_query_params(value: str | None) -> str | None:
     if not value:
         return value
     if "?" in value:

@@ -3,19 +3,16 @@ from __future__ import annotations
 from typing import (
     Any,
     ClassVar,
-    Optional,
-    Union,
+    Self,
 )
 
 import attr
 from sqlalchemy.types import TypeEngine
-from typing_extensions import Self
+
+SATypeSpec = type[TypeEngine] | TypeEngine | str | None
 
 
-SATypeSpec = Union[type[TypeEngine], TypeEngine, str, None]
-
-
-def norm_native_type(native_t: SATypeSpec) -> Optional[str]:
+def norm_native_type(native_t: SATypeSpec) -> str | None:
     """Normalize native type to internal name"""
     if native_t is None:
         return None
@@ -83,7 +80,7 @@ class CommonNativeType(GenericNativeType):
 @attr.s(frozen=True)
 class LengthedNativeType(CommonNativeType):
     native_type_class_name = "lengthed_native_type"
-    length: Optional[int] = attr.ib(default=None)
+    length: int | None = attr.ib(default=None)
 
 
 @attr.s(frozen=True)
@@ -93,7 +90,7 @@ class ClickHouseNativeType(CommonNativeType):
 
 
 @attr.s(frozen=True)
-class ClickHouseDateTime64NativeType(ClickHouseNativeType):  # noqa
+class ClickHouseDateTime64NativeType(ClickHouseNativeType):
     native_type_class_name = "clickhouse_datetime64_native_type"
     precision: int = attr.ib(kw_only=True)
 

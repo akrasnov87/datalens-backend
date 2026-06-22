@@ -1,5 +1,5 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 import asyncpg
 import sqlalchemy as sa
@@ -7,6 +7,7 @@ import sqlalchemy as sa
 from dl_core.connection_executors.models.db_adapter_data import RawSchemaInfo
 from dl_core.connection_models import TableDefinition
 from dl_core.connection_models.common_models import DBIdent
+from dl_sqlalchemy_postgres.asyncpg import DBAPIMock
 
 from dl_connector_postgresql.core.postgresql_base.adapters_base_postgres import PostgresQueryConstructorMixin
 from dl_connector_postgresql.core.postgresql_base.adapters_postgres import PostgresAdapter
@@ -17,8 +18,7 @@ class GreenplumQueryConstructorMixin(PostgresQueryConstructorMixin):
     def get_list_all_tables_query(
         self, search_text: str | None = None, limit: int | None = None, offset: int | None = None
     ) -> sa.sql.elements.TextClause:
-        sql_parts = [
-            """
+        sql_parts = ["""
         SELECT
             pg_namespace.nspname as schema,
             pg_class.relname as name
@@ -37,8 +37,7 @@ class GreenplumQueryConstructorMixin(PostgresQueryConstructorMixin):
                 SELECT 1 FROM pg_inherits 
                 WHERE pg_inherits.inhrelid = pg_class.oid
             )
-        """
-        ]
+        """]
 
         if search_text:
             sql_parts.append("AND (pg_namespace.nspname || '.' || pg_class.relname) ILIKE :search_text")
@@ -48,22 +47,18 @@ class GreenplumQueryConstructorMixin(PostgresQueryConstructorMixin):
         sql = " ".join(sql_parts)
         query = sa.text(sql)
         params = self._compile_pagination_params(search_text, limit, offset)
-        query = query.bindparams(*params)
-
-        return query
+        return query.bindparams(*params)
 
     def get_list_schema_names_query(
         self, search_text: str | None = None, limit: int | None = None, offset: int | None = None
     ) -> sa.sql.elements.TextClause:
-        sql_parts = [
-            """
+        sql_parts = ["""
         SELECT nspname FROM pg_namespace
         WHERE nspname NOT LIKE 'pg\_%'
         AND nspname NOT LIKE 'gp\_%'
         AND nspname != 'session_state'
         AND nspname != 'information_schema'
-        """
-        ]
+        """]
 
         if search_text:
             sql_parts.append("AND nspname ILIKE :search_text")
@@ -73,15 +68,12 @@ class GreenplumQueryConstructorMixin(PostgresQueryConstructorMixin):
         sql = " ".join(sql_parts)
         query = sa.text(sql)
         params = self._compile_pagination_params(search_text, limit, offset)
-        query = query.bindparams(*params)
-
-        return query
+        return query.bindparams(*params)
 
     def get_list_table_and_view_names_query(
         self, schema_name: str, search_text: str | None = None, limit: int | None = None, offset: int | None = None
     ) -> sa.sql.elements.TextClause:
-        sql_parts = [
-            """
+        sql_parts = ["""
         SELECT c.relname
         FROM
             pg_class c
@@ -94,8 +86,7 @@ class GreenplumQueryConstructorMixin(PostgresQueryConstructorMixin):
                 SELECT 1 FROM pg_inherits 
                 WHERE pg_inherits.inhrelid = c.oid
             )
-        """
-        ]
+        """]
 
         if search_text:
             sql_parts.append("AND c.relname ILIKE :search_text")
@@ -109,20 +100,27 @@ class GreenplumQueryConstructorMixin(PostgresQueryConstructorMixin):
             sa.bindparam("schema", schema_name, type_=sa.String),
             *self._compile_pagination_params(search_text, limit, offset),
         ]
-        query = query.bindparams(*params)
-
-        return query
+        return query.bindparams(*params)
 
 
 class GreenplumAdapter(GreenplumQueryConstructorMixin, PostgresAdapter):
     def _get_schema_names(self, db_ident: DBIdent) -> list[str]:
         db_engine = self.get_db_engine(db_ident.db_name)
         schema_query = self.get_list_schema_names_query()
-        table_list = [table_name for table_name, in db_engine.execute(schema_query)]
-        return table_list
+        return [table_name for table_name, in db_engine.execute(schema_query)]
 
 
 class AsyncGreenplumAdapter(GreenplumQueryConstructorMixin, AsyncPostgresAdapter):
+    def _pg_compile_exclude_types(self) -> frozenset:
+        # Greenplum is based on a PostgreSQL fork that predates the PG 10 type-resolution change
+        # where untyped parameters in SELECT output columns are resolved to "text" as a fallback.
+        # Without that rule, PREPARE of "SELECT $1 AS col LIMIT $2::integer" fails with
+        # IndeterminateDatatypeError. Keeping STRING in the exclude set (inherited from PG) causes
+        # string literals to compile to bare $1 with no type annotation, which Greenplum cannot
+        # resolve during PREPARE. Removing STRING from exclude_types produces $1::varchar, which
+        # Greenplum can use.
+        return frozenset({DBAPIMock.ENUM})
+
     async def get_table_info(self, table_def: TableDefinition, fetch_idx_info: bool) -> RawSchemaInfo:
         raise NotImplementedError()
 

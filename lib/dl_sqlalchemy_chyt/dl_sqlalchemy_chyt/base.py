@@ -1,49 +1,50 @@
 from __future__ import annotations
 
+from typing import Any
+
 import sqlalchemy as sa
 
 import dl_sqlalchemy_chyt.types as chyt_types
-from dl_sqlalchemy_clickhouse.base import BIClickHouseDialect as UPSTREAM
+from dl_sqlalchemy_clickhouse.base import BIClickHouseDialect
 
-
-quote_identifier = UPSTREAM().identifier_preparer.quote
+quote_identifier = BIClickHouseDialect().identifier_preparer.quote
 
 
 # Type converters
 ischema_names = {
-    **UPSTREAM.ischema_names,
+    **BIClickHouseDialect.ischema_names,
     "YtBoolean": chyt_types.YtBoolean,
 }
 
 
 class CHYTTableExpression(sa.sql.elements.TextClause):
     @staticmethod
-    def _quote_identifier(value):
+    def _quote_identifier(value) -> str:
         return quote_identifier(value)
 
     @staticmethod
-    def _quote_value(value):
+    def _quote_value(value) -> str:
         from clickhouse_sqlalchemy.drivers.http.escaper import Escaper
 
         return Escaper().escape_item(value)
         # return QUOTER.quote(value)
 
-    def __init__(self, text, alias=None, **kwargs):
+    def __init__(self, text, alias=None, **kwargs: Any) -> None:
         if alias:
-            text = "{} as {}".format(text, self._quote_identifier(alias))
+            text = f"{text} as {self._quote_identifier(alias)}"
         text = text.replace(":", r"\:")  # see also: dl_core.utils.sa_plain_text
-        super(CHYTTableExpression, self).__init__(text, **kwargs)
+        super().__init__(text, **kwargs)
 
 
 class CHYTTablesConcat(CHYTTableExpression):
-    def __init__(self, *tables, **kwargs):
+    def __init__(self, *tables: Any, **kwargs: Any) -> None:
         text = "concatYtTables({})".format(", ".join(self._quote_identifier(table) for table in tables if table))
         self._tables = tables
-        super(CHYTTablesConcat, self).__init__(text, **kwargs)
+        super().__init__(text, **kwargs)
 
 
 class CHYTTablesRange(CHYTTableExpression):
-    def __init__(self, directory, start=None, end=None, **kwargs):
+    def __init__(self, directory, start=None, end=None, **kwargs: Any) -> None:
         if end is not None:
             args = [directory, start or "", end]
         elif start is not None:
@@ -55,31 +56,31 @@ class CHYTTablesRange(CHYTTableExpression):
         self._directory = directory
         self._start = start
         self._end = end
-        super(CHYTTablesRange, self).__init__(text, **kwargs)
+        super().__init__(text, **kwargs)
 
 
 class CHYTTableSubselect(CHYTTableExpression):
-    def __init__(self, subsql, **kwargs):
-        text = "(\n{}\n)".format(subsql)
+    def __init__(self, subsql, **kwargs: Any) -> None:
+        text = f"(\n{subsql}\n)"
         self._subsql = subsql
-        super(CHYTTableSubselect, self).__init__(text, **kwargs)
+        super().__init__(text, **kwargs)
 
 
-class BICHYTTypeCompiler(UPSTREAM.type_compiler):
-    def visit_ytboolean(self, type_, **kw):
+class BICHYTTypeCompiler(BIClickHouseDialect.type_compiler):
+    def visit_ytboolean(self, type_, **kw: Any):
         return "YtBoolean"
 
 
-class BICHYTDialect(UPSTREAM):
+class BICHYTDialect(BIClickHouseDialect):
     # Add YT-only types
     ischema_names = ischema_names
     type_compiler = BICHYTTypeCompiler
 
-    def get_columns(self, connection, table_name, schema=None, **kw):
+    def get_columns(self, connection, table_name, schema=None, **kw: Any):
         if not isinstance(table_name, (CHYTTableExpression, sa.sql.elements.TextClause)):
             table_name = self.identifier_preparer.quote_identifier(table_name)
 
-        query = "DESCRIBE TABLE {}".format(table_name)
+        query = f"DESCRIBE TABLE {table_name}"
         rows = self._execute(connection, query)
 
         return [self._get_column_info(row.name, row.type) for row in rows]

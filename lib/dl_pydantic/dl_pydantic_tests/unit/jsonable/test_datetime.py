@@ -5,7 +5,6 @@ import pytest
 
 import dl_pydantic
 
-
 ORIGINAL = datetime.datetime(2025, 1, 2, 3, 4, 5, 6)
 EXPECTED = dl_pydantic.JsonableDatetime(2025, 1, 2, 3, 4, 5, 6)
 
@@ -24,11 +23,11 @@ def test_model_validate_with_original_type() -> None:
 
 
 @pytest.mark.parametrize(
-    "value,expected_value",
+    ("value", "expected_value"),
     [
         (
             "2025-01-02T03:04:05.000006Z",
-            dl_pydantic.JsonableDatetime(2025, 1, 2, 3, 4, 5, 6, tzinfo=datetime.timezone.utc),
+            dl_pydantic.JsonableDatetime(2025, 1, 2, 3, 4, 5, 6, tzinfo=datetime.UTC),
         ),
         (
             "2025-01-02T03:04:05.000006+03:00",
@@ -36,7 +35,7 @@ def test_model_validate_with_original_type() -> None:
         ),
         (
             "2025-01-02T03:04:05Z",
-            dl_pydantic.JsonableDatetime(2025, 1, 2, 3, 4, 5, tzinfo=datetime.timezone.utc),
+            dl_pydantic.JsonableDatetime(2025, 1, 2, 3, 4, 5, tzinfo=datetime.UTC),
         ),
         (
             "2025-01-02T03:04:05",
@@ -44,7 +43,7 @@ def test_model_validate_with_original_type() -> None:
         ),
         (
             "2025-01-02T03:04:05.006Z",
-            dl_pydantic.JsonableDatetime(2025, 1, 2, 3, 4, 5, 6000, tzinfo=datetime.timezone.utc),
+            dl_pydantic.JsonableDatetime(2025, 1, 2, 3, 4, 5, 6000, tzinfo=datetime.UTC),
         ),
     ],
     ids=[
@@ -76,10 +75,10 @@ def test_raises_validation_error_on_none() -> None:
 
 
 @pytest.mark.parametrize(
-    "value,expected_json",
+    ("value", "expected_json"),
     [
         (
-            dl_pydantic.JsonableDatetime(2025, 1, 2, 3, 4, 5, 6, tzinfo=datetime.timezone.utc),
+            dl_pydantic.JsonableDatetime(2025, 1, 2, 3, 4, 5, 6, tzinfo=datetime.UTC),
             "2025-01-02T03:04:05.000006Z",
         ),
         (

@@ -1,7 +1,7 @@
 from .base import (
     RateLimiterProtocol,
     RateLimiterSettings,
-    RateLimitHttpxClientException,
+    RateLimitHttpxClientError,
 )
 from .max_parallel_rate_limiter import (
     MaxParallelRateLimiter,
@@ -18,7 +18,6 @@ from .sliding_window_rate_limiter import (
     SlidingWindowRateLimiterSettings,
 )
 
-
 __all__ = [
     "DateTimeProvider",
     "DefaultDateTimeProvider",
@@ -26,7 +25,7 @@ __all__ = [
     "MaxParallelRateLimiterSettings",
     "NoRateLimiter",
     "NoRateLimiterSettings",
-    "RateLimitHttpxClientException",
+    "RateLimitHttpxClientError",
     "RateLimiterProtocol",
     "RateLimiterSettings",
     "SlidingWindowRateLimiter",

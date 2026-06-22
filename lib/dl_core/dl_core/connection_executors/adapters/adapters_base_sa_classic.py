@@ -1,17 +1,16 @@
-from __future__ import annotations
-
 import abc
+from collections.abc import (
+    Mapping,
+    Sequence,
+)
 import logging
 from typing import (
-    TYPE_CHECKING,
     Any,
     ClassVar,
-    Generic,
-    Optional,
     TypeVar,
 )
 from urllib.parse import (
-    quote_plus,
+    quote,
     urlencode,
 )
 
@@ -32,21 +31,17 @@ from dl_core.connection_executors.models.db_adapter_data import (
     RawColumnInfo,
     RawSchemaInfo,
 )
+from dl_core.connection_models import SATextTableDefinition
 from dl_type_transformer.native_type import CommonNativeType
-
-
-if TYPE_CHECKING:
-    from dl_core.connection_models import SATextTableDefinition
 
 LOGGER = logging.getLogger(__name__)
 
-
-_CONN_DTO_TV = TypeVar("_CONN_DTO_TV", bound=ConnTargetDTO)
+CONN_DTO_TV = TypeVar("CONN_DTO_TV", bound=ConnTargetDTO)
 
 
 @attr.s(cmp=False)
-class BaseConnLineConstructor(abc.ABC, Generic[_CONN_DTO_TV]):
-    _target_dto: _CONN_DTO_TV = attr.ib()
+class BaseConnLineConstructor[CONN_DTO_TV: ConnTargetDTO](abc.ABC):
+    _target_dto: CONN_DTO_TV = attr.ib()
     _dsn_template: str = attr.ib()
     _dialect_name: str = attr.ib()
 
@@ -54,15 +49,15 @@ class BaseConnLineConstructor(abc.ABC, Generic[_CONN_DTO_TV]):
     def _get_dsn_params(
         self,
         safe_db_symbols: tuple[str, ...] = (),
-        db_name: Optional[str] = None,
-        standard_auth: Optional[bool] = True,
+        db_name: str | None = None,
+        standard_auth: bool | None = True,
     ) -> dict:
         raise NotImplementedError
 
     def _get_dsn_query_params(self) -> dict:
         return {}
 
-    def make_conn_line(self, db_name: Optional[str] = None, params: Optional[dict[str, Any]] = None) -> str:
+    def make_conn_line(self, db_name: str | None = None, params: dict[str, Any] | None = None) -> str:
         # TODO?: replace with `get_conn_line`, delete `dsn_template`.
         conn_line = self._dsn_template.format(**self._get_dsn_params(db_name=db_name))
 
@@ -76,38 +71,34 @@ class BaseConnLineConstructor(abc.ABC, Generic[_CONN_DTO_TV]):
         return conn_line
 
 
-_DBA_CLASSIC_SA_DTO_TV = TypeVar("_DBA_CLASSIC_SA_DTO_TV", bound="BaseSQLConnTargetDTO")
-
-
 @attr.s(cmp=False)
-class ClassicSQLConnLineConstructor(
-    BaseConnLineConstructor[_DBA_CLASSIC_SA_DTO_TV],
-    Generic[_DBA_CLASSIC_SA_DTO_TV],
+class ClassicSQLConnLineConstructor[DBA_CLASSIC_SA_DTO_TV: "BaseSQLConnTargetDTO"](
+    BaseConnLineConstructor[DBA_CLASSIC_SA_DTO_TV],
 ):
     def _get_dsn_params(
         self,
         safe_db_symbols: tuple[str, ...] = (),
-        db_name: Optional[str] = None,
-        standard_auth: Optional[bool] = True,
+        db_name: str | None = None,
+        standard_auth: bool | None = True,
     ) -> dict:
-        return dict(
-            dialect=self._dialect_name,
-            user=quote_plus(self._target_dto.username) if standard_auth else None,
-            passwd=quote_plus(self._target_dto.password) if standard_auth else None,
-            host=quote_plus(self._target_dto.host),
-            port=quote_plus(str(self._target_dto.port)),
-            db_name=db_name or quote_plus(self._target_dto.db_name or "", safe="".join(safe_db_symbols)),
-        )
+        return {
+            "dialect": self._dialect_name,
+            "user": quote(self._target_dto.username, safe="") if standard_auth else None,
+            "passwd": quote(self._target_dto.password, safe="") if standard_auth else None,
+            "host": quote(self._target_dto.host, safe=""),
+            "port": quote(str(self._target_dto.port), safe=""),
+            "db_name": quote(db_name or (self._target_dto.db_name or ""), safe="".join(safe_db_symbols)),
+        }
 
 
 @attr.s(cmp=False)
-class BaseClassicAdapter(WithMinimalCursorInfo, BaseSAAdapter[_CONN_DTO_TV]):
+class BaseClassicAdapter(WithMinimalCursorInfo, BaseSAAdapter[CONN_DTO_TV]):
     dsn_template: ClassVar[str] = "{dialect}://{user}:{passwd}@{host}:{port}/{db_name}"
-    execution_options: ClassVar[dict[str, Any]] = {}
+    execution_options: ClassVar[Mapping[str, Any]] = {}
     conn_line_constructor_type: ClassVar[type[BaseConnLineConstructor]] = ClassicSQLConnLineConstructor
 
     # Instance attributes
-    _target_dto: _CONN_DTO_TV = attr.ib()
+    _target_dto: CONN_DTO_TV = attr.ib()
 
     def get_connect_args(self) -> dict:
         return {}
@@ -115,7 +106,7 @@ class BaseClassicAdapter(WithMinimalCursorInfo, BaseSAAdapter[_CONN_DTO_TV]):
     def get_engine_kwargs(self) -> dict:
         return {}
 
-    def get_default_db_name(self) -> Optional[str]:
+    def get_default_db_name(self) -> str | None:
         if isinstance(self._target_dto, BaseSQLConnTargetDTO):
             return self._target_dto.db_name
         raise NotImplementedError
@@ -123,7 +114,7 @@ class BaseClassicAdapter(WithMinimalCursorInfo, BaseSAAdapter[_CONN_DTO_TV]):
     def _get_dsn_query_params(self) -> dict:
         return {}
 
-    def get_conn_line(self, db_name: Optional[str] = None, params: Optional[dict[str, Any]] = None) -> str:
+    def get_conn_line(self, db_name: str | None = None, params: dict[str, Any] | None = None) -> str:
         return self.conn_line_constructor_type(
             dsn_template=self.dsn_template,
             dialect_name=get_dialect_string(self.conn_type),
@@ -133,9 +124,8 @@ class BaseClassicAdapter(WithMinimalCursorInfo, BaseSAAdapter[_CONN_DTO_TV]):
     def _get_db_engine(self, db_name: str, disable_streaming: bool = False) -> Engine:
         conn_line = self.get_conn_line(db_name=db_name)
 
-        execution_options = self.execution_options
+        execution_options = dict(self.execution_options)
         if disable_streaming:
-            execution_options = execution_options.copy()
             execution_options.pop("stream_results", None)
 
         engine = sa.create_engine(
@@ -145,17 +135,16 @@ class BaseClassicAdapter(WithMinimalCursorInfo, BaseSAAdapter[_CONN_DTO_TV]):
             # Apparently, this is the only way to pass something to the dialect's `__init__`.
             **self.get_engine_kwargs(),
         )
-        engine = engine.execution_options(compiled_cache=None)
-        return engine
+        return engine.execution_options(compiled_cache=None)
 
     _subselect_cursor_info_where_false: ClassVar[bool] = True
 
     def _get_subselect_raw_cursor_info_and_data(
         self,
         subselect: sa.sql.elements.TextClause,
-        limit: Optional[int] = 1,
-        where_false: Optional[bool] = None,
-    ) -> dict:
+        limit: int | None = 1,
+        where_false: bool | None = None,
+    ) -> tuple[ExecutionStepCursorInfo, list[Sequence]]:
         """
         Run a `select * limit 1` query, return cursor info.
 
@@ -175,7 +164,7 @@ class BaseClassicAdapter(WithMinimalCursorInfo, BaseSAAdapter[_CONN_DTO_TV]):
 
         assert query_res.raw_cursor_info
         data = list(query_res.data_chunks)
-        return query_res.raw_cursor_info, data  # type: ignore  # TODO: fix
+        return query_res.raw_cursor_info, data
 
     def _get_subselect_table_info(self, subquery: SATextTableDefinition) -> RawSchemaInfo:
         """Will not work without non-empty `self._type_code_to_sa`"""
@@ -198,7 +187,7 @@ class BaseClassicAdapter(WithMinimalCursorInfo, BaseSAAdapter[_CONN_DTO_TV]):
             native_type = self._cursor_column_to_native_type(cursor_col, require=False)
             if native_type is None:
                 native_type = CommonNativeType.normalize_name_and_create(
-                    name=self.normalize_sa_col_type(sa.sql.sqltypes.NullType),  # type: ignore  # TODO: fix
+                    name=self.normalize_sa_col_type(sa.sql.sqltypes.NullType()),
                     nullable=True,
                 )
             columns.append(

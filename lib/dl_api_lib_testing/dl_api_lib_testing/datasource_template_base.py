@@ -1,12 +1,14 @@
+from collections.abc import (
+    Generator,
+    Sequence,
+)
 import copy
 import http
 import json
 from typing import (
     Any,
     ClassVar,
-    Generator,
     Protocol,
-    Sequence,
 )
 
 import pytest
@@ -15,19 +17,24 @@ from dl_api_client.dsmaker.api.data_api import SyncHttpDataApiV2
 from dl_api_client.dsmaker.api.dataset_api import SyncHttpDatasetApiV1
 from dl_api_client.dsmaker.api.http_sync_base import SyncHttpClientBase
 from dl_api_client.dsmaker.primitives import (
+    BooleanParameterValue,
     Dataset,
     DataSource,
+    FloatParameterValue,
+    IntegerParameterValue,
     ParameterValue,
     RegexParameterValueConstraint,
     ResultField,
     StringParameterValue,
 )
+from dl_api_client.dsmaker.shortcuts.result_data import get_data_rows
 from dl_api_lib.enums import DatasetAction
 from dl_api_lib_testing.connection_base import ConnectionTestBase
-import dl_constants.enums as dl_constants_enums
-from dl_constants.enums import DataSourceType
+import dl_constants
+from dl_constants import DataSourceType
 from dl_core.connectors.settings.base import ConnectorSettings
 from dl_core_testing.database import DbTable
+from dl_testing.constants import TEST_USER_ID
 
 
 class ParameterFieldsFactoryProtocol(Protocol):
@@ -51,7 +58,7 @@ class DatasetFactoryProtocol(Protocol):
 
 class BaseTestSourceTemplate(ConnectionTestBase):
     source_type: ClassVar[DataSourceType]
-    raw_sql_level = dl_constants_enums.RawSQLLevel.template
+    raw_sql_level = dl_constants.RawSQLLevel.template
     connector_enable_datasource_template: ClassVar[bool] = True
 
     @pytest.fixture(scope="class")
@@ -192,11 +199,11 @@ class BaseTableTestSourceTemplate(BaseTestSourceTemplate):
 
     @pytest.fixture(name="datasource_parameters")
     def fixture_datasource_parameters(self) -> dict[str, str]:
-        return dict(table_name="{{table_name}}")
+        return {"table_name": "{{table_name}}"}
 
     @pytest.fixture(name="invalid_datasource_parameters")
     def fixture_invalid_datasource_parameters(self) -> dict[str, str]:
-        return dict(table_name="{{invalid_parameter_name}}")
+        return {"table_name": "{{invalid_parameter_name}}"}
 
 
 class BaseSubselectTestSourceTemplate(BaseTableTestSourceTemplate):
@@ -204,11 +211,11 @@ class BaseSubselectTestSourceTemplate(BaseTableTestSourceTemplate):
 
     @pytest.fixture(name="datasource_parameters")
     def fixture_datasource_parameters(self) -> dict[str, str]:
-        return dict(subsql="SELECT * FROM {{table_name}}")
+        return {"subsql": "SELECT * FROM {{table_name}}"}
 
     @pytest.fixture(name="invalid_datasource_parameters")
     def fixture_invalid_datasource_parameters(self) -> dict[str, str]:
-        return dict(subsql="SELECT * FROM {{invalid_parameter_name}}")
+        return {"subsql": "SELECT * FROM {{invalid_parameter_name}}"}
 
 
 class BaseTestControlApiSourceTemplate(BaseTestSourceTemplate):
@@ -226,7 +233,7 @@ class BaseTestControlApiSourceTemplate(BaseTestSourceTemplate):
         ds = control_api.apply_updates(dataset=ds).dataset
         ds = control_api.save_dataset(dataset=ds).dataset
 
-        for parameter_name in original_datasource_parameters.keys():
+        for parameter_name in original_datasource_parameters:
             if parameter_name in self.excluded_assert_parameters:
                 continue
 
@@ -321,7 +328,7 @@ class BaseTestControlApiSourceTemplate(BaseTestSourceTemplate):
         ds = control_api.apply_updates(dataset=ds, updates=updates).dataset
         ds = control_api.save_dataset(dataset=ds).dataset
 
-        for parameter_name in original_datasource_parameters.keys():
+        for parameter_name in original_datasource_parameters:
             if parameter_name in self.excluded_assert_parameters:
                 continue
 
@@ -374,7 +381,7 @@ class BaseTestControlApiSourceTemplateSettingsDisabled(BaseTestSourceTemplate):
 
 
 class BaseTestControlApiSourceTemplateConnectionDisabled(BaseTestSourceTemplate):
-    raw_sql_level = dl_constants_enums.RawSQLLevel.subselect
+    raw_sql_level = dl_constants.RawSQLLevel.subselect
 
     def test_default(
         self,
@@ -396,7 +403,7 @@ class BaseTestControlApiSourceTemplateConnectionDisabled(BaseTestSourceTemplate)
 class BaseTestDataApiSourceTemplate(BaseTestSourceTemplate):
     field_names: ClassVar[Sequence[str]] = ["discount", "city"]
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def saved_dataset(
         self,
         control_api: SyncHttpDatasetApiV1,
@@ -451,7 +458,7 @@ class BaseTestDataApiSourceTemplate(BaseTestSourceTemplate):
     ) -> None:
         control_api_sync_client.put(
             f"/api/v1/connections/{saved_connection_id}",
-            data=json.dumps({"raw_sql_level": dl_constants_enums.RawSQLLevel.subselect.value}),
+            data=json.dumps({"raw_sql_level": dl_constants.RawSQLLevel.subselect.value}),
             content_type="application/json",
         )
 
@@ -473,7 +480,7 @@ class BaseTestDataApiSourceTemplate(BaseTestSourceTemplate):
     ) -> None:
         ds = saved_dataset
 
-        for field_name in parameter_fields.keys():
+        for field_name in parameter_fields:
             ds.result_schema[field_name].template_enabled = False
 
         ds = control_api.apply_updates(dataset=ds).dataset
@@ -531,7 +538,7 @@ class BaseTestDataApiSourceTemplate(BaseTestSourceTemplate):
     ) -> None:
         ds = saved_dataset
 
-        for field_name in parameter_fields.keys():
+        for field_name in parameter_fields:
             ds.result_schema[field_name].template_enabled = False
 
         ds = control_api.apply_updates(dataset=ds).dataset
@@ -539,7 +546,7 @@ class BaseTestDataApiSourceTemplate(BaseTestSourceTemplate):
 
         get_result_updates = []
 
-        for field_name in parameter_fields.keys():
+        for field_name in parameter_fields:
             original_field = ds.find_field(title=field_name)
             assert original_field.cast is not None
             get_result_updates.append(
@@ -753,3 +760,167 @@ class BaseTestDataApiSourceTemplate(BaseTestSourceTemplate):
 
         for field in failed_constraint_parameter_values.values():
             assert field.value in result_resp.json["message"]
+
+    @pytest.mark.parametrize(
+        ("default_value", "parameter_value", "expected_status_code", "expected_bi_status_code"),
+        [
+            # values that coerce cleanly to the declared type are accepted
+            pytest.param(IntegerParameterValue(value=1), "2", http.HTTPStatus.OK, None, id="integer-positive"),
+            pytest.param(IntegerParameterValue(value=1), "-1", http.HTTPStatus.OK, None, id="integer-negative"),
+            pytest.param(FloatParameterValue(value=1.0), "3.14", http.HTTPStatus.OK, None, id="float"),
+            pytest.param(BooleanParameterValue(value=True), "true", http.HTTPStatus.OK, None, id="boolean-true"),
+            pytest.param(BooleanParameterValue(value=True), "false", http.HTTPStatus.OK, None, id="boolean-false"),
+            # NOTE: date/datetime parameter defaults are not exercised here because the
+            # dsmaker implicit-update path cannot JSON-serialize native date objects;
+            # date/datetime coercion is covered by dl_model_tools unit tests instead.
+            # values that cannot be coerced (type mismatch / SQL-injection payloads) are
+            # rejected before they can reach the rendered source SQL
+            pytest.param(
+                IntegerParameterValue(value=1),
+                "2.5",
+                http.HTTPStatus.BAD_REQUEST,
+                "ERR.DS_API.SOURCE_CONFIG.PARAMETER_VALUE_INVALID",
+                id="integer-type-mismatch",
+            ),
+            pytest.param(
+                IntegerParameterValue(value=1),
+                "0 OR 1=1 --",
+                http.HTTPStatus.BAD_REQUEST,
+                "ERR.DS_API.SOURCE_CONFIG.PARAMETER_VALUE_INVALID",
+                id="integer-injection-or",
+            ),
+            pytest.param(
+                IntegerParameterValue(value=1),
+                "-1 UNION SELECT 999, version() --",
+                http.HTTPStatus.BAD_REQUEST,
+                "ERR.DS_API.SOURCE_CONFIG.PARAMETER_VALUE_INVALID",
+                id="integer-injection-union",
+            ),
+            pytest.param(
+                FloatParameterValue(value=1.0),
+                "1; DROP TABLE users --",
+                http.HTTPStatus.BAD_REQUEST,
+                "ERR.DS_API.SOURCE_CONFIG.PARAMETER_VALUE_INVALID",
+                id="float-injection",
+            ),
+            pytest.param(
+                BooleanParameterValue(value=True),
+                "1 OR 1=1",
+                http.HTTPStatus.BAD_REQUEST,
+                "ERR.DS_API.SOURCE_CONFIG.PARAMETER_VALUE_INVALID",
+                id="boolean-injection",
+            ),
+        ],
+    )
+    def test_parameter_value_type_coercion(
+        self,
+        control_api: SyncHttpDatasetApiV1,
+        data_api: SyncHttpDataApiV2,
+        dataset_factory: DatasetFactoryProtocol,
+        default_value: ParameterValue,
+        parameter_value: str,
+        expected_status_code: http.HTTPStatus,
+        expected_bi_status_code: str | None,
+    ) -> None:
+        # A typed (non-string) template parameter must coerce its incoming value to the
+        # declared type before it reaches the rendered source SQL: values that cannot be
+        # represented as that type (type mismatches / SQL-injection payloads) are rejected.
+        ds = dataset_factory()
+        ds.result_schema["coercion_param"] = ResultField(
+            title="coercion_param",
+            cast=default_value.type,
+            default_value=default_value,
+            template_enabled=True,
+        )
+        ds = control_api.apply_updates(dataset=ds).dataset
+        ds = control_api.save_dataset(dataset=ds).dataset
+
+        try:
+            coercion_field = ds.find_field(title="coercion_param")
+
+            result_resp = data_api.get_result(
+                dataset=ds,
+                fields=[ds.find_field(title=field_name) for field_name in self.field_names],
+                parameters=[coercion_field.parameter_value(parameter_value)],
+                fail_ok=True,
+            )
+            assert result_resp.status_code == expected_status_code, result_resp.json
+            assert result_resp.bi_status_code == expected_bi_status_code
+        finally:
+            control_api.delete_dataset(dataset_id=ds.id)
+
+
+class BaseTestDataApiSysUserIdSourceTemplate(BaseTestSourceTemplate):
+    """Subclasses set ``source_type`` (the connector's sub-select source type) and
+    ``conn_settings_cls`` and mix in its Data API test base; override ``subselect_who_sql``
+    for dialects needing different sub-select syntax (e.g. Oracle's ``FROM DUAL``).
+    """
+
+    conn_settings_cls: ClassVar[type[ConnectorSettings]]
+    # Overridable per dialect; the default needs a FROM-less SELECT (Oracle overrides with FROM DUAL).
+    subselect_who_sql: ClassVar[str] = "SELECT '{{_sys.user_id}}' AS who"
+
+    def _make_dataset(self, control_api: SyncHttpDatasetApiV1, saved_connection_id: str) -> Dataset:
+        """``default_value`` drives source-schema discovery; the constraint must accept the resolved id."""
+        ds = Dataset(template_enabled=True)
+        ds.result_schema["_sys.user_id"] = ResultField(
+            title="_sys.user_id",
+            cast=StringParameterValue.type,
+            value_constraint=RegexParameterValueConstraint(pattern=".+"),
+            default_value=StringParameterValue(value="anon"),
+            template_enabled=True,
+        )
+        ds.sources["source_1"] = DataSource(
+            connection_id=saved_connection_id,
+            source_type=self.source_type.name,
+            parameters={"subsql": self.subselect_who_sql},
+        )
+        ds.source_avatars["avatar_1"] = ds.sources["source_1"].avatar()
+        ds = control_api.apply_updates(dataset=ds).dataset
+        ds = control_api.save_dataset(dataset=ds).dataset
+        if ds.component_errors.items:
+            # Already persisted — clean up before failing so a bad run doesn't leak datasets.
+            control_api.delete_dataset(dataset_id=ds.id)
+            raise AssertionError(ds.component_errors)
+        return ds
+
+    def test_sys_user_id_resolved_into_subselect_template(
+        self,
+        control_api: SyncHttpDatasetApiV1,
+        data_api: SyncHttpDataApiV2,
+        saved_connection_id: str,
+    ) -> None:
+        ds = self._make_dataset(control_api, saved_connection_id)
+        try:
+            result_resp = data_api.get_result(
+                dataset=ds,
+                fields=[ds.find_field(title="who")],
+                limit=1,
+            )
+            assert result_resp.status_code == http.HTTPStatus.OK, result_resp.json
+            assert get_data_rows(result_resp)[0][0] == TEST_USER_ID
+        finally:
+            control_api.delete_dataset(dataset_id=ds.id)
+
+    def test_sys_user_id_rejects_client_supplied_value_in_template_mode(
+        self,
+        control_api: SyncHttpDatasetApiV1,
+        data_api: SyncHttpDataApiV2,
+        saved_connection_id: str,
+    ) -> None:
+        ds = self._make_dataset(control_api, saved_connection_id)
+        try:
+            parameter = ds.find_field(title="_sys.user_id")
+            result_resp = data_api.get_result(
+                dataset=ds,
+                fields=[ds.find_field(title="who")],
+                parameters=[parameter.parameter_value("hacked")],
+                fail_ok=True,
+            )
+            assert result_resp.status_code == http.HTTPStatus.BAD_REQUEST, result_resp.json
+            assert (
+                result_resp.bi_status_code
+                == "ERR.DS_API.SOURCE_CONFIG.PARAMETER_VALUE_INVALID.SYSTEM_PARAMETER_NOT_SETTABLE"
+            )
+        finally:
+            control_api.delete_dataset(dataset_id=ds.id)

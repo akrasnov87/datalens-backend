@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from typing import (
-    AbstractSet,
-    ClassVar,
+from collections.abc import (
     Collection,
     Hashable,
-    Optional,
+    Set,
 )
+from typing import ClassVar
 
 import attr
 
@@ -19,7 +18,6 @@ from dl_core.data_processing.stream_base import (
 )
 from dl_core.query.bi_query import BIQuery
 from dl_core.query.expression import JoinOnExpressionCtx
-
 
 # Bases
 
@@ -41,7 +39,7 @@ class SingleSourceOp(BaseOp):
 
 @attr.s(frozen=True)
 class MultiSourceOp(BaseOp):
-    source_stream_ids: AbstractSet[str] = attr.ib(kw_only=True)
+    source_stream_ids: Set[str] = attr.ib(kw_only=True)
 
 
 # Actual ops
@@ -65,7 +63,7 @@ class DownloadOp(SingleSourceOp):
     supported_source_types = (DataSourceVS,)
     supported_dest_types = (DataStreamAsync,)
 
-    row_count_hard_limit: Optional[int] = attr.ib(kw_only=True, default=None)
+    row_count_hard_limit: int | None = attr.ib(kw_only=True, default=None)
 
 
 @attr.s(frozen=True)

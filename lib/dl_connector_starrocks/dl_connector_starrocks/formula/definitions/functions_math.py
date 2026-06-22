@@ -7,20 +7,19 @@ import dl_formula.definitions.functions_math as base
 
 from dl_connector_starrocks.formula.constants import StarRocksDialect as D
 
-
 V = TranslationVariant.make
 
 
 class _FuncGreatestDate(base.FuncGreatestBase):
     """StarRocks GREATEST(DATE, DATE) returns integer, so cast back to DATE."""
 
-    argument_types = [ArgTypeSequence([DataType.DATE, DataType.DATE])]
+    argument_types = (ArgTypeSequence([DataType.DATE, DataType.DATE]),)
 
 
 class _FuncLeastDate(base.FuncLeastBase):
     """StarRocks LEAST(DATE, DATE) returns integer, so cast back to DATE."""
 
-    argument_types = [ArgTypeSequence([DataType.DATE, DataType.DATE])]
+    argument_types = (ArgTypeSequence([DataType.DATE, DataType.DATE]),)
 
 
 DEFINITIONS_MATH = [

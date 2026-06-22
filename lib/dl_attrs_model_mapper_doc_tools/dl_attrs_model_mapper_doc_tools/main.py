@@ -1,8 +1,5 @@
+from collections.abc import Sequence
 import os
-from typing import (
-    Optional,
-    Sequence,
-)
 import urllib.parse
 
 import attr
@@ -46,7 +43,7 @@ from dl_attrs_model_mapper_doc_tools.writer_utils import DocWriter
 @attr.s()
 class Docs:
     _operation_per_file: bool = attr.ib()
-    _elements_dir_name: Optional[str] = attr.ib()
+    _elements_dir_name: str | None = attr.ib()
     _generate_toc: bool = attr.ib(default=False)
 
     _map_type_file_name: dict[type, str] = attr.ib(factory=dict)
@@ -56,7 +53,7 @@ class Docs:
     _process_doc_links: bool = attr.ib(default=False)
     _doc_links_map: dict[str, str] = attr.ib(factory=dict[str, str])
 
-    def adopt_doc_link(self, doc_link: DocLink) -> Optional[DocLink]:
+    def adopt_doc_link(self, doc_link: DocLink) -> DocLink | None:
         parsed_href = urllib.parse.urlparse(doc_link.href)
         if parsed_href.scheme != "visdocs":
             return None
@@ -65,14 +62,14 @@ class Docs:
             raise ValueError(f"Mapping for visualization docs URL is not registered: {doc_link.href}")
         return DocLink(text=doc_link.text, href=self._doc_links_map[doc_link.href])
 
-    def handle_text_from_spec(self, m_txt: Optional[MText]) -> Optional[DocText]:
+    def handle_text_from_spec(self, m_txt: MText | None) -> DocText | None:
         if not self._process_doc_links:
             return DocText(m_txt) if m_txt else None
 
         if m_txt is None:
             return None
 
-        en_txt: Optional[str] = m_txt.en
+        en_txt: str | None = m_txt.en
         if en_txt is None:
             return None
 
@@ -80,7 +77,7 @@ class Docs:
 
     def field_to_doc_lines(self, field: AmmField, path: Sequence[str]) -> Sequence[FieldLine]:
         cp = field.common_props
-        description: Optional[DocText] = self.handle_text_from_spec(field.common_props.description)
+        description: DocText | None = self.handle_text_from_spec(field.common_props.description)
 
         if isinstance(field, AmmScalarField):
             scalar_type = field.scalar_type
@@ -93,18 +90,16 @@ class Docs:
                 type_text = scalar_type.__name__
 
             return [
-                (
-                    FieldLine(
-                        path,
-                        type_text=type_text,
-                        nullable=cp.allow_none,
-                        required=cp.required,
-                        description=description,
-                    )
+                FieldLine(
+                    path,
+                    type_text=type_text,
+                    nullable=cp.allow_none,
+                    required=cp.required,
+                    description=description,
                 )
             ]
 
-        elif isinstance(field, AmmNestedField):
+        if isinstance(field, AmmNestedField):
             nested_schema = field.item
             nested_schema_doc_file_path = self.get_file_path_for_type(nested_schema.clz)
 
@@ -127,7 +122,7 @@ class Docs:
                 *self.field_dict_to_doc_lines(nested_schema.fields, path),
             ]
 
-        elif isinstance(field, AmmListField):
+        if isinstance(field, AmmListField):
             next_path = [*path[:-1], path[-1] + "[]"]
             return [
                 FieldLine(
@@ -158,8 +153,8 @@ class Docs:
         self,
         schema: AmmRegularSchema,
         generate_header: bool = True,
-        discriminator_f_name: Optional[str] = None,
-        discriminator_f_val: Optional[str] = None,
+        discriminator_f_name: str | None = None,
+        discriminator_f_val: str | None = None,
     ) -> RegularClassDoc:
         return RegularClassDoc(
             header=DocHeader(schema.clz.__name__) if generate_header else None,
@@ -174,7 +169,7 @@ class Docs:
         self,
         schema: AmmGenericSchema,
         # TODO FIX: Make optional when description will be ready in AmmSchema
-        description_override: Optional[MText],
+        description_override: MText | None,
     ) -> GenericClassDoc:
         return GenericClassDoc(
             header=DocHeader(schema.clz.__name__),
@@ -208,7 +203,7 @@ class Docs:
             examples=[self.example_to_doc(s, idx + 1) for idx, s in enumerate(op.examples)],
         )
 
-    def get_file_path_for_type(self, clz: type) -> Optional[str]:
+    def get_file_path_for_type(self, clz: type) -> str | None:
         return self._map_type_file_name.get(clz)
 
     def get_file_path_for_type_strict(self, clz: type) -> str:
@@ -228,8 +223,8 @@ class Docs:
     def register_generic_schema(
         self,
         generic_schema: AmmGenericSchema,
-        description_override: Optional[MText],
-        file_path: Optional[str] = None,
+        description_override: MText | None,
+        file_path: str | None = None,
     ) -> None:
         self.register_file_path_for_type(
             generic_schema.clz,
@@ -242,7 +237,7 @@ class Docs:
     def register_regular_schema_as_ref(
         self,
         regular_schema: AmmRegularSchema,
-        file_path: Optional[str] = None,
+        file_path: str | None = None,
     ) -> None:
         self.register_file_path_for_type(
             regular_schema.clz,
@@ -304,17 +299,17 @@ class Docs:
             if self._generate_toc:
                 doc_writer.write_text(
                     yaml.safe_dump(
-                        dict(
-                            title="Configs",
-                            items=[
-                                dict(
+                        {
+                            "title": "Configs",
+                            "items": [
+                                {
                                     # TODO FIX: Extract TOC title somehow more accurate
-                                    name=initial_ctx.localize(class_doc.header.value),  # type: ignore  # 2024-01-30 # TODO: Item "None" of "DocHeader | None" has no attribute "value"  [union-attr]
-                                    href=self.get_file_path_for_type_strict(class_doc.type),
-                                )
+                                    "name": initial_ctx.localize(class_doc.header.value),  # type: ignore  # 2024-01-30 # TODO: Item "None" of "DocHeader | None" has no attribute "value"  [union-attr]
+                                    "href": self.get_file_path_for_type_strict(class_doc.type),
+                                }
                                 for class_doc in self._dedicated_class_docs
                             ],
-                        ),
+                        },
                         default_flow_style=False,
                         sort_keys=False,
                     ),

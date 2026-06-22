@@ -6,24 +6,25 @@ from typing import (
     TYPE_CHECKING,
     Any,
     NamedTuple,
-    Optional,
 )
 
 import attr
 
 from dl_api_commons.base_models import RequestContextInfo
 from dl_api_lib import exc
-from dl_api_lib.dataset.utils import allow_rls_for_dataset
+from dl_api_lib.dataset.utils import (
+    allow_rls_for_dataset,
+    validate_dataset_query_settings,
+)
 from dl_api_lib.service_registry.service_registry import ApiServiceRegistry
 from dl_app_tools.profiling_base import generic_profiler
-from dl_constants.enums import (
+from dl_constants import (
     CacheInvalidationMode,
+    DataSourceRole,
+    ExtractMode,
     RLSSubjectType,
 )
-from dl_constants.exc import (
-    DEFAULT_ERR_CODE_API_PREFIX,
-    GLOBAL_ERR_PREFIX,
-)
+from dl_constants.exc import DEFAULT_GLOBAL_ERR_CODE_API_PREFIX
 from dl_core.base_models import (
     DefaultConnectionRef,
     DefaultWhereClause,
@@ -35,16 +36,13 @@ from dl_core.data_source import get_parameters_hash
 from dl_core.data_source.collection import DataSourceCollection
 from dl_core.db import are_raw_schemas_same
 import dl_core.exc as core_exc
-from dl_core.us_dataset import (
-    Dataset,
-    DataSourceRole,
-)
+from dl_core.us_dataset import Dataset
+from dl_core.us_extract import ExtractProperties
 from dl_core.us_manager.local_cache import USEntryBuffer
 from dl_core.us_manager.us_manager import USManagerBase
 from dl_core.us_manager.us_manager_sync import SyncUSManager
 import dl_rls
 from dl_utils.aio import await_sync
-
 
 if TYPE_CHECKING:
     from dl_rls.models import RLSEntry
@@ -58,12 +56,7 @@ class DatasetUpdateInfo(NamedTuple):
 
     added_own_source_ids: list[str]
     updated_own_source_ids: list[str]
-
-
-EMPTY_DS_UPDATE_INFO = DatasetUpdateInfo(
-    added_own_source_ids=[],
-    updated_own_source_ids=[],
-)
+    latest_revision_id: str | None
 
 
 def clear_cache_invalidation_source_irrelevant_data(
@@ -89,25 +82,31 @@ class DatasetApiLoader:
         self,
         dataset: Dataset,
         us_manager: USManagerBase,
-        dataset_data: Optional[dict],
+        dataset_data: dict | None,
         allow_rls_change: bool = True,
         allow_settings_change: bool = True,
+        allow_query_settings_change: bool = True,
+        latest_revision_id: str | None = None,
     ) -> DatasetUpdateInfo:
-        update_info = EMPTY_DS_UPDATE_INFO
-
         if dataset_data:
-            update_info = self.populate_dataset_from_body(
+            return self.populate_dataset_from_body(
                 dataset=dataset,
                 us_manager=us_manager,
                 body=dataset_data,
                 allow_rls_change=allow_rls_change,
                 allow_settings_change=allow_settings_change,
+                allow_query_settings_change=allow_query_settings_change,
+                latest_revision_id=latest_revision_id,
             )
-        return update_info
+        return DatasetUpdateInfo(
+            added_own_source_ids=[],
+            updated_own_source_ids=[],
+            latest_revision_id=latest_revision_id,
+        )
 
     def _ensure_additional_connections_are_preloaded(
         self,
-        dataset_data: Optional[dict],
+        dataset_data: dict | None,
         us_manager: USManagerBase,
     ) -> None:
         """
@@ -134,11 +133,15 @@ class DatasetApiLoader:
                 connection_id = source_data["connection_id"]
                 connection_ref = DefaultConnectionRef(conn_id=connection_id)
                 try:
-                    us_manager.ensure_entry_preloaded(connection_ref)
-                except core_exc.ReferencedUSEntryNotFound:
+                    us_manager.ensure_source_preloaded(
+                        conn_ref=connection_ref,
+                        source_type=source_data.get("source_type"),
+                        referrer=None,
+                    )
+                except core_exc.ReferencedUSEntryNotFoundError:
                     # Ignore deleted connections here - an error will be raised
                     # when it is fetched from the buffer
-                    pass
+                    LOGGER.info("Referenced US entry not found while preloading source %s, skipping", connection_id)
             else:
                 pass  # TODO: Maybe validate that the patch doesn't contain any new connections?
 
@@ -156,7 +159,7 @@ class DatasetApiLoader:
         updated_own_source_ids = []
         added_own_source_ids = []
         handled_source_ids = set()
-        old_src_coll: Optional[DataSourceCollection]
+        old_src_coll: DataSourceCollection | None
         dataset_parameter_values = ds_accessor.get_parameter_values()
         dataset_template_enabled = ds_accessor.get_template_enabled()
         for source_data in body.get("sources", []):
@@ -292,7 +295,7 @@ class DatasetApiLoader:
 
     @staticmethod
     def _rls_list_to_set(rls_list: list[RLSEntry], by_name: bool = True) -> set[tuple]:
-        return set(
+        return {
             (
                 rlse.field_guid,
                 rlse.allowed_value,
@@ -300,7 +303,7 @@ class DatasetApiLoader:
                 rlse.pattern_type,
             )
             for rlse in rls_list
-        )
+        }
 
     def _resolve_group_slugs(
         self,
@@ -361,11 +364,7 @@ class DatasetApiLoader:
                 # e.g. preview request in async api
                 if use_rls_v2:
                     rls_entries_pre = rls_entries
-                    saved_field_rls = [
-                        rlse
-                        for rlse in dataset.rls.items
-                        if rlse.field_guid == field.guid and rlse.subject.subject_type != RLSSubjectType.notfound
-                    ]
+                    saved_field_rls = [rlse for rlse in dataset.rls.items if rlse.field_guid == field.guid]
                     compare_by_name = False
                 else:
                     rls_entries_pre = dl_rls.FieldRLSSerializer.from_text_config(
@@ -381,7 +380,7 @@ class DatasetApiLoader:
                     rls_entries_pre, compare_by_name
                 ):
                     raise dl_rls.RLSConfigParsingError(
-                        "For this feature to work, save dataset after editing the RLS config.", details=dict()
+                        "For this feature to work, save dataset after editing the RLS config.", details={}
                     )
                 # otherwise no effective config changes (that are worth checking in preview)
 
@@ -418,6 +417,37 @@ class DatasetApiLoader:
             if oblig_filter.id not in handled_oblig_filter_ids:
                 ds_editor.remove_obligatory_filter(obfilter_id=oblig_filter.id)
 
+    @classmethod
+    def _update_dataset_extract_properties_from_body(cls, dataset: Dataset, body: dict) -> None:
+        extract: ExtractProperties | None = body.get("extract")
+        if extract is None:
+            return
+
+        ds_editor = DatasetComponentEditor(dataset=dataset)
+
+        schema_guids = {field.guid for field in dataset.result_schema.fields}
+
+        # Validate sorting fields
+        if extract.mode != ExtractMode.disabled and len(extract.sorting) == 0:
+            raise core_exc.ExtractSortingEmptyError("Extract sorting is empty")
+
+        for sort in extract.sorting:
+            if sort.field_guid not in schema_guids:
+                raise core_exc.ExtractSortingFieldMissingError(
+                    f"Extract sorting field {sort.field_guid} does not exist"
+                )
+
+        # Validate filter fields
+        for filter in extract.filters:
+            if filter.field_guid not in schema_guids:
+                raise core_exc.ExtractFilterFieldMissingError(
+                    f"Extract filter field {filter.field_guid} does not exist"
+                )
+
+        ds_editor.set_extract_mode(extract.mode)
+        ds_editor.set_extract_filters(extract.filters)
+        ds_editor.set_extract_sorting(extract.sorting)
+
     @generic_profiler("populate-dataset-from-body")
     def populate_dataset_from_body(
         self,
@@ -426,6 +456,8 @@ class DatasetApiLoader:
         body: dict,
         allow_rls_change: bool = True,
         allow_settings_change: bool = True,
+        allow_query_settings_change: bool = True,
+        latest_revision_id: str | None = None,
     ) -> DatasetUpdateInfo:
         """
         Synchronize dataset object with configuration received in ``body``.
@@ -436,8 +468,17 @@ class DatasetApiLoader:
         ds_accessor = DatasetComponentAccessor(dataset=dataset)
         ds_editor = DatasetComponentEditor(dataset=dataset)
 
-        if dataset.revision_id != body["revision_id"]:
-            raise exc.DatasetRevisionMismatch()
+        # Callers that know the latest revision (e.g. control-api after consulting
+        # the saved branch) pass it in. For callers that don't (e.g. data-api),
+        # fall back to the loaded dataset's revision_id
+        latest_revision_id = latest_revision_id if latest_revision_id is not None else dataset.revision_id
+
+        if latest_revision_id != body["revision_id"]:
+            # A newer revision (saved or published) appeared while the user was editing
+            raise exc.DatasetRevisionMismatchError()
+        # Otherwise - continue with revision_id from request body
+        # Regardless of what we fetched from US, revision_id should travel through all client requests, it changes only when dataset is saved
+        ds_editor.set_revision_id(body["revision_id"])
 
         if allow_settings_change:
             ds_editor.set_load_preview_by_default(body["load_preview_by_default"])
@@ -478,9 +519,8 @@ class DatasetApiLoader:
             ds_editor.remove_data_source_collection(source_id=source_id)
 
         # additional tweaks
-        if root_avatar_id is not None:
-            if not ds_accessor.get_avatar_strict(root_avatar_id).is_root:
-                ds_editor.set_root_avatar(avatar_id=root_avatar_id, rebuild_relations=False)
+        if root_avatar_id is not None and not ds_accessor.get_avatar_strict(root_avatar_id).is_root:
+            ds_editor.set_root_avatar(avatar_id=root_avatar_id, rebuild_relations=False)
 
         # rls
         self._update_dataset_rls_from_body(dataset=dataset, body=body, allow_rls_change=allow_rls_change)
@@ -490,12 +530,27 @@ class DatasetApiLoader:
             dataset.error_registry.items = deepcopy(body["component_errors"].items)
             for item in dataset.error_registry.items:
                 for error in item.errors:
-                    if error.code[:2] == [GLOBAL_ERR_PREFIX, DEFAULT_ERR_CODE_API_PREFIX]:
-                        error.code = error.code[2:]
+                    prefix_len = len(DEFAULT_GLOBAL_ERR_CODE_API_PREFIX)
+                    if tuple(error.code[:prefix_len]) == DEFAULT_GLOBAL_ERR_CODE_API_PREFIX:
+                        error.code = error.code[prefix_len:]
 
         self._update_dataset_obligatory_filters_from_body(dataset=dataset, body=body)
+
+        if allow_query_settings_change:
+            if "query_settings" in body:
+                ds_editor.set_query_settings(body["query_settings"])
+
+            if "query_settings" in body or len(added_own_source_ids) > 0 or len(updated_own_source_ids) > 0:
+                validate_dataset_query_settings(
+                    dataset=dataset,
+                    us_entry_buffer=us_manager.get_entry_buffer(),
+                )
+
+        # extract
+        self._update_dataset_extract_properties_from_body(dataset=dataset, body=body)
 
         return DatasetUpdateInfo(
             added_own_source_ids=added_own_source_ids,
             updated_own_source_ids=updated_own_source_ids,
+            latest_revision_id=latest_revision_id,
         )

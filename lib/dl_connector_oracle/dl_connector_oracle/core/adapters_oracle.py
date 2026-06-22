@@ -4,9 +4,9 @@ import ssl
 from typing import (
     Any,
     ClassVar,
-    Optional,
 )
 
+from frozendict import frozendict
 import oracledb
 import sqlalchemy as sa
 import sqlalchemy.dialects.oracle.base as sa_ora  # not all data types are imported in init in older SA versions
@@ -34,8 +34,8 @@ class OracleConnLineConstructor(ClassicSQLConnLineConstructor[OracleConnTargetDT
     def _get_dsn_params(
         self,
         safe_db_symbols: tuple[str, ...] = (),
-        db_name: Optional[str] = None,
-        standard_auth: Optional[bool] = True,
+        db_name: str | None = None,
+        standard_auth: bool | None = True,
     ) -> dict:
         return dict(
             super()._get_dsn_params(
@@ -61,7 +61,7 @@ class OracleDefaultAdapter(BaseClassicAdapter[OracleConnTargetDTO]):
     def _test(self) -> None:
         self.execute(DBAdapterQuery("SELECT 1 FROM DUAL")).get_all()
 
-    def _get_db_version(self, db_ident: DBIdent) -> Optional[str]:
+    def _get_db_version(self, db_ident: DBIdent) -> str | None:
         return self.execute(DBAdapterQuery("SELECT * FROM V$VERSION", db_name=db_ident.db_name)).get_all()[0][0]
 
     def normalize_sa_col_type(self, sa_col_type: TypeEngine) -> TypeEngine:
@@ -87,46 +87,48 @@ class OracleDefaultAdapter(BaseClassicAdapter[OracleConnTargetDTO]):
 
         return sa_exists_result
 
-    _type_code_to_sa = {
-        oracledb.NUMBER: sa_ora.NUMBER,
-        oracledb.STRING: sa_ora.VARCHAR,  # e.g. 'VARCHAR2(44)'
-        oracledb.NATIVE_FLOAT: sa_ora.BINARY_FLOAT,  # ... or `sa_ora.BINARY_FLOAT`
-        oracledb.FIXED_CHAR: sa_ora.CHAR,  # e.g. 'CHAR(1)'
-        oracledb.FIXED_NCHAR: sa_ora.NCHAR,  # e.g. 'NCHAR(1)'
-        oracledb.NCHAR: sa_ora.NVARCHAR,  # e.g. 'NVARCHAR(5)'
-        oracledb.DATETIME: sa_ora.DATE,
-        oracledb.TIMESTAMP: sa_ora.TIMESTAMP,  # e.g. 'TIMESTAMP(9)', 'TIMESTAMP(9) WITH TIME ZONE'
-        # # For newer versions of oracledb, just in case.
-        # # Listed are all types from 8.1.0,
-        # # Enabled are types listed in `dl_core.db.conversions`.
-        # getattr(oracledb, 'DB_TYPE_BFILE', None): sa_ora.NULL,
-        getattr(oracledb, "DB_TYPE_BINARY_DOUBLE", None): sa_ora.BINARY_DOUBLE,
-        getattr(oracledb, "DB_TYPE_BINARY_FLOAT", None): sa_ora.BINARY_FLOAT,
-        # getattr(oracledb, 'DB_TYPE_BINARY_INTEGER', None): sa_ora.NULL,
-        # getattr(oracledb, 'DB_TYPE_BLOB', None): sa_ora.NULL,
-        # getattr(oracledb, 'DB_TYPE_BOOLEAN', None): sa_ora.NULL,
-        getattr(oracledb, "DB_TYPE_CHAR", None): sa_ora.CHAR,
-        # getattr(oracledb, 'DB_TYPE_CLOB', None): sa_ora.NULL,
-        # getattr(oracledb, 'DB_TYPE_CURSOR', None): sa_ora.NULL,
-        getattr(oracledb, "DB_TYPE_DATE", None): sa_ora.DATE,
-        # getattr(oracledb, 'DB_TYPE_INTERVAL_DS', None): sa_ora.NULL,
-        # getattr(oracledb, 'DB_TYPE_INTERVAL_YM', None): sa_ora.NULL,
-        # getattr(oracledb, 'DB_TYPE_JSON', None): sa_ora.NULL,
-        # getattr(oracledb, 'DB_TYPE_LONG', None): sa_ora.NULL,
-        # getattr(oracledb, 'DB_TYPE_LONG_RAW', None): sa_ora.NULL,
-        getattr(oracledb, "DB_TYPE_NCHAR", None): sa_ora.NCHAR,
-        # getattr(oracledb, 'DB_TYPE_NCLOB', None): sa_ora.NULL,
-        getattr(oracledb, "DB_TYPE_NUMBER", None): sa_ora.NUMBER,
-        getattr(oracledb, "DB_TYPE_NVARCHAR", None): sa_ora.NVARCHAR,
-        # getattr(oracledb, 'DB_TYPE_OBJECT', None): sa_ora.NULL,
-        # getattr(oracledb, 'DB_TYPE_RAW', None): sa_ora.NULL,
-        # getattr(oracledb, 'DB_TYPE_ROWID', None): sa_ora.NULL,
-        getattr(oracledb, "DB_TYPE_TIMESTAMP", None): sa_ora.TIMESTAMP,
-        # getattr(oracledb, 'DB_TYPE_TIMESTAMP_LTZ', None): sa_ora.NULL,
-        # # NOTE: not `timestamptz` here; matches the view schema, somehow.
-        getattr(oracledb, "DB_TYPE_TIMESTAMP_TZ", None): sa_ora.TIMESTAMP,
-        getattr(oracledb, "DB_TYPE_VARCHAR", None): sa_ora.VARCHAR,
-    }
+    _type_code_to_sa = frozendict(
+        {
+            oracledb.NUMBER: sa_ora.NUMBER,
+            oracledb.STRING: sa_ora.VARCHAR,  # e.g. 'VARCHAR2(44)'
+            oracledb.NATIVE_FLOAT: sa_ora.BINARY_FLOAT,  # ... or `sa_ora.BINARY_FLOAT`
+            oracledb.FIXED_CHAR: sa_ora.CHAR,  # e.g. 'CHAR(1)'
+            oracledb.FIXED_NCHAR: sa_ora.NCHAR,  # e.g. 'NCHAR(1)'
+            oracledb.NCHAR: sa_ora.NVARCHAR,  # e.g. 'NVARCHAR(5)'
+            oracledb.DATETIME: sa_ora.DATE,
+            oracledb.TIMESTAMP: sa_ora.TIMESTAMP,  # e.g. 'TIMESTAMP(9)', 'TIMESTAMP(9) WITH TIME ZONE'
+            # # For newer versions of oracledb, just in case.
+            # # Listed are all types from 8.1.0,
+            # # Enabled are types listed in `dl_core.db.conversions`.
+            # getattr(oracledb, 'DB_TYPE_BFILE', None): sa_ora.NULL,
+            getattr(oracledb, "DB_TYPE_BINARY_DOUBLE", None): sa_ora.BINARY_DOUBLE,
+            getattr(oracledb, "DB_TYPE_BINARY_FLOAT", None): sa_ora.BINARY_FLOAT,
+            # getattr(oracledb, 'DB_TYPE_BINARY_INTEGER', None): sa_ora.NULL,
+            # getattr(oracledb, 'DB_TYPE_BLOB', None): sa_ora.NULL,
+            # getattr(oracledb, 'DB_TYPE_BOOLEAN', None): sa_ora.NULL,
+            getattr(oracledb, "DB_TYPE_CHAR", None): sa_ora.CHAR,
+            # getattr(oracledb, 'DB_TYPE_CLOB', None): sa_ora.NULL,
+            # getattr(oracledb, 'DB_TYPE_CURSOR', None): sa_ora.NULL,
+            getattr(oracledb, "DB_TYPE_DATE", None): sa_ora.DATE,
+            # getattr(oracledb, 'DB_TYPE_INTERVAL_DS', None): sa_ora.NULL,
+            # getattr(oracledb, 'DB_TYPE_INTERVAL_YM', None): sa_ora.NULL,
+            # getattr(oracledb, 'DB_TYPE_JSON', None): sa_ora.NULL,
+            # getattr(oracledb, 'DB_TYPE_LONG', None): sa_ora.NULL,
+            # getattr(oracledb, 'DB_TYPE_LONG_RAW', None): sa_ora.NULL,
+            getattr(oracledb, "DB_TYPE_NCHAR", None): sa_ora.NCHAR,
+            # getattr(oracledb, 'DB_TYPE_NCLOB', None): sa_ora.NULL,
+            getattr(oracledb, "DB_TYPE_NUMBER", None): sa_ora.NUMBER,
+            getattr(oracledb, "DB_TYPE_NVARCHAR", None): sa_ora.NVARCHAR,
+            # getattr(oracledb, 'DB_TYPE_OBJECT', None): sa_ora.NULL,
+            # getattr(oracledb, 'DB_TYPE_RAW', None): sa_ora.NULL,
+            # getattr(oracledb, 'DB_TYPE_ROWID', None): sa_ora.NULL,
+            getattr(oracledb, "DB_TYPE_TIMESTAMP", None): sa_ora.TIMESTAMP,
+            # getattr(oracledb, 'DB_TYPE_TIMESTAMP_LTZ', None): sa_ora.NULL,
+            # # NOTE: not `timestamptz` here; matches the view schema, somehow.
+            getattr(oracledb, "DB_TYPE_TIMESTAMP_TZ", None): sa_ora.TIMESTAMP,
+            getattr(oracledb, "DB_TYPE_VARCHAR", None): sa_ora.VARCHAR,
+        }
+    )
 
     def _cursor_column_to_name(self, cursor_col, dialect=None) -> str:  # type: ignore  # TODO: fix
         assert dialect, "required in this case"
@@ -135,7 +137,7 @@ class OracleDefaultAdapter(BaseClassicAdapter[OracleConnTargetDTO]):
         # Notably, column names seem to be case-insensitive in oracle.
         return dialect.normalize_name(cursor_col[0])
 
-    def _cursor_column_to_sa(self, cursor_col, require: bool = True) -> Optional[SATypeSpec]:  # type: ignore  # TODO: fix
+    def _cursor_column_to_sa(self, cursor_col, require: bool = True) -> SATypeSpec | None:  # type: ignore  # TODO: fix
         """
         cursor_col:
 
@@ -168,13 +170,13 @@ class OracleDefaultAdapter(BaseClassicAdapter[OracleConnTargetDTO]):
             if scale == -127:
                 scale = 0
 
-            sa_type = sa_cls(precision, scale)  # type: ignore  # 2024-01-24 # TODO: Too many arguments for "TypeEngine"  [call-arg]
+            sa_type = sa_cls(precision, scale)
         else:
-            sa_type = sa_cls
+            sa_type = sa_cls  # type: ignore[assignment]  # 26.05.2026 mypy bump 1.20.2
 
         return sa_type
 
-    def _cursor_column_to_nullable(self, cursor_col) -> Optional[bool]:  # type: ignore  # TODO: fix
+    def _cursor_column_to_nullable(self, cursor_col) -> bool | None:  # type: ignore  # TODO: fix
         return bool(cursor_col[6])
 
     def _make_cursor_info(self, cursor, db_session=None) -> dict:  # type: ignore  # TODO: fix
@@ -183,23 +185,117 @@ class OracleDefaultAdapter(BaseClassicAdapter[OracleConnTargetDTO]):
             cxoracle_types=[self._cursor_type_to_str(column[1]) for column in cursor.description],
         )
 
-    ORACLE_LIST_SOURCES_ALL_SCHEMA_SQL = """
-        SELECT OWNER, TABLE_NAME FROM ALL_TABLES
-        WHERE nvl(tablespace_name, 'no tablespace')
-            NOT IN ('SYSTEM', 'SYSAUX')
-            AND IOT_NAME IS NULL
-            AND DURATION IS NULL
-    """
+    @staticmethod
+    def _get_pagination_sql_parts(limit: int | None, offset: int | None) -> list[str]:
+        sql_parts: list[str] = []
+        if offset is not None:
+            sql_parts.append("OFFSET :offset ROWS")
+        if limit is not None:
+            sql_parts.append("FETCH NEXT :limit ROWS ONLY")
+        return sql_parts
+
+    @staticmethod
+    def _compile_pagination_params(
+        search_text: str | None,
+        limit: int | None,
+        offset: int | None,
+    ) -> list[sa.sql.elements.BindParameter]:
+        params: list[sa.sql.elements.BindParameter] = []
+        if search_text:
+            params.append(sa.bindparam("search_text", f"%{search_text}%", type_=sa.String))
+        if offset is not None:
+            params.append(sa.bindparam("offset", offset, type_=sa.Integer))
+        if limit is not None:
+            params.append(sa.bindparam("limit", limit, type_=sa.Integer))
+        return params
+
+    def get_list_all_tables_query(
+        self,
+        search_text: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> sa.sql.elements.TextClause:
+        sql_parts: list[str] = ["""
+            SELECT OWNER, TABLE_NAME FROM ALL_TABLES
+            WHERE nvl(tablespace_name, 'no tablespace')
+                NOT IN ('SYSTEM', 'SYSAUX')
+                AND IOT_NAME IS NULL
+                AND DURATION IS NULL
+            """.strip()]
+        if search_text:
+            sql_parts.append("AND LOWER(OWNER || '.' || TABLE_NAME) LIKE LOWER(:search_text)")
+        sql_parts.append("ORDER BY OWNER, TABLE_NAME")
+        sql_parts.extend(self._get_pagination_sql_parts(limit, offset))
+
+        sql = " ".join(sql_parts)
+        query = sa.text(sql)
+        params = self._compile_pagination_params(search_text, limit, offset)
+        if params:
+            query = query.bindparams(*params)
+        return query
+
+    def get_list_tables_in_schema_query(
+        self,
+        schema_name: str,
+        search_text: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> sa.sql.elements.TextClause:
+        sql_parts: list[str] = ["""
+            SELECT name FROM (
+                SELECT TABLE_NAME AS name FROM ALL_TABLES
+                WHERE OWNER = :schema_name
+                  AND nvl(tablespace_name, 'no tablespace') NOT IN ('SYSTEM', 'SYSAUX')
+                  AND IOT_NAME IS NULL
+                  AND DURATION IS NULL
+                UNION ALL
+                SELECT VIEW_NAME AS name FROM ALL_VIEWS
+                WHERE OWNER = :schema_name
+            )
+            """.strip()]
+        if search_text:
+            sql_parts.append("WHERE LOWER(name) LIKE LOWER(:search_text)")
+        sql_parts.append("ORDER BY name")
+        sql_parts.extend(self._get_pagination_sql_parts(limit, offset))
+
+        sql = " ".join(sql_parts)
+        query = sa.text(sql)
+        params = [
+            sa.bindparam("schema_name", schema_name, type_=sa.String),
+            *self._compile_pagination_params(search_text, limit, offset),
+        ]
+        return query.bindparams(*params)
 
     def _get_tables(self, schema_ident: SchemaIdent, page_ident: PageIdent | None = None) -> list[TableIdent]:
-        if schema_ident.schema_name is not None:
-            return super()._get_tables(schema_ident, page_ident)
+        if page_ident is None:
+            page_ident = PageIdent()
 
         db_name = schema_ident.db_name
         db_engine = self.get_db_engine(db_name)
 
-        query = self.ORACLE_LIST_SOURCES_ALL_SCHEMA_SQL
-        result = db_engine.execute(sa.text(query))
+        if schema_ident.schema_name is not None:
+            query = self.get_list_tables_in_schema_query(
+                schema_name=schema_ident.schema_name,
+                search_text=page_ident.search_text,
+                limit=page_ident.limit,
+                offset=page_ident.offset,
+            )
+            result = db_engine.execute(query)
+            return [
+                TableIdent(
+                    db_name=db_name,
+                    schema_name=schema_ident.schema_name,
+                    table_name=name,
+                )
+                for (name,) in result
+            ]
+
+        query = self.get_list_all_tables_query(
+            search_text=page_ident.search_text,
+            limit=page_ident.limit,
+            offset=page_ident.offset,
+        )
+        result = db_engine.execute(query)
         return [
             TableIdent(
                 db_name=db_name,
@@ -213,7 +309,7 @@ class OracleDefaultAdapter(BaseClassicAdapter[OracleConnTargetDTO]):
     def _cursor_type_to_str(value: Any) -> str:
         return value.name.lower()
 
-    def _get_ssl_ctx(self) -> Optional[ssl.SSLContext]:
+    def _get_ssl_ctx(self) -> ssl.SSLContext | None:
         if not self._target_dto.ssl_enable:
             return None
 

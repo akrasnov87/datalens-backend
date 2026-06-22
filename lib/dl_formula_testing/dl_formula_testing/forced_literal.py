@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
 
 import pytest
 
@@ -12,7 +12,6 @@ from dl_formula.definitions.base import (
 )
 from dl_formula.definitions.registry import OPERATION_REGISTRY
 from dl_formula.definitions.type_strategy import FromArgs
-
 
 V = TranslationVariant.make
 
@@ -27,7 +26,7 @@ class ForcedLiteral(MultiVariantTranslation):
 
     name = "__lit__"
     arg_cnt = 1
-    variants = [V(D.ANY, lambda x: x)]
+    variants = (V(D.ANY, lambda x: x),)
     return_type = FromArgs()  # will automatically convert from const to non-const type
 
     @classmethod

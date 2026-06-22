@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import abc
-from typing import (
+from collections.abc import (
     Callable,
-    ClassVar,
     Sequence,
+)
+from typing import (
+    ClassVar,
     TypeVar,
 )
 
@@ -52,7 +54,6 @@ from dl_query_processing.enums import (
     QueryPart,
     QueryType,
 )
-
 
 _COMPILED_FLA_TV = TypeVar("_COMPILED_FLA_TV", bound=CompiledFormulaInfo)
 
@@ -142,10 +143,7 @@ class IgnoreFormulaAtomicQueryMutator(AtomicQueryFormulaListMutatorBase):
         return True  # Apply to all
 
     def should_ignore_formula(self, formula: CompiledFormulaInfo, query_part: QueryPart) -> bool:
-        for checker in self._ignore_formula_checks:
-            if checker(formula.formula_obj, query_part):
-                return True
-        return False
+        return any(checker(formula.formula_obj, query_part) for checker in self._ignore_formula_checks)
 
     def mutate_formula_list(
         self,
@@ -169,10 +167,7 @@ class NullifyFormulaAtomicQueryMutator(AtomicQueryFormulaListMutatorBase):
         return True  # Apply to all
 
     def should_nullify_formula(self, formula: CompiledFormulaInfo, query_part: QueryPart) -> bool:
-        for checker in self._nullify_formula_checks:
-            if checker(formula.formula_obj, query_part):
-                return True
-        return False
+        return any(checker(formula.formula_obj, query_part) for checker in self._nullify_formula_checks)
 
     def nullify_formula(self, formula: _COMPILED_FLA_TV) -> _COMPILED_FLA_TV:
         return formula.clone(
@@ -187,11 +182,10 @@ class NullifyFormulaAtomicQueryMutator(AtomicQueryFormulaListMutatorBase):
         formula_list: list[_COMPILED_FLA_TV],
         query_part: QueryPart,
     ) -> list[_COMPILED_FLA_TV]:
-        new_formula_list = [
+        return [
             self.nullify_formula(formula) if self.should_nullify_formula(formula, query_part=query_part) else formula
             for formula in formula_list
         ]
-        return new_formula_list
 
 
 @attr.s
@@ -211,12 +205,11 @@ class RemoveConstFromGroupByFormulaAtomicQueryMutator(AtomicQueryFormulaListMuta
         if query_part != QueryPart.group_by or self._dialects not in self._applicable_dialects:
             return formula_list
 
-        new_group_by_formula_list = [
+        return [
             group_by_item
             for group_by_item in formula_list
             if not is_bound_only_to(group_by_item.formula_obj, NodeSet())
         ]
-        return new_group_by_formula_list
 
     @classmethod
     def register_dialect(cls, dialects: DialectCombo) -> None:
@@ -256,8 +249,7 @@ class DefaultAtomicQueryMutator(AtomicQueryFormulaMutatorBase):
         if formula_obj is formula.formula_obj:
             # No changes
             return formula
-        formula = formula.clone(formula_obj=formula_obj)
-        return formula
+        return formula.clone(formula_obj=formula_obj)
 
 
 @attr.s

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import (
+    Awaitable,
+    Callable,
+    Iterable,
+)
 import functools
 import logging.config
 from typing import (
+    Any,
     ClassVar,
-    Generic,
-    TypeVar,
 )
 
 from aiohttp import web
@@ -37,26 +41,27 @@ from dl_api_lib.app.data_api.resources.dataset.cache_invalidation_last_result im
 from dl_api_lib.app.data_api.resources.dataset.cache_invalidation_test import DatasetCacheInvalidationTestView
 from dl_api_lib.app.data_api.resources.dataset.distinct import (
     DatasetDistinctViewV1,
-    DatasetDistinctViewV1_5,
+    DatasetDistinctViewV1p5,
     DatasetDistinctViewV2,
 )
 from dl_api_lib.app.data_api.resources.dataset.fields import DatasetFieldsView
 from dl_api_lib.app.data_api.resources.dataset.pivot import DatasetPivotView
 from dl_api_lib.app.data_api.resources.dataset.preview import (
     DatasetPreviewViewV1,
-    DatasetPreviewViewV1_5,
+    DatasetPreviewViewV1p5,
     DatasetPreviewViewV2,
 )
 from dl_api_lib.app.data_api.resources.dataset.range import (
     DatasetRangeViewV1,
-    DatasetRangeViewV1_5,
+    DatasetRangeViewV1p5,
     DatasetRangeViewV2,
 )
 from dl_api_lib.app.data_api.resources.dataset.result import (
     DatasetResultViewV1,
-    DatasetResultViewV1_5,
+    DatasetResultViewV1p5,
     DatasetResultViewV2,
 )
+from dl_api_lib.app.data_api.resources.dataset.result_preflight import DatasetResultPreflightView
 from dl_api_lib.app.data_api.resources.metrics import DSDataApiMetricsView
 from dl_api_lib.app.data_api.resources.ping import (
     PingReadyView,
@@ -73,7 +78,7 @@ from dl_api_lib.app_settings import (
 )
 from dl_compeng_pg.compeng_pg_base.data_processor_service_pg import CompEngPgConfig
 from dl_configs.enums import RedisMode
-from dl_constants.enums import (
+from dl_constants import (
     ProcessorType,
     RedisInstanceKind,
 )
@@ -88,19 +93,19 @@ from dl_obfuscator import (
     OBFUSCATION_BASE_OBFUSCATORS_KEY,
     SecretKeeper,
     create_base_obfuscators,
+    get_secret_strings,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 
 
-def _log_exc(coro):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
+def _log_exc(coro: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
     @functools.wraps(coro)
-    async def wrapper(*args, **kwargs):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
             return await coro(*args, **kwargs)
         except Exception:
-            LOGGER.exception("Unhandled exception in application signal listener", exc_info=True)
+            LOGGER.exception("Unhandled exception in application signal listener")
             raise
 
     return wrapper
@@ -123,11 +128,8 @@ class EnvSetupResult:
     usm_middleware_list: list[Middleware] = attr.ib(kw_only=True)
 
 
-TDataApiSettings = TypeVar("TDataApiSettings", bound=DataApiAppSettings)
-
-
 @attr.s(kw_only=True)
-class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
+class DataApiAppFactory[TDataApiSettings: DataApiAppSettings](SRFactoryBuilder[TDataApiSettings], abc.ABC):
     _settings: TDataApiSettings = attr.ib()
     private_us_manager_factory_class: ClassVar[type[USMFactory]] = USMFactory
 
@@ -154,6 +156,15 @@ class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
     def _get_extra_regex_patterns(self) -> tuple[str, ...] | None:
         return None
 
+    def _get_extra_routes(self) -> Iterable[tuple[str, str, type[web.View]]]:
+        """Override in subclasses to register additional HTTP routes.
+
+        Each tuple is (method, path, view_class). Routes are added after the
+        factory's built-in routes; subclasses can shadow paths only by intent.
+        Default: no extra routes.
+        """
+        return ()
+
     def set_up_routes(self, app: web.Application) -> None:
         app.router.add_route("get", "/ping", PingView)
         app.router.add_route("get", "/ping_ready", PingReadyView)
@@ -169,21 +180,26 @@ class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
             "post", "/api/v1/datasets/{ds_id}/versions/draft/result", DatasetResultViewV1
         )  # FIXME: Remove
         app.router.add_route("post", "/api/data/v1/datasets/{ds_id}/versions/draft/result", DatasetResultViewV1)
-        app.router.add_route("post", "/api/data/v1.5/datasets/{ds_id}/result", DatasetResultViewV1_5)
+        app.router.add_route("post", "/api/data/v1.5/datasets/{ds_id}/result", DatasetResultViewV1p5)
         app.router.add_route("post", "/api/data/v2/datasets/{ds_id}/result", DatasetResultViewV2)
+        app.router.add_route(
+            "post",
+            "/api/data/v2/datasets/{ds_id}/result-preflight",
+            DatasetResultPreflightView,
+        )
         app.router.add_route(
             "post", "/api/v1/datasets/{ds_id}/versions/draft/values/distinct", DatasetDistinctViewV1
         )  # FIXME: Remove
         app.router.add_route(
             "post", "/api/data/v1/datasets/{ds_id}/versions/draft/values/distinct", DatasetDistinctViewV1
         )
-        app.router.add_route("post", "/api/data/v1.5/datasets/{ds_id}/values/distinct", DatasetDistinctViewV1_5)
+        app.router.add_route("post", "/api/data/v1.5/datasets/{ds_id}/values/distinct", DatasetDistinctViewV1p5)
         app.router.add_route("post", "/api/data/v2/datasets/{ds_id}/values/distinct", DatasetDistinctViewV2)
         app.router.add_route(
             "post", "/api/v1/datasets/{ds_id}/versions/draft/values/range", DatasetRangeViewV1
         )  # FIXME: Remove
         app.router.add_route("post", "/api/data/v1/datasets/{ds_id}/versions/draft/values/range", DatasetRangeViewV1)
-        app.router.add_route("post", "/api/data/v1.5/datasets/{ds_id}/values/range", DatasetRangeViewV1_5)
+        app.router.add_route("post", "/api/data/v1.5/datasets/{ds_id}/values/range", DatasetRangeViewV1p5)
         app.router.add_route("post", "/api/data/v2/datasets/{ds_id}/values/range", DatasetRangeViewV2)
         app.router.add_route(
             "post", "/api/data/v1/datasets/{ds_id}/versions/draft/pivot", DatasetPivotView
@@ -200,8 +216,8 @@ class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
                 "post", "/api/v1/datasets/{ds_id}/versions/draft/preview", DatasetPreviewViewV1
             )  # FIXME: Remove
             app.router.add_route("post", "/api/data/v1/datasets/{ds_id}/versions/draft/preview", DatasetPreviewViewV1)
-            app.router.add_route("post", "/api/data/v1.5/datasets/data/preview", DatasetPreviewViewV1_5)
-            app.router.add_route("post", "/api/data/v1.5/datasets/{ds_id}/preview", DatasetPreviewViewV1_5)
+            app.router.add_route("post", "/api/data/v1.5/datasets/data/preview", DatasetPreviewViewV1p5)
+            app.router.add_route("post", "/api/data/v1.5/datasets/{ds_id}/preview", DatasetPreviewViewV1p5)
             app.router.add_route("post", "/api/data/v2/datasets/data/preview", DatasetPreviewViewV2)
             app.router.add_route("post", "/api/data/v2/datasets/{ds_id}/preview", DatasetPreviewViewV2)
 
@@ -213,6 +229,9 @@ class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
                 "/api/data/v2/datasets/{ds_id}/cache_invalidation_last_result",
                 DatasetCacheInvalidationLastResultView,
             )
+
+        for method, path, view_cls in self._get_extra_routes():
+            app.router.add_route(method, path, view_cls)
 
     def set_up_sentry(self) -> None:
         configure_sentry_for_aiohttp(
@@ -255,7 +274,9 @@ class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
             ).middleware,
             rci_headers_middleware(),
             *env_setup_result.auth_mw_list,
-            obfuscation_context_middleware(),
+            obfuscation_context_middleware(
+                log_format_profiling_enabled=self._settings.LOG_FORMAT_PROFILING_ENABLED,
+            ),
             commit_rci_middleware(),
             *env_setup_result.sr_middleware_list,
             *env_setup_result.usm_middleware_list,
@@ -268,8 +289,7 @@ class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
 
         if self._settings.OBFUSCATION_ENABLED:
             global_keeper = SecretKeeper()
-            if self._settings.US_MASTER_TOKEN:
-                global_keeper.add_secret(self._settings.US_MASTER_TOKEN, "us_master_token")
+            global_keeper.add_secrets(get_secret_strings(self._settings))
             app[OBFUSCATION_BASE_OBFUSCATORS_KEY] = create_base_obfuscators(
                 global_keeper=global_keeper,
                 extra_regex_patterns=self._get_extra_regex_patterns(),
@@ -375,6 +395,7 @@ class DataApiAppFactory(SRFactoryBuilder, Generic[TDataApiSettings], abc.ABC):
         # TODO: don't use it again!
         # special hack for gettings bleeding edge users in dashsql
         app["BLEEDING_EDGE_USERS"] = self._settings.BLEEDING_EDGE_USERS
+        app["DIRECTSQL_TIMEOUT_SEC"] = self._settings.DIRECTSQL_TIMEOUT_SEC
 
         self.set_up_routes(app=app)
 

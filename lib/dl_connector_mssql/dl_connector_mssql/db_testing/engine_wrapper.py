@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
 import urllib.parse
 
 from sqlalchemy.engine.url import URL
@@ -22,13 +21,13 @@ class MSSQLEngineWrapper(EngineWrapperBase):
 
         assert isinstance(odbc_dsn, str)
         odbc_props = {pair.split("=")[0]: pair.split("=")[1] for pair in odbc_dsn.split(";")}
-        return dict(
-            host=odbc_props["Server"],
-            port=int(odbc_props["Port"]),
-            username=odbc_props["UID"],
-            password=odbc_props["PWD"],
-            db_name=odbc_props["Database"],
-        )
+        return {
+            "host": odbc_props["Server"],
+            "port": int(odbc_props["Port"]),
+            "username": odbc_props["UID"],
+            "password": odbc_props["PWD"],
+            "db_name": odbc_props["Database"],
+        }
 
     def count_sql_sessions(self) -> int:
         cur = self.execute("exec sp_who")
@@ -38,5 +37,5 @@ class MSSQLEngineWrapper(EngineWrapperBase):
         finally:
             cur.close()
 
-    def get_version(self) -> Optional[str]:
+    def get_version(self) -> str | None:
         return self.execute("SELECT @@VERSION").scalar()

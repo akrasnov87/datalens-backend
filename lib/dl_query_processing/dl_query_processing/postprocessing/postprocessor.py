@@ -1,21 +1,22 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import (
+    Generator,
+    Iterable,
+    Sequence,
+)
 import logging
 import re
 from typing import (
     Any,
     ClassVar,
-    Generator,
-    Iterable,
-    Optional,
-    Sequence,
 )
 
 import attr
 
 from dl_app_tools.profiling_base import GenericProfiler
-from dl_constants.enums import LegendItemType
+from dl_constants import LegendItemType
 from dl_query_processing.enums import QueryType
 from dl_query_processing.execution.primitives import ExecutedQuery
 from dl_query_processing.legend.block_legend import BlockSpec
@@ -25,7 +26,6 @@ from dl_query_processing.postprocessing.primitives import (
     PostprocessedQuery,
     PostprocessedQueryMetaInfo,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class TemplateValueRestorer(ValueRestorerBase):
 
     template_re: ClassVar[re.Pattern] = re.compile(r"\{\{(?P<field>[^{}]+)\}\}")
 
-    template: Optional[str] = attr.ib(kw_only=True)
+    template: str | None = attr.ib(kw_only=True)
     idx_by_field_id: dict[str, int] = attr.ib(kw_only=True)
 
     def restore_value(self, raw_row: Sequence[Any]) -> Any:
@@ -135,17 +135,17 @@ class DataPostprocessor:
                 postprocessed_data = tuple(restore_order(postprocessed_data))
 
         LOGGER.info(
-            f"Returning dataset data: {len(postprocessed_data)} rows " f"with {len(result_fields_types)} columns",
-            extra=dict(
-                fetched_data_statistics=dict(
-                    row_count=len(postprocessed_data),
-                    column_count=len(result_fields_types),
-                ),
-            ),
+            "Returning dataset data: %s rows with %s columns",
+            len(postprocessed_data),
+            len(result_fields_types),
+            extra={
+                "fetched_data_statistics": {
+                    "row_count": len(postprocessed_data),
+                    "column_count": len(result_fields_types),
+                },
+            },
         )
 
-        postprocessed_query = PostprocessedQuery(
+        return PostprocessedQuery(
             postprocessed_data=postprocessed_data, meta=PostprocessedQueryMetaInfo.from_exec_meta(exec_meta=query_meta)
         )
-
-        return postprocessed_query

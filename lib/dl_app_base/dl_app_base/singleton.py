@@ -1,14 +1,14 @@
+from collections.abc import (
+    Callable,
+    Coroutine,
+)
 import functools
 import inspect
 import logging
 from typing import (
     Any,
-    Callable,
-    Coroutine,
-    TypeVar,
     cast,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -16,8 +16,7 @@ _LOCKED_AND_UNSET_VALUE = object()
 _LOCKED_AND_UNSET_ERROR_MESSAGE_TEMPLATE = "Singleton result for {function_name} is locked and unset, but function is called again, probably because of a recursive call"
 
 
-class LockedAndUnsetError(RuntimeError):
-    ...
+class LockedAndUnsetError(RuntimeError): ...
 
 
 SINGLETON_FUNCTION_RESULT_ATTRIBUTE = "_singleton_function_result"
@@ -25,20 +24,15 @@ SyncFunction = Callable[..., Any]
 AsyncFunction = Callable[..., Coroutine[Any, Any, Any]]
 Function = SyncFunction | AsyncFunction
 
-SyncFunctionType = TypeVar("SyncFunctionType", bound=SyncFunction)
-AsyncFunctionType = TypeVar("AsyncFunctionType", bound=AsyncFunction)
-FunctionType = TypeVar("FunctionType", bound=Function)
-
 
 # Decorator is not thread-safe, but it's ok for our use case
-def singleton_function_result(func: FunctionType) -> FunctionType:
+def singleton_function_result[FunctionType: Function](func: FunctionType) -> FunctionType:
     if inspect.iscoroutinefunction(func):
         return _async_singleton_function_result(func)
-    else:
-        return _sync_singleton_function_result(func)
+    return _sync_singleton_function_result(func)
 
 
-def _async_singleton_function_result(func: AsyncFunctionType) -> AsyncFunctionType:
+def _async_singleton_function_result[AsyncFunctionType: AsyncFunction](func: AsyncFunctionType) -> AsyncFunctionType:
     @functools.wraps(func)
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         function_name = func.__qualname__
@@ -59,7 +53,7 @@ def _async_singleton_function_result(func: AsyncFunctionType) -> AsyncFunctionTy
     return cast(AsyncFunctionType, wrapper)
 
 
-def _sync_singleton_function_result(func: SyncFunctionType) -> SyncFunctionType:
+def _sync_singleton_function_result[SyncFunctionType: SyncFunction](func: SyncFunctionType) -> SyncFunctionType:
     @functools.wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         function_name = func.__qualname__
@@ -81,14 +75,15 @@ def _sync_singleton_function_result(func: SyncFunctionType) -> SyncFunctionType:
 
 
 # Decorator is not thread-safe, but it's ok for our use case
-def singleton_class_method_result(func: FunctionType) -> FunctionType:
+def singleton_class_method_result[FunctionType: Function](func: FunctionType) -> FunctionType:
     if inspect.iscoroutinefunction(func):
         return _async_singleton_class_method_result(func)
-    else:
-        return _sync_singleton_class_method_result(func)
+    return _sync_singleton_class_method_result(func)
 
 
-def _async_singleton_class_method_result(func: AsyncFunctionType) -> AsyncFunctionType:
+def _async_singleton_class_method_result[AsyncFunctionType: AsyncFunction](
+    func: AsyncFunctionType,
+) -> AsyncFunctionType:
     @functools.wraps(func)
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         class_instance = args[0]
@@ -111,7 +106,7 @@ def _async_singleton_class_method_result(func: AsyncFunctionType) -> AsyncFuncti
     return cast(AsyncFunctionType, wrapper)
 
 
-def _sync_singleton_class_method_result(func: SyncFunctionType) -> SyncFunctionType:
+def _sync_singleton_class_method_result[SyncFunctionType: SyncFunction](func: SyncFunctionType) -> SyncFunctionType:
     @functools.wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         class_instance = args[0]

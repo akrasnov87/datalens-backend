@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Callable,
+    Generator,
+)
 from contextlib import contextmanager
 import http.client
 import logging
@@ -10,10 +14,7 @@ import ssl
 import time
 from typing import (
     Any,
-    Callable,
-    Generator,
     Literal,
-    Optional,
     overload,
 )
 
@@ -30,7 +31,6 @@ from dl_testing.shared_testing_constants import (
     RUN_DEVHOST_TESTS,
 )
 from dl_utils.wait import wait_for
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ def skip_outside_devhost(func):  # type: ignore  # 2024-01-24 # TODO: Function i
 
 
 def wait_for_initdb(
-    initdb_port: int, initdb_host: Optional[str] = None, timeout: int = 900, require: bool = False
+    initdb_port: int, initdb_host: str | None = None, timeout: int = 900, require: bool = False
 ) -> tuple[bool, str]:
     initdb_host = initdb_host or get_test_container_hostport("init-db").host
     # TODO: initdb_port?
@@ -70,10 +70,10 @@ def wait_for_initdb(
             resp = conn.getresponse()
             body = resp.read().decode("utf-8", errors="replace")
             if resp.status != 200:
-                raise Exception("Non-ok response", dict(res=resp, status=resp.status, body=body))
+                raise Exception("Non-ok response", {"res": resp, "status": resp.status, "body": body})
             return True, body
         except Exception as exc:
-            return False, dict(exc=exc)
+            return False, {"exc": exc}
 
     return wait_for(
         name="initdb readiness",
@@ -91,17 +91,17 @@ def wait_for_port(host: str, port: int, period_seconds: int = 1, timeout_seconds
         try:
             sock.connect((host, port))
             sock.close()
-            LOGGER.info(f"{host}:{port} is available")
+            LOGGER.info("%s:%s is available", host, port)
             return
-        except socket.error:
-            LOGGER.warning(f"Waiting for {host}:{port} to become available")
+        except OSError:
+            LOGGER.warning("Waiting for %s:%s to become available", host, port)
             time.sleep(period_seconds)
 
     raise Exception(f"Timeout waiting for {host}:{port} to become available")
 
 
 @overload
-def get_log_record(  # type: ignore  # 2024-01-24 # TODO: Overloaded function signatures 1 and 2 overlap with incompatible return types  [misc]
+def get_log_record(
     caplog: Any, predicate: Callable[[logging.LogRecord], bool], single: Literal[True] = True
 ) -> logging.LogRecord:
     pass
@@ -125,14 +125,14 @@ def get_log_record(caplog, predicate, single=False):  # type: ignore  # 2024-01-
 
 
 def guids_from_titles(result_schema: list[dict], titles: list[str]) -> list[str]:
-    fields = [f["field"] if "field" in f else f for f in result_schema]
+    fields = [f.get("field", f) for f in result_schema]
     guid_by_title = {f["title"]: f["guid"] for f in fields if f.get("title") in titles and f.get("guid")}
     return [guid_by_title[title] for title in titles]
 
 
 @contextmanager
 def override_env_cm(to_set: dict[str, str], purge: bool = False) -> Generator[None, None, None]:
-    preserved = {k: v for k, v in os.environ.items()}
+    preserved = dict(os.environ.items())
 
     try:
         if purge:

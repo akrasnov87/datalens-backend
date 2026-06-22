@@ -8,16 +8,14 @@ from http import HTTPStatus
 import logging
 from typing import (
     Any,
-    Optional,
+    final,
 )
 
 from aiohttp import web
 import attr
 import sentry_sdk
-from typing_extensions import final
 
 from dl_api_commons.logging import RequestLoggingContextController
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -34,20 +32,20 @@ class ErrorData:
     status_code: int
     response_body: dict[str, Any]
     level: ErrorLevel = attr.ib(validator=[attr.validators.instance_of(ErrorLevel)])
-    http_reason: Optional[str] = attr.ib(default=None)
+    http_reason: str | None = attr.ib(default=None)
 
 
 DEFAULT_INTERNAL_SERVER_ERROR_DATA = ErrorData(
     HTTPStatus.INTERNAL_SERVER_ERROR,
     http_reason="Internal server error",
-    response_body=dict(message="Internal server error"),
+    response_body={"message": "Internal server error"},
     level=ErrorLevel.error,
 )
 
 
 @attr.s
 class AIOHTTPErrorHandler(metaclass=abc.ABCMeta):
-    sentry_app_name_tag: Optional[str] = attr.ib()
+    sentry_app_name_tag: str | None = attr.ib()
     use_sentry: bool = attr.ib(default=False)
 
     @sentry_app_name_tag.validator
@@ -66,32 +64,31 @@ class AIOHTTPErrorHandler(metaclass=abc.ABCMeta):
         self, err: Exception, request: web.Request, req_logging_ctx_ctrl: RequestLoggingContextController
     ) -> tuple[web.Response, ErrorData]:
         if isinstance(err, CancelledError):
-            LOGGER.warning("Client request was cancelled", exc_info=True)
-            raise  # noqa
-        elif isinstance(err, web.HTTPSuccessful):
-            raise  # noqa
-        else:
-            try:
-                # TODO CONSIDER: Validate that response is serializable
-                err_data = self._classify_error(err, request)
-                self.log_error_http_response(err, err_data, req_logging_ctx_ctrl)
-                return self.make_response(err_data, err, request), err_data
+            LOGGER.warning("Client request was cancelled", exc_info=err)
+            raise
+        if isinstance(err, web.HTTPSuccessful):
+            raise
+        try:
+            # TODO CONSIDER: Validate that response is serializable
+            err_data = self._classify_error(err, request)
+            self.log_error_http_response(err, err_data, req_logging_ctx_ctrl)
+            return self.make_response(err_data, err, request), err_data
 
-            except Exception as on_error_error:  # noqa
-                req_logging_ctx_ctrl.put_to_context("is_error", True)
-                LOGGER.error(
-                    "Error handler raised an error during handling this exception",
-                    exc_info=(type(err), err, err.__traceback__),
-                )
-                LOGGER.critical("Error handler raised an error during creating error response", exc_info=True)
-                err_data = DEFAULT_INTERNAL_SERVER_ERROR_DATA
-                return (
-                    web.json_response(
-                        dict(message="Internal Server Error"),
-                        status=500,
-                    ),
-                    err_data,
-                )
+        except Exception as on_error_error:  # noqa
+            req_logging_ctx_ctrl.put_to_context("is_error", True)
+            LOGGER.error(
+                "Error handler raised an error during handling this exception",
+                exc_info=(type(err), err, err.__traceback__),
+            )
+            LOGGER.critical("Error handler raised an error during creating error response", exc_info=True)
+            err_data = DEFAULT_INTERNAL_SERVER_ERROR_DATA
+            return (
+                web.json_response(
+                    {"message": "Internal Server Error"},
+                    status=500,
+                ),
+                err_data,
+            )
 
     def log_error_http_response(  # type: ignore  # TODO: fix
         self,
@@ -114,9 +111,9 @@ class AIOHTTPErrorHandler(metaclass=abc.ABCMeta):
                 # Assumed that events will bi captured for warnings and higher, so we capture manually only for info
                 if use_sentry:
                     sentry_sdk.capture_exception(err)
-                LOGGER.info("Regular exception fired", exc_info=True)
+                LOGGER.info("Regular exception fired", exc_info=err)
             elif err_data.level == ErrorLevel.warning:
-                LOGGER.warning("Warning exception fired", exc_info=True)
+                LOGGER.warning("Warning exception fired", exc_info=err)
             else:
                 request_logging_context_ctrl.put_to_context("is_error", True)
                 LOGGER.exception("Caught an exception in request handler")

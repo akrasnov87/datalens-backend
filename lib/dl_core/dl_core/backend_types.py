@@ -1,8 +1,7 @@
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     SourceBackendType,
 )
-
 
 _CONNECTION_BACKEND_TYPES: dict[ConnectionType, SourceBackendType] = {}
 

@@ -13,7 +13,6 @@ from dl_connector_mysql.core.constants import MySQLEnforceCollateMode
 from dl_connector_mysql.core.dto import MySQLConnDTO
 from dl_connector_mysql.core.target_dto import MySQLConnTargetDTO
 
-
 _BASE_MYSQL_ADAPTER_TV = TypeVar("_BASE_MYSQL_ADAPTER_TV", bound=CommonBaseDirectAdapter)
 
 
@@ -28,28 +27,26 @@ class _BaseMySQLConnExecutor(DefaultSqlAlchemyConnExecutor[_BASE_MYSQL_ADAPTER_T
             enforce_collate = MySQLEnforceCollateMode.off
         return enforce_collate
 
-    async def _make_target_conn_dto_pool(self) -> list[MySQLConnTargetDTO]:  # type: ignore  # TODO: fix
-        dto_pool = []
+    async def _make_target_conn_dto_pool(self) -> list[MySQLConnTargetDTO]:
         effective_enforce_collate = self._get_effective_enforce_collate(
             enforce_collate=self._conn_dto.enforce_collate,
         )
-        for host in self._conn_hosts_pool:
-            dto_pool.append(
-                MySQLConnTargetDTO(
-                    conn_id=self._conn_dto.conn_id,
-                    pass_db_messages_to_user=self._conn_options.pass_db_messages_to_user,
-                    pass_db_query_to_user=self._conn_options.pass_db_query_to_user,
-                    host=host,
-                    port=self._conn_dto.port,
-                    db_name=self._conn_dto.db_name,
-                    username=self._conn_dto.username,
-                    password=self._conn_dto.password,
-                    enforce_collate=effective_enforce_collate,
-                    ssl_enable=self._conn_dto.ssl_enable,
-                    ssl_ca=self._conn_dto.ssl_ca,
-                )
+        return [
+            MySQLConnTargetDTO(
+                conn_id=self._conn_dto.conn_id,
+                pass_db_messages_to_user=self._conn_options.pass_db_messages_to_user,
+                pass_db_query_to_user=self._conn_options.pass_db_query_to_user,
+                host=host,
+                port=self._conn_dto.port,
+                db_name=self._conn_dto.db_name,
+                username=self._conn_dto.username,
+                password=self._conn_dto.password,
+                enforce_collate=effective_enforce_collate,
+                ssl_enable=self._conn_dto.ssl_enable,
+                ssl_ca=self._conn_dto.ssl_ca,
             )
-        return dto_pool
+            for host in self._conn_hosts_pool
+        ]
 
 
 @attr.s(cmp=False, hash=False)

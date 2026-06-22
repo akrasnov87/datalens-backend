@@ -23,7 +23,6 @@ from dl_formula.translation.env import TranslationEnvironment
 
 from dl_connector_clickhouse.formula.constants import ClickHouseDialect as D
 
-
 V = TranslationVariant.make
 VW = TranslationVariantWrapped.make
 
@@ -163,41 +162,34 @@ def _denullified_eq(
         left = sa.func.toString(left)
         right = sa.func.toString(right)
 
-    expr = sa.and_(
+    return sa.and_(
         sa.func.ifNull(left, null_value) == sa.func.ifNull(right, null_value),
         sa.func.isNull(left) == sa.func.isNull(right),
     )
-    return expr
 
 
 class BinaryEqualDenullified(base.BinaryEqualDenullified):
-    variants = [
-        VW(D.CLICKHOUSE, lambda left, right, _env: _denullified_eq(left, right, _env)),
-    ]
+    variants = (VW(D.CLICKHOUSE, lambda left, right, _env: _denullified_eq(left, right, _env)),)
 
 
 class BinaryInDate(base.BinaryIn):
-    argument_types = [
-        ArgTypeSequence([DataType.DATE, DataType.DATE]),
-    ]
-    variants = [
+    argument_types = (ArgTypeSequence([DataType.DATE, DataType.DATE]),)
+    variants = (
         V(
             D.CLICKHOUSE_22_10,
-            functools.partial(base._in_fix_null, stringify_values=True),  # noqa
+            functools.partial(base._in_fix_null, stringify_values=True),
         ),
-    ]
+    )
 
 
 class BinaryNotInDate(base.BinaryNotIn):
-    argument_types = [
-        ArgTypeSequence([DataType.DATE, DataType.DATE]),
-    ]
-    variants = [
+    argument_types = (ArgTypeSequence([DataType.DATE, DataType.DATE]),)
+    variants = (
         V(
             D.CLICKHOUSE_22_10,
             functools.partial(base._not_in_fix_null, stringify_values=True),
         ),
-    ]
+    )
 
 
 DEFINITIONS_BINARY = [

@@ -1,22 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import os
 import tempfile
-from typing import (
-    Callable,
-    TypeVar,
-    Union,
-)
 import uuid
 
 from graphviz.dot import Dot
 
 
-_TV = TypeVar("_TV")
-
-
-def csv_type(type_func: Callable[[str], _TV]) -> Callable[[str], Union[list[_TV], str]]:
-    def wrapper(s: str) -> Union[list[_TV], str]:
+def csv_type[TV](type_func: Callable[[str], TV]) -> Callable[[str], list[TV] | str]:
+    def wrapper(s: str) -> list[TV] | str:
         if isinstance(s, str):
             return [type_func(it) for it in s.split(",")]
         return s
@@ -32,7 +25,7 @@ def make_graphviz_graph(dot: Dot, render_to: str, view: bool) -> None:
 
     if render_to or view:
         if not render_to:
-            render_to = os.path.join(tempfile.gettempdir(), "dotfile_{}".format(uuid.uuid4().hex))
+            render_to = os.path.join(tempfile.gettempdir(), f"dotfile_{uuid.uuid4().hex}")
 
         dot.format = "png"
         dot.render(render_to, view=view, cleanup=True)

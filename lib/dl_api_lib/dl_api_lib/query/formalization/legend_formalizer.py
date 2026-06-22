@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import abc
 import json
-from typing import (
-    ClassVar,
-    Optional,
-)
+from typing import ClassVar
 
 import attr
 
@@ -26,7 +23,7 @@ from dl_api_lib.query.formalization.raw_specs import (
     RawTemplateRoleSpec,
     RawTreeRoleSpec,
 )
-from dl_constants.enums import (
+from dl_constants import (
     CalcMode,
     FieldRole,
     FieldType,
@@ -57,7 +54,6 @@ from dl_query_processing.legend.field_legend import (
 )
 from dl_utils.utils import enum_not_none
 
-
 DATA_TYPES_SUPPORTING_TREE = frozenset(
     {
         UserDataType.tree_str,
@@ -67,7 +63,7 @@ DATA_TYPES_SUPPORTING_TREE = frozenset(
 
 @attr.s
 class LegendFormalizer(abc.ABC):
-    SUPPORTS_ROLES: ClassVar[set[FieldRole]]
+    SUPPORTS_ROLES: ClassVar[frozenset[FieldRole]]
     SUPPORTS_MEASURE_NAME: ClassVar[bool] = False
 
     _dataset: Dataset = attr.ib(kw_only=True)
@@ -80,16 +76,15 @@ class LegendFormalizer(abc.ABC):
     def validate_legend_item(self, item: LegendItem) -> None:
         """Redefine this to impose restrictions on legend items"""
         if item.role_spec.role not in self.SUPPORTS_ROLES:
-            raise dl_query_processing.exc.UnsopportedRoleInLegend(
+            raise dl_query_processing.exc.UnsopportedRoleInLegendError(
                 f"Legend role {item.role_spec.role.name} is not supported"
             )
 
         if not self.SUPPORTS_MEASURE_NAME and isinstance(item.obj, MeasureNameObjSpec):
-            raise dl_query_processing.exc.MeasureNameUnsupported()
+            raise dl_query_processing.exc.MeasureNameUnsupportedError()
 
-        if item.role_spec.role == FieldRole.tree:
-            if item.data_type not in DATA_TYPES_SUPPORTING_TREE:
-                raise dl_query_processing.exc.RoleDataTypeMismatch("Unsupported data type for tree role")
+        if item.role_spec.role == FieldRole.tree and item.data_type not in DATA_TYPES_SUPPORTING_TREE:
+            raise dl_query_processing.exc.RoleDataTypeMismatchError("Unsupported data type for tree role")
 
     def validate_legend(self, legend: Legend) -> None:
         for item in legend:
@@ -103,7 +98,7 @@ class LegendFormalizer(abc.ABC):
         legend_item_id: int,
         item_spec: RawFieldSpec,
         ignore_nonexistent_filters: bool,
-    ) -> Optional[LegendItem]:
+    ) -> LegendItem | None:
         # Make role spec
         role_spec: RoleSpec
         if isinstance(item_spec, RawSelectFieldSpec):
@@ -172,7 +167,7 @@ class LegendFormalizer(abc.ABC):
         else:
             try:
                 field_id = self._field_resolver.field_id_from_spec(item_spec.ref)
-            except core_exc.FieldNotFound:
+            except core_exc.FieldNotFoundError:
                 if role_spec.role == FieldRole.filter and ignore_nonexistent_filters:
                     return None
                 raise
@@ -287,10 +282,12 @@ class LegendFormalizer(abc.ABC):
         items: list[LegendItem] = []
         already_used_field_ids: set[str] = set()
         for item_spec in raw_query_spec_union.iter_item_specs():
-            if isinstance(item_spec, RawGroupByFieldSpec):
-                # Ignore group_by fields unless this field is not present in select
-                if self._field_resolver.field_id_from_spec(item_spec.ref) in already_used_field_ids:
-                    continue
+            # Ignore group_by fields unless this field is not present in select
+            if (
+                isinstance(item_spec, RawGroupByFieldSpec)
+                and self._field_resolver.field_id_from_spec(item_spec.ref) in already_used_field_ids
+            ):
+                continue
 
             item = self._resolve_item_spec(
                 legend_item_id=(
@@ -322,29 +319,33 @@ class LegendFormalizer(abc.ABC):
 
 @attr.s
 class ResultLegendFormalizer(LegendFormalizer):
-    SUPPORTS_ROLES = {
-        FieldRole.order_by,
-        FieldRole.filter,
-        FieldRole.parameter,
-        FieldRole.info,
-        FieldRole.row,
-        FieldRole.total,
-        FieldRole.template,
-        FieldRole.tree,
-        FieldRole.measure,
-    }
+    SUPPORTS_ROLES = frozenset(
+        {
+            FieldRole.order_by,
+            FieldRole.filter,
+            FieldRole.parameter,
+            FieldRole.info,
+            FieldRole.row,
+            FieldRole.total,
+            FieldRole.template,
+            FieldRole.tree,
+            FieldRole.measure,
+        }
+    )
 
 
 @attr.s
 class PreviewLegendFormalizer(LegendFormalizer):
-    SUPPORTS_ROLES = {
-        FieldRole.order_by,
-        FieldRole.filter,
-        FieldRole.parameter,
-        FieldRole.info,
-        FieldRole.row,
-        FieldRole.measure,
-    }
+    SUPPORTS_ROLES = frozenset(
+        {
+            FieldRole.order_by,
+            FieldRole.filter,
+            FieldRole.parameter,
+            FieldRole.info,
+            FieldRole.row,
+            FieldRole.measure,
+        }
+    )
 
     def generate_legend_items(self, raw_query_spec_union: RawQuerySpecUnion, id_gen: IdGenerator) -> list[LegendItem]:
         assert not raw_query_spec_union.select_specs  # preview's select is always autogenerated # FIXME: DL exception
@@ -372,13 +373,15 @@ class PreviewLegendFormalizer(LegendFormalizer):
 
 @attr.s
 class DistinctLegendFormalizer(LegendFormalizer):
-    SUPPORTS_ROLES = {
-        FieldRole.order_by,
-        FieldRole.filter,
-        FieldRole.parameter,
-        FieldRole.info,
-        FieldRole.distinct,
-    }
+    SUPPORTS_ROLES = frozenset(
+        {
+            FieldRole.order_by,
+            FieldRole.filter,
+            FieldRole.parameter,
+            FieldRole.info,
+            FieldRole.distinct,
+        }
+    )
 
     def validate_legend_item(self, item: LegendItem) -> None:
         super().validate_legend_item(item)
@@ -393,12 +396,14 @@ class DistinctLegendFormalizer(LegendFormalizer):
 
 @attr.s
 class RangeLegendFormalizer(LegendFormalizer):
-    SUPPORTS_ROLES = {
-        FieldRole.filter,
-        FieldRole.parameter,
-        FieldRole.info,
-        FieldRole.range,
-    }
+    SUPPORTS_ROLES = frozenset(
+        {
+            FieldRole.filter,
+            FieldRole.parameter,
+            FieldRole.info,
+            FieldRole.range,
+        }
+    )
 
     def validate_legend_item(self, item: LegendItem) -> None:
         super().validate_legend_item(item)
@@ -413,16 +418,18 @@ class RangeLegendFormalizer(LegendFormalizer):
 
 @attr.s
 class PivotLegendFormalizer(LegendFormalizer):
-    SUPPORTS_ROLES = {
-        FieldRole.order_by,
-        FieldRole.filter,
-        FieldRole.parameter,
-        FieldRole.info,
-        FieldRole.row,
-        FieldRole.measure,
-        FieldRole.template,
-        FieldRole.total,
-    }
+    SUPPORTS_ROLES = frozenset(
+        {
+            FieldRole.order_by,
+            FieldRole.filter,
+            FieldRole.parameter,
+            FieldRole.info,
+            FieldRole.row,
+            FieldRole.measure,
+            FieldRole.template,
+            FieldRole.total,
+        }
+    )
     SUPPORTS_MEASURE_NAME = True
 
     def patch_legend(self, legend: Legend, id_gen: IdGenerator) -> None:
@@ -459,9 +466,11 @@ class PivotLegendFormalizer(LegendFormalizer):
 
 @attr.s
 class ValidationLegendFormalizer(LegendFormalizer):
-    SUPPORTS_ROLES = {
-        FieldRole.row,
-    }
+    SUPPORTS_ROLES = frozenset(
+        {
+            FieldRole.row,
+        }
+    )
 
     def generate_legend_items(self, raw_query_spec_union: RawQuerySpecUnion, id_gen: IdGenerator) -> list[LegendItem]:
         """Assume that all fields participate in the query"""

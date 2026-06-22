@@ -28,7 +28,7 @@ async def test_get_entry(
     entry_in_us: dl_us_entries_client.Entry,
 ) -> None:
     response = await us_entries_client.get_entry(dl_us_entries_client.EntryGetRequest(entry_id=entry_in_us.entry_id))
-    assert response == entry_in_us
+    assert response.model_dump() == entry_in_us.model_dump()
 
 
 @pytest.mark.asyncio
@@ -47,5 +47,5 @@ async def test_delete_entry(
 ) -> None:
     await us_entries_client.delete_entry(dl_us_entries_client.EntryDeleteRequest(entry_id=entry_in_us.entry_id))
 
-    with pytest.raises(dl_us_entries_client.EntryNotFoundError):
+    with pytest.raises(dl_us_entries_client.NotFoundError):
         await us_entries_client.get_entry(dl_us_entries_client.EntryGetRequest(entry_id=entry_in_us.entry_id))

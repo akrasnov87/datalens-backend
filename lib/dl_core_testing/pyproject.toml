@@ -25,17 +25,17 @@ dl-type-transformer = {path = "../dl_type_transformer"}
 dl-utils = {path = "../dl_utils"}
 docker = "*"
 Flask = "*"
+frozendict = "*"
 marshmallow = "*"
 psycopg2-binary = "*"
 pytest = "*"
 pytest-asyncio = "*"
-python = ">=3.10, <3.13"
+python = ">=3.12, <3.13"
 redis = "*"
 requests = "*"
 shortuuid = "*"
 sqlalchemy = "*"
 statcommons = {path = "../statcommons"}
-typing-extensions = "*"
 uwsgi = "*"
 Werkzeug = "*"
 

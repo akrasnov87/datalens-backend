@@ -1,8 +1,5 @@
-from typing import (
-    Any,
-    AsyncIterable,
-    Optional,
-)
+from collections.abc import AsyncIterable
+from typing import Any
 
 import attr
 
@@ -12,7 +9,6 @@ from dl_core.us_entry import (
 )
 from dl_core.us_manager.us_manager_async import AsyncUSManager
 from dl_maintenance.core.us_crawler_base import USEntryCrawler
-
 
 ALLOWED_ENTRY_SCOPES = ("connection", "dataset")
 
@@ -30,7 +26,7 @@ class SchemaVersionCrawler(USEntryCrawler):
         )
 
     async def process_entry_get_save_flag(
-        self, entry: USEntry, logging_extra: dict[str, Any], usm: Optional[AsyncUSManager] = None
+        self, entry: USEntry, logging_extra: dict[str, Any], usm: AsyncUSManager | None = None
     ) -> tuple[bool, str]:
         if entry.data.get("schema_version") is None:
             entry.data["schema_version"] = "1"

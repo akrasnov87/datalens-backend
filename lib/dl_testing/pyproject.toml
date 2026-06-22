@@ -14,10 +14,11 @@ boto3 = "*"
 botocore = "*"
 dl-api-commons = {path = "../dl_api_commons"}
 dl-configs = {path = "../dl_configs"}
+dl-s3 = {path = "../dl_s3"}
 dl-settings = {path = "../dl_settings"}
 dl-utils = {path = "../dl_utils"}
 pytest = "*"
-python = ">=3.10, <3.13"
+python = ">=3.12, <3.13"
 pyyaml = "*"
 
 [tool.mypy]
@@ -42,7 +43,6 @@ build-backend = "poetry.core.masonry.api"
 requires = ["poetry-core"]
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_testing_tests/"
 skip_compose = "true"
 target_path = "unit"

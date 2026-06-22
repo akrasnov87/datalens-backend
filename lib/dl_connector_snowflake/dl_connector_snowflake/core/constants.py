@@ -1,10 +1,9 @@
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DataSourceType,
     NotificationType,
     SourceBackendType,
 )
-
 
 BACKEND_TYPE_SNOWFLAKE = SourceBackendType.declare("SNOWFLAKE")
 

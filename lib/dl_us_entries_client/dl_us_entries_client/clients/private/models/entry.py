@@ -1,0 +1,156 @@
+import attrs
+import pydantic
+
+import dl_constants
+import dl_httpx
+import dl_json
+import dl_pydantic
+import dl_us_entries_client.exceptions as exceptions
+from dl_us_entries_client.models.base import BaseRequest
+from dl_us_entries_client.models.dataset import DatasetEntry
+from dl_us_entries_client.models.entry import (
+    Entry,
+    EntryData,
+    EntryId,
+)
+
+
+@attrs.define(kw_only=True, frozen=True)
+class PrivateEntryGetRequest(BaseRequest):
+    error_transformer: dl_httpx.ErrorTransformerProtocol = dl_httpx.StatusMapTransformer(
+        status_map={404: exceptions.NotFoundError.from_httpx_exception},
+    )
+
+    entry_id: EntryId
+    include_permissions_info: bool = False
+    component: str | None = "backend"
+    branch: dl_constants.USEntryBranch = dl_constants.USEntryBranch.published
+
+    @property
+    def path(self) -> str:
+        return f"/private/entries/{self.entry_id}"
+
+    @property
+    def method(self) -> str:
+        return "GET"
+
+    @property
+    def query_params(self) -> dict[str, str]:
+        params = super().query_params
+
+        if self.include_permissions_info:
+            params["includePermissionsInfo"] = "1"
+
+        params["branch"] = self.branch.value
+
+        return params
+
+    @property
+    def headers(self) -> dict[str, str]:
+        result = super().headers
+
+        if self.component is not None:
+            result[dl_constants.DLHeadersCommon.DL_COMPONENT.value.lower()] = self.component
+
+        return result
+
+
+class PrivateEntryGetResponse(Entry, dl_httpx.BaseResponseSchema): ...
+
+
+class PrivateDatasetEntryGetRequest(PrivateEntryGetRequest): ...
+
+
+class PrivateDatasetEntryGetResponse(DatasetEntry, PrivateEntryGetResponse): ...
+
+
+@attrs.define(kw_only=True, frozen=True)
+class PrivateEntryPostRequest(BaseRequest):
+    entry: EntryData
+    mode: dl_constants.USEntryMode = dl_constants.USEntryMode.publish
+
+    @property
+    def path(self) -> str:
+        return "/private/entries"
+
+    @property
+    def method(self) -> str:
+        return "POST"
+
+    @property
+    def body(self) -> dl_json.JsonSerializableMapping:
+        return self.entry.model_dump_jsonable()
+
+
+class PrivateEntryPostResponse(Entry, dl_httpx.BaseResponseSchema): ...
+
+
+@attrs.define(kw_only=True, frozen=True)
+class PrivateEntryDeleteRequest(BaseRequest):
+    error_transformer: dl_httpx.ErrorTransformerProtocol = dl_httpx.StatusMapTransformer(
+        status_map={
+            404: exceptions.NotFoundError.from_httpx_exception,
+            423: exceptions.EntryLockedError.from_httpx_exception,
+        },
+    )
+
+    entry_id: EntryId
+    lock_token: str | None = None
+
+    @property
+    def path(self) -> str:
+        return f"/private/entries/{self.entry_id}"
+
+    @property
+    def method(self) -> str:
+        return "DELETE"
+
+    @property
+    def query_params(self) -> dict[str, str]:
+        params = super().query_params
+
+        if self.lock_token is not None:
+            params["lockToken"] = self.lock_token
+
+        return params
+
+
+@attrs.define(kw_only=True, frozen=True)
+class PrivateEntryUnversionedDataPostRequest(BaseRequest):
+    error_transformer: dl_httpx.ErrorTransformerProtocol = dl_httpx.StatusMapTransformer(
+        status_map={
+            404: exceptions.NotFoundError.from_httpx_exception,
+            423: exceptions.EntryLockedError.from_httpx_exception,
+        },
+    )
+
+    entry_id: EntryId
+    unversioned_data: dl_json.JsonSerializableMapping
+    lock_token: str | None = None
+
+    @property
+    def path(self) -> str:
+        return f"/private/entries/{self.entry_id}/unversioned-data"
+
+    @property
+    def method(self) -> str:
+        return "POST"
+
+    @property
+    def body(self) -> dl_json.JsonSerializableMapping:
+        body: dict[str, dl_json.JsonSerializable] = {
+            "unversionedData": self.unversioned_data,
+        }
+
+        if self.lock_token is not None:
+            body["lockToken"] = self.lock_token
+
+        return body
+
+
+class PrivateEntryUnversionedDataPostResponse(dl_httpx.BaseResponseSchema):
+    entry_id: EntryId = pydantic.Field(alias="entryId")
+    unversioned_data: dl_pydantic.JsonableDict | None = pydantic.Field(
+        default=None,
+        alias="unversionedData",
+    )

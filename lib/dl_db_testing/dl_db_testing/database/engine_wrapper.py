@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Generator,
+    Sequence,
+)
 import contextlib
 from typing import (
     Any,
     ClassVar,
-    Generator,
-    Optional,
-    Sequence,
 )
 import urllib.parse
 
@@ -55,10 +56,10 @@ class EngineWrapperBase:
 
     # Internals
     _engine: Engine = attr.ib(init=False, default=None)
-    _connection: Optional[Connection] = attr.ib(init=False, default=None, repr=False)
+    _connection: Connection | None = attr.ib(init=False, default=None, repr=False)
 
     def _db_connect_params(self) -> dict:
-        return dict()
+        return {}
 
     def __attrs_post_init__(self) -> None:
         url = self._config.url
@@ -110,10 +111,10 @@ class EngineWrapperBase:
     def execute(self, query: Any, *multiparams: Any, **params: Any) -> sa.engine.CursorResult:
         return self._engine.execute(query, *multiparams, **params)
 
-    def has_table(self, table_name: str, schema: Optional[str] = None) -> bool:
+    def has_table(self, table_name: str, schema: str | None = None) -> bool:
         return self.dialect.has_table(self._engine, table_name, schema=schema)  # type: ignore  # 2024-01-29 # TODO: "has_table" of "Dialect" does not return a value  [func-returns-value]
 
-    def load_table(self, table_name: str, schema: Optional[str] = None) -> sa.Table:
+    def load_table(self, table_name: str, schema: str | None = None) -> sa.Table:
         return sa.Table(table_name, sa.MetaData(bind=self.engine), schema=schema, autoload=True)
 
     def create_table(self, table: sa.Table) -> None:
@@ -145,12 +146,11 @@ class EngineWrapperBase:
         self,
         columns: Sequence[sa.Column],
         *,
-        schema: Optional[str] = None,
-        table_name: Optional[str] = None,
+        schema: str | None = None,
+        table_name: str | None = None,
     ) -> sa.Table:
         table_name = table_name or f"test_table_{shortuuid.uuid()[:10].lower()}"
-        table = sa.Table(table_name, sa.MetaData(), *columns, schema=schema)
-        return table
+        return sa.Table(table_name, sa.MetaData(), *columns, schema=schema)
 
     def count_sql_sessions(self) -> int:
         return 0
@@ -159,20 +159,19 @@ class EngineWrapperBase:
         return self.dialect.identifier_preparer.quote(value)
 
     def get_conn_credentials(self, full: bool = False) -> dict:
-        return dict(
-            host=self.url.host,
-            port=int(self.url.port),  # type: ignore  # 2024-01-29 # TODO: Argument 1 to "int" has incompatible type "int | None"; expected "str | Buffer | SupportsInt | SupportsIndex | SupportsTrunc"  [arg-type]
-            username=self.url.username,
-            password=self.url.password,
-            db_name=self.url.database,
-        )
+        return {
+            "host": self.url.host,
+            "port": int(self.url.port),  # type: ignore  # 2024-01-29 # TODO: Argument 1 to "int" has incompatible type "int | None"; expected "str | Buffer | SupportsInt | SupportsIndex | SupportsTrunc"  [arg-type]
+            "username": self.url.username,
+            "password": self.url.password,
+            "db_name": self.url.database,
+        }
 
     def get_conn_hosts(self) -> tuple[str, ...]:
         host = self.get_conn_credentials(full=True).get("host")
         if host:
             return tuple(h.strip() for h in host.split(","))
-        else:
-            return ()
+        return ()
 
     @contextlib.contextmanager
     def connect(self) -> Generator[Connection, None, None]:
@@ -183,7 +182,7 @@ class EngineWrapperBase:
     def insert_into_table(self, table: sa.Table, data: Sequence[dict]) -> None:
         self.execute(table.insert(data))
 
-    def get_version(self) -> Optional[str]:
+    def get_version(self) -> str | None:
         return self.execute(sa.select([sa.func.version()])).scalar()
 
     def test(self) -> bool:

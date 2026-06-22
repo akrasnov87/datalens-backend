@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-)
+from typing import TYPE_CHECKING
 
 import attr
 
@@ -14,7 +11,6 @@ from dl_pivot.native.data_frame import (
     NativePivotDataFrame,
 )
 from dl_pivot.primitives import DataCellVector
-
 
 if TYPE_CHECKING:
     from dl_pivot.base.data_frame import PivotDataFrame
@@ -27,8 +23,8 @@ class NativePivotPaginator(PivotPaginator):
     def paginate(
         self,
         pivot_dframe: PivotDataFrame,
-        limit_rows: Optional[int] = None,
-        offset_rows: Optional[int] = None,
+        limit_rows: int | None = None,
+        offset_rows: int | None = None,
     ) -> PivotDataFrame:
         assert isinstance(pivot_dframe, NativePivotDataFrame)
 
@@ -45,9 +41,8 @@ class NativePivotPaginator(PivotPaginator):
                 value = pivot_dframe.data.get(double_key)
                 if value is not None:
                     new_data[double_key] = value
-                    if column_key in unused_column_keys:
-                        # column_key is used in the new data sub-set, so remove it from unused
-                        unused_column_keys.remove(column_key)
+                    # column_key is used in the new data sub-set, so remove it from unused
+                    unused_column_keys.discard(column_key)
 
         if self._remove_empty_columns:
             # If feature is enabled, clean up columns that have been left
@@ -59,9 +54,8 @@ class NativePivotPaginator(PivotPaginator):
             for unused_column_key in unused_column_keys:
                 new_column_keys.remove(unused_column_key)
 
-        new_pivot_dframe = NativePivotDataFrame(
+        return NativePivotDataFrame(
             data=new_data,
             row_keys=new_row_keys,
             column_keys=new_column_keys,
         )
-        return new_pivot_dframe

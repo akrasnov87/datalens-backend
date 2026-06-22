@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import (
+    AsyncIterable,
+    Callable,
+    Collection,
+    Coroutine,
+)
 from contextlib import (
     AsyncExitStack,
     asynccontextmanager,
@@ -9,12 +15,7 @@ import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncIterable,
-    Callable,
     ClassVar,
-    Collection,
-    Coroutine,
-    Optional,
 )
 
 from aiohttp import web
@@ -41,6 +42,7 @@ from dl_api_lib.dataset.cache_invalidation import (
     get_invalidation_payload_formula,
     get_invalidation_payload_sql,
 )
+from dl_api_lib.dataset.sys_parameters import resolve_sys_parameter_value_specs
 from dl_api_lib.dataset.validator import (
     DatasetValidator,
     validate_cache_invalidation_filters,
@@ -48,6 +50,7 @@ from dl_api_lib.dataset.validator import (
     validate_cache_invalidation_sql_mode,
 )
 from dl_api_lib.dataset.view import DatasetView
+from dl_api_lib.enums import USPermissionKind
 from dl_api_lib.query.formalization.block_formalizer import BlockFormalizer
 from dl_api_lib.query.formalization.legend_formalizer import (
     DistinctLegendFormalizer,
@@ -70,25 +73,27 @@ from dl_api_lib.request_model.data import (
     FieldAction,
 )
 from dl_api_lib.service_registry.service_registry import ApiServiceRegistry
+from dl_api_lib.utils.base import check_permission_on_entry
 from dl_app_tools.profiling_base import (
     GenericProfiler,
     generic_profiler,
     generic_profiler_async,
 )
-from dl_constants.api_constants import DLHeadersCommon
-from dl_constants.enums import (
+from dl_constants import (
     CacheInvalidationMode,
     DataSourceRole,
     FieldRole,
     NotificationType,
     RLSSubjectType,
+    USEntryBranch,
 )
+from dl_constants.api_constants import DLHeadersCommon
 from dl_core.cache_invalidation import CacheInvalidationError
 from dl_core.components.accessor import DatasetComponentAccessor
 from dl_core.data_source.base import DataSource
 from dl_core.data_source.collection import DataSourceCollectionFactory
 from dl_core.dataset_capabilities import DatasetCapabilities
-from dl_core.exc import USObjectNotFoundException
+from dl_core.exc import USObjectNotFoundError
 from dl_core.fields import ResultSchema
 from dl_core.reporting.notifications import get_notification_record
 from dl_core.us_dataset import Dataset
@@ -120,7 +125,6 @@ from dl_query_processing.postprocessing.primitives import (
 import dl_rls
 from dl_utils.task_runner import ConcurrentTaskRunner
 
-
 if TYPE_CHECKING:
     from dl_api_lib.query.formalization.raw_specs import RawQuerySpecUnion
 
@@ -132,13 +136,15 @@ LOGGER = logging.getLogger(__name__)
 class DatasetDataBaseView(BaseView):
     STORED_DATASET_REQUIRED: ClassVar[bool] = True
 
+    DATASET_VIEW_CLS: ClassVar[type[DatasetView]] = DatasetView
+
     profiler_prefix: ClassVar[str]
 
     dataset: Dataset
     ds_accessor: DatasetComponentAccessor
 
     @property
-    def dataset_id(self) -> Optional[str]:
+    def dataset_id(self) -> str | None:
         return self.request.match_info.get("ds_id")
 
     @property
@@ -164,7 +170,7 @@ class DatasetDataBaseView(BaseView):
         return service_registry
 
     @property
-    def rev_id(self) -> Optional[str]:
+    def rev_id(self) -> str | None:
         return self.request.query.get("rev_id")
 
     @asynccontextmanager  # type: ignore  # TODO: fix
@@ -176,7 +182,7 @@ class DatasetDataBaseView(BaseView):
     ) -> AsyncIterable[AsyncExitStack]:
         """
         See also:
-        `dl_api_lib.app.data_api.resources.dashsql.DashSQLView.enrich_logging_context`
+        `dl_api_lib.app.data_api.resources.sql_base.SQLBaseView._enrich_logging_context_with_conn`
         """
         async with AsyncExitStack() as stack:
             if self.dl_request.log_ctx_controller:
@@ -193,10 +199,10 @@ class DatasetDataBaseView(BaseView):
                             sr.get_conn_executor_factory().get_async_conn_executor_cls(target_conn).__qualname__
                         )
                         self.dl_request.log_ctx_controller.put_to_context("conn_exec_cls", ce_cls_str)
-                    except Exception:  # noqa
+                    except Exception:
                         LOGGER.exception("Can not get CE class for connection %s", target_conn.uuid)
 
-                except Exception:  # noqa
+                except Exception:
                     LOGGER.exception("Can not save connection info to logging context")
 
             stack.enter_context(GenericProfiler(f"{self.profiler_prefix}-{profiling_code}"))  # type: ignore  # TODO: fix
@@ -217,7 +223,9 @@ class DatasetDataBaseView(BaseView):
 
         params: dict[str, str] | None = None
         if self.rev_id is not None:
-            params = {"revId": self.rev_id}
+            params = {
+                "revId": self.rev_id,
+            }
 
         if self.dataset_id is None:
             if self.STORED_DATASET_REQUIRED:
@@ -235,21 +243,30 @@ class DatasetDataBaseView(BaseView):
                     params=params,
                     context_name="dataset",
                 )
-            except USObjectNotFoundException as e:
+            except USObjectNotFoundError as e:
                 raise web.HTTPNotFound(reason="Entity not found") from e
 
-            await us_manager.load_dependencies(dataset)
+            await us_manager.load_dataset_dependencies(
+                dataset,
+                respect_sources=True,
+            )
 
         self.dataset = dataset
         self.ds_accessor = DatasetComponentAccessor(dataset=dataset)
+
+    def is_dataset_edit_allowed(self) -> bool:
+        # In-memory datasets (no `permissions` attached) are created from the
+        # request body and have no US-side ACL — the caller is by definition
+        # entitled to mutate them.
+        if self.dataset.permissions is None:
+            return True
+        return check_permission_on_entry(self.dataset, USPermissionKind.edit)
 
     async def _apply_updates_to_dataset(
         self,
         req_model: DataRequestModel,
         us_manager: AsyncUSManager,
-        allow_rls_change: bool,
-        allow_settings_change: bool,
-        cached_dataset: Optional[Dataset],
+        cached_dataset: Dataset | None,
     ) -> DatasetUpdateInfo:
         services_registry = self.dl_request.services_registry
         assert isinstance(services_registry, ApiServiceRegistry)
@@ -258,9 +275,10 @@ class DatasetDataBaseView(BaseView):
         update_info = loader.update_dataset_from_body(
             dataset=self.dataset,
             us_manager=us_manager,
-            dataset_data=req_model.dataset,
-            allow_rls_change=allow_rls_change,
-            allow_settings_change=allow_settings_change,
+            dataset_data=req_model.get_dataset_data(),
+            allow_rls_change=False,
+            allow_settings_change=False,
+            allow_query_settings_change=False,
         )
 
         await self.resolve_rls_groups_for_dataset(req_model, services_registry)
@@ -284,8 +302,6 @@ class DatasetDataBaseView(BaseView):
     async def _prepare_dataset_from_cache_without_dataset_id(
         self,
         req_model: DataRequestModel,
-        allow_rls_change: bool = False,
-        allow_settings_change: bool = False,
     ) -> DatasetUpdateInfo:
         us_manager = self.dl_request.us_manager
 
@@ -304,15 +320,16 @@ class DatasetDataBaseView(BaseView):
             # Empty dataset, possibly can't be in cache
             self.dataset = dataset
 
-            await us_manager.load_dependencies(self.dataset)
+            await us_manager.load_dataset_dependencies(
+                self.dataset,
+                respect_sources=True,
+            )
 
             self.ds_accessor = DatasetComponentAccessor(dataset=self.dataset)
 
             update_info = await self._apply_updates_to_dataset(
                 req_model,
                 us_manager,
-                allow_rls_change,
-                allow_settings_change,
                 cached_dataset=None,
             )
 
@@ -324,26 +341,26 @@ class DatasetDataBaseView(BaseView):
                     self.dataset_id, dataset.revision_id, req_model.updates
                 )
 
-                await self.try_save_dataset_to_cache(mutation_cache, mutation_key, self.dataset)  # noqa
+                await self.try_save_dataset_to_cache(mutation_cache, mutation_key, self.dataset)
 
         return update_info
 
     async def _prepare_dataset_from_cache_with_dataset_id(
         self,
         req_model: DataRequestModel,
-        allow_rls_change: bool = False,
-        allow_settings_change: bool = False,
     ) -> DatasetUpdateInfo:
         us_manager = self.dl_request.us_manager
 
         params: dict[str, str] | None = None
         if self.rev_id is not None:
-            params = {"revId": self.rev_id}
+            params = {
+                "revId": self.rev_id,
+            }
 
         try:
             assert self.dataset_id is not None
             us_resp = await us_manager.get_by_id_raw(self.dataset_id, params=params)
-        except USObjectNotFoundException as e:
+        except USObjectNotFoundError as e:
             raise web.HTTPNotFound(reason="Entity not found") from e
 
         # TODO: Try using partial deserialization instead of direct dict lookup if possible
@@ -383,15 +400,16 @@ class DatasetDataBaseView(BaseView):
 
                 self.dataset = dataset
 
-            await us_manager.load_dependencies(self.dataset)
+            await us_manager.load_dataset_dependencies(
+                self.dataset,
+                respect_sources=True,
+            )
 
             self.ds_accessor = DatasetComponentAccessor(dataset=self.dataset)
 
             update_info = await self._apply_updates_to_dataset(
                 req_model,
                 us_manager,
-                allow_rls_change,
-                allow_settings_change,
                 cached_dataset=cached_dataset,
             )
 
@@ -404,8 +422,6 @@ class DatasetDataBaseView(BaseView):
     async def prepare_dataset_with_mutation_cache(
         self,
         req_model: DataRequestModel,
-        allow_rls_change: bool = False,
-        allow_settings_change: bool = False,
     ) -> DatasetUpdateInfo:
         """Try take dataset from mutation cache to avoid double deserialization"""
         if self.dl_request.log_ctx_controller:
@@ -414,38 +430,33 @@ class DatasetDataBaseView(BaseView):
         if self.dataset_id is None:
             return await self._prepare_dataset_from_cache_without_dataset_id(
                 req_model=req_model,
-                allow_rls_change=allow_rls_change,
-                allow_settings_change=allow_settings_change,
             )
         return await self._prepare_dataset_from_cache_with_dataset_id(
             req_model=req_model,
-            allow_rls_change=allow_rls_change,
-            allow_settings_change=allow_settings_change,
         )
 
     @staticmethod
     def _updates_only_fields(updates: list[Action]) -> bool:
         # Checks if updates has only field updates
-        return all([isinstance(upd, FieldAction) for upd in updates])
+        return all(isinstance(upd, FieldAction) for upd in updates)
 
-    def try_get_mutation_key(self, updates: list[Action]) -> Optional[MutationKey]:
+    def try_get_mutation_key(self, updates: list[Action]) -> MutationKey | None:
         return self.try_get_mutation_key_for_dataset(self.dataset_id, self.dataset.revision_id, updates)
 
     @staticmethod
     def try_get_mutation_key_for_dataset(
-        dataset_id: Optional[str], revision_id: Optional[str], updates: list[Action]
-    ) -> Optional[MutationKey]:
+        dataset_id: str | None, revision_id: str | None, updates: list[Action]
+    ) -> MutationKey | None:
         # Cheat: replace None revision_id with empty string to allow caching
         if revision_id is None:
             revision_id = ""
 
-        if dataset_id is not None:
-            if DatasetDataBaseView._updates_only_fields(updates):
-                return UpdateDatasetMutationKey.create(revision_id, updates)  # type: ignore  # 2024-01-30 # TODO: Argument 2 to "create" of "UpdateDatasetMutationKey" has incompatible type "list[Action]"; expected "list[FieldAction]"  [arg-type]
+        if dataset_id is not None and DatasetDataBaseView._updates_only_fields(updates):
+            return UpdateDatasetMutationKey.create(revision_id, updates)  # type: ignore  # 2024-01-30 # TODO: Argument 2 to "create" of "UpdateDatasetMutationKey" has incompatible type "list[Action]"; expected "list[FieldAction]"  [arg-type]
         return None
 
     @generic_profiler("mutation-cache-init")
-    def try_get_cache(self, allow_slave: bool) -> Optional[USEntryMutationCache]:
+    def try_get_cache(self, allow_slave: bool) -> USEntryMutationCache | None:
         try:
             mc_factory = self.dl_request.services_registry.get_mutation_cache_factory()
             if mc_factory is None:
@@ -453,20 +464,19 @@ class DatasetDataBaseView(BaseView):
                 return None
             mce_factory = self.dl_request.services_registry.get_mutation_cache_engine_factory(RedisCacheEngine)
             cache_engine = mce_factory.get_cache_engine(allow_slave)
-            mutation_cache = mc_factory.get_mutation_cache(
+            return mc_factory.get_mutation_cache(
                 usm=self.dl_request.us_manager,
                 engine=cache_engine,
             )
-            return mutation_cache
         except CacheInitializationError:  # Error creating factory with redis cache engine or something
-            LOGGER.error("Mutation cache error", exc_info=True)
+            LOGGER.exception("Mutation cache error")
             return None
 
     async def try_get_dataset_from_cache(
         self,
-        mutation_cache: Optional[USEntryMutationCache],
-        mutation_key: Optional[MutationKey],
-    ) -> Optional[Dataset]:
+        mutation_cache: USEntryMutationCache | None,
+        mutation_key: MutationKey | None,
+    ) -> Dataset | None:
         cached_dataset = await self.try_get_dataset_from_cache_by_id(
             self.dataset_id,
             self.dataset.revision_id,
@@ -486,11 +496,11 @@ class DatasetDataBaseView(BaseView):
     @staticmethod  # type: ignore  # TODO: fix
     @generic_profiler_async("mutation-cache-get")
     async def try_get_dataset_from_cache_by_id(
-        dataset_id: Optional[str],
-        revision_id: Optional[str],
-        mutation_cache: Optional[USEntryMutationCache],
-        mutation_key: Optional[MutationKey],
-    ) -> Optional[Dataset]:
+        dataset_id: str | None,
+        revision_id: str | None,
+        mutation_cache: USEntryMutationCache | None,
+        mutation_key: MutationKey | None,
+    ) -> Dataset | None:
         if mutation_key is None or mutation_cache is None:
             return None
         if dataset_id is None:
@@ -518,14 +528,14 @@ class DatasetDataBaseView(BaseView):
     @generic_profiler_async("mutation-cache-save")  # type: ignore  # TODO: fix
     async def try_save_dataset_to_cache(
         self,
-        mutation_cache: Optional[USEntryMutationCache],
-        mutation_key: Optional[MutationKey],
+        mutation_cache: USEntryMutationCache | None,
+        mutation_key: MutationKey | None,
         dataset: Dataset,
     ) -> None:
         if mutation_key is None:
-            return None
+            return
         if mutation_cache is None:
-            return None
+            return
         await mutation_cache.save_mutation_cache(dataset, mutation_key)
 
     async def resolve_rls_groups_for_dataset(
@@ -560,17 +570,15 @@ class DatasetDataBaseView(BaseView):
                 subject_groups.extend(groups)
         except HTTPError as exc:
             if exc.response.status_code == 404:
-                raise web.HTTPNotFound(reason="Cannot find RLS groups for subject")
-            LOGGER.error(f"Error while resolving RLS groups: {str(exc)}", exc_info=True)
+                raise web.HTTPNotFound(reason="Cannot find RLS groups for subject") from exc
+            LOGGER.exception("Error while resolving RLS groups")
             raise exc
-        LOGGER.info(f"Subject groups for RLS: {subject_groups}")
+        LOGGER.info("Subject groups for RLS: %s", subject_groups)
         self.dataset.rls.allowed_groups = set(subject_groups)
 
     async def prepare_dataset_for_request(
         self,
         req_model: DataRequestModel,
-        allow_rls_change: bool = False,
-        allow_settings_change: bool = False,
         enable_mutation_caching: bool = False,
     ) -> DatasetUpdateInfo:
         us_manager = self.dl_request.us_manager
@@ -579,7 +587,7 @@ class DatasetDataBaseView(BaseView):
         assert isinstance(services_registry, ApiServiceRegistry)
         loader = DatasetApiLoader(service_registry=services_registry)
 
-        cached_dataset: Optional[Dataset] = None
+        cached_dataset: Dataset | None = None
         with GenericProfiler("dataset-prepare"):
             if enable_mutation_caching:
                 mutation_cache = self.try_get_cache(allow_slave=False)
@@ -589,12 +597,24 @@ class DatasetDataBaseView(BaseView):
                 if cached_dataset:
                     self.dataset = cached_dataset
 
+            if self.dataset_id is not None:
+                # raw entry to avoid double deserialization
+                ds_raw = await us_manager.get_migrated_entry(
+                    self.dataset_id,
+                    branch=USEntryBranch.saved,
+                    context_name="dataset",
+                )
+                latest_revision_id = ds_raw["data"].get("revision_id")
+            else:
+                latest_revision_id = None
             update_info = loader.update_dataset_from_body(
                 dataset=self.dataset,
                 us_manager=us_manager,
-                dataset_data=req_model.dataset,
-                allow_rls_change=allow_rls_change,
-                allow_settings_change=allow_settings_change,
+                dataset_data=req_model.get_dataset_data(),
+                allow_rls_change=False,
+                allow_settings_change=False,
+                allow_query_settings_change=False,
+                latest_revision_id=latest_revision_id,
             )
             await self.resolve_rls_groups_for_dataset(req_model, services_registry)
 
@@ -602,7 +622,10 @@ class DatasetDataBaseView(BaseView):
                 await self.check_for_notifications(services_registry, us_manager)
                 return update_info
 
-            await us_manager.load_dependencies(self.dataset)
+            await us_manager.load_dataset_dependencies(
+                self.dataset,
+                respect_sources=True,
+            )
 
             services_registry = self.dl_request.services_registry
             assert isinstance(services_registry, ApiServiceRegistry)
@@ -618,7 +641,7 @@ class DatasetDataBaseView(BaseView):
             executor = services_registry.get_compute_executor()
             await executor.execute(lambda: ds_validator.apply_batch(action_batch=req_model.updates))
             if enable_mutation_caching:
-                await self.try_save_dataset_to_cache(mutation_cache, mutation_key, self.dataset)  # noqa
+                await self.try_save_dataset_to_cache(mutation_cache, mutation_key, self.dataset)
 
         return update_info
 
@@ -638,7 +661,17 @@ class DatasetDataBaseView(BaseView):
             parameter_value_spec = ParameterValueSpec(field_id=field_id, value=parameter_role_spec.value)
             result.append(parameter_value_spec)
 
-        return result
+            self.register_param_values(
+                self.dl_request.rci.secret_keeper,
+                field_id,
+                parameter_role_spec.value,
+            )
+
+        return resolve_sys_parameter_value_specs(
+            parameter_value_specs=result,
+            result_schema=self.dataset.result_schema,
+            rci=self.dl_request.rci,
+        )
 
     async def check_for_notifications(self, services_registry: ApiServiceRegistry, us_manager: AsyncUSManager) -> None:
         ds_lc_manager = us_manager.get_lifecycle_manager(self.dataset)
@@ -743,10 +776,7 @@ class DatasetDataBaseView(BaseView):
         if connection is None:
             return False
 
-        if not connection.is_cache_invalidation_enabled:
-            return False
-
-        return True
+        return connection.is_cache_invalidation_enabled
 
     async def _get_cache_invalidation_payload(self) -> str | None:
         cache_invalidation_source = self.dataset.data.cache_invalidation_source
@@ -781,7 +811,7 @@ class DatasetDataBaseView(BaseView):
         field = cache_invalidation_source.field
 
         original_result_schema = self.dataset.result_schema
-        patched_result_schema = ResultSchema(fields=list(original_result_schema.fields) + [field])
+        patched_result_schema = ResultSchema(fields=[*list(original_result_schema.fields), field])
         self.dataset.data.result_schema = patched_result_schema
 
         try:
@@ -789,16 +819,15 @@ class DatasetDataBaseView(BaseView):
                 RawSelectFieldSpec(ref=IdFieldRef(id=field.guid)),
             ]
 
-            filter_specs: list[RawFilterFieldSpec] = []
-            for obligatory_filter in cache_invalidation_source.filters:
-                for default_filter in obligatory_filter.default_filters:
-                    filter_specs.append(
-                        RawFilterFieldSpec(
-                            ref=IdFieldRef(id=obligatory_filter.field_guid),
-                            operation=default_filter.operation,
-                            values=default_filter.values,
-                        )
-                    )
+            filter_specs: list[RawFilterFieldSpec] = [
+                RawFilterFieldSpec(
+                    ref=IdFieldRef(id=obligatory_filter.field_guid),
+                    operation=default_filter.operation,
+                    values=default_filter.values,
+                )
+                for obligatory_filter in cache_invalidation_source.filters
+                for default_filter in obligatory_filter.default_filters
+            ]
 
             raw_query_spec_union = RawQuerySpecUnion(
                 select_specs=select_specs,
@@ -826,7 +855,7 @@ class DatasetDataBaseView(BaseView):
     async def execute_query(
         self,
         block_spec: BlockSpec,
-        possible_data_lengths: Optional[Collection] = None,
+        possible_data_lengths: Collection | None = None,
         profiling_postfix: str = "",
         parameter_value_specs: list[ParameterValueSpec] | None = None,
         allow_cache_usage: bool | None = None,
@@ -836,7 +865,7 @@ class DatasetDataBaseView(BaseView):
 
         us_manager = self.dl_request.us_manager
 
-        ds_view = DatasetView(
+        ds_view = self.DATASET_VIEW_CLS(
             ds=self.dataset,
             us_manager=us_manager,
             block_spec=block_spec,
@@ -862,12 +891,10 @@ class DatasetDataBaseView(BaseView):
                 assert len(executed_query.rows) in possible_data_lengths
 
         postprocessor = DataPostprocessor(profiler_prefix=self.profiler_prefix)
-        postprocessed_query = postprocessor.get_postprocessed_data(
+        return postprocessor.get_postprocessed_data(
             executed_query=executed_query,
             block_spec=block_spec,
         )
-
-        return postprocessed_query
 
     async def execute_all_queries(
         self,
@@ -937,37 +964,35 @@ class DatasetDataBaseView(BaseView):
         self,
         req_model: DataRequestModel,
         merged_stream: MergedQueryDataStream,
-        totals_query: Optional[str] = None,
-        totals: Optional[PostprocessedRow] = None,
+        totals_query: str | None = None,
+        totals: PostprocessedRow | None = None,
     ) -> dict[str, Any]:
         add_fields_data = req_model.add_fields_data
-        fields_data: Optional[list[dict[str, Any]]] = None
+        fields_data: list[dict[str, Any]] | None = None
         if add_fields_data:
             fields_data = get_fields_data_serializable(self.dataset, for_result=True)
-            LOGGER.info("Field schema data", extra=dict(fields=fields_data))
+            LOGGER.info("Field schema data", extra={"fields": fields_data})
 
         data_export_info = self.get_data_export_info()
 
-        response_json = DataRequestResponseSerializer.make_data_response_v1(
+        return DataRequestResponseSerializer.make_data_response_v1(
             merged_stream=merged_stream,
             totals=totals,
             totals_query=totals_query,
             data_export_info=data_export_info,
             fields_data=fields_data,
         )
-        return response_json
 
     def _make_response_v2(self, merged_stream: MergedQueryDataStream) -> dict[str, Any]:
         data_export_info = self.get_data_export_info()
 
-        result = DataRequestResponseSerializer.make_data_response_v2(
+        return DataRequestResponseSerializer.make_data_response_v2(
             merged_stream=merged_stream,
-            reporting_registry=self.dl_request.services_registry.get_reporting_registry()
-            if self.allow_notifications
-            else None,
+            reporting_registry=(
+                self.dl_request.services_registry.get_reporting_registry() if self.allow_notifications else None
+            ),
             data_export_info=data_export_info,
         )
-        return result
 
     def get_data_export_info(self) -> data_export_models.DataExportInfo:
         tenant = self.dl_request.rci.tenant
@@ -1026,20 +1051,21 @@ class DatasetDataBaseView(BaseView):
         )
 
     @staticmethod
-    def _check_dataset_revision_id(dataset_revision_id: Optional[str], req_model: DataRequestModel) -> None:
+    def _check_dataset_revision_id(dataset_revision_id: str | None, req_model: DataRequestModel) -> None:
         req_dataset_revision_id = req_model.dataset_revision_id
         if req_dataset_revision_id is not None and req_dataset_revision_id != dataset_revision_id:
             LOGGER.warning(
-                f"Dataset revision id mismatch: got {req_dataset_revision_id} from the request, "
-                f"but found {dataset_revision_id} in the current dataset"
+                "Dataset revision id mismatch: got %s from the request, but found %s in the current dataset",
+                req_dataset_revision_id,
+                dataset_revision_id,
             )
 
     @staticmethod
     def with_dataset_us_context(
-        coro: Callable[..., Coroutine[Any, Any, Any]]
+        coro: Callable[..., Coroutine[Any, Any, Any]],
     ) -> Callable[..., Coroutine[Any, Any, Any]]:
         @functools.wraps(coro)
-        async def wrapper(self: "DatasetDataBaseView", *args: Any, **kwargs: Any) -> Any:
+        async def wrapper(self: DatasetDataBaseView, *args: Any, **kwargs: Any) -> Any:
             if self.dataset_id is not None:
                 connection_headers = {
                     DLHeadersCommon.DATASET_ID.value: self.dataset_id,

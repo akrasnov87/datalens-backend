@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import (
-    Callable,
-    Optional,
-)
+from collections.abc import Callable
 
 import attr
 
@@ -26,7 +23,7 @@ class ConnectionPostgreSQLBase(ClassicConnectionSQL):
     class DataModel(ClassicConnectionSQL.DataModel):
         enforce_collate: PGEnforceCollateMode = attr.ib(default=PGEnforceCollateMode.auto)
         ssl_enable: bool = attr.ib(kw_only=True, default=False)
-        ssl_ca: Optional[str] = attr.ib(kw_only=True, default=None)
+        ssl_ca: str = attr.ib(kw_only=True, default=None)
         # НОВЫЙ ПАРАМЕТР В МОДЕЛИ ДАННЫХ
         read_only: bool = attr.ib(kw_only=True, default=False)
 
@@ -43,7 +40,7 @@ class ConnectionPostgreSQLBase(ClassicConnectionSQL):
 
         assert self.has_schema
         return [
-            dict(schema_name=tid.schema_name, table_name=tid.table_name)
+            {"schema_name": tid.schema_name, "table_name": tid.table_name}
             for tid in self.get_tables(
                 conn_executor_factory=conn_executor_factory, search_text=search_text, limit=limit, offset=offset
             )

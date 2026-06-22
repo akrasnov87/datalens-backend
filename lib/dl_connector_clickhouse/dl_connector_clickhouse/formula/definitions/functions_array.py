@@ -10,22 +10,19 @@ from dl_formula.definitions.literals import un_literal
 
 from dl_connector_clickhouse.formula.constants import ClickHouseDialect as D
 
-
 V = TranslationVariant.make
 
 
 class FuncArrayContainsCHConst(base.FuncArrayContains):
-    argument_types = [
+    argument_types = (
         ArgTypeSequence([DataType.CONST_ARRAY_INT, DataType.NULL]),
         ArgTypeSequence([DataType.CONST_ARRAY_FLOAT, DataType.NULL]),
         ArgTypeSequence([DataType.CONST_ARRAY_STR, DataType.NULL]),
         ArgTypeSequence([DataType.CONST_ARRAY_INT, DataType.CONST_INTEGER]),
         ArgTypeSequence([DataType.CONST_ARRAY_FLOAT, DataType.CONST_FLOAT]),
         ArgTypeSequence([DataType.CONST_ARRAY_STR, DataType.CONST_STRING]),
-    ]
-    variants = [
-        V(D.CLICKHOUSE, sa.func.has),
-    ]
+    )
+    variants = (V(D.CLICKHOUSE, sa.func.has),)
 
 
 class FuncArrayContainsCHIndexed(base.FuncArrayContains):
@@ -33,12 +30,12 @@ class FuncArrayContainsCHIndexed(base.FuncArrayContains):
     Optimized version of FuncArrayContains for indexed columns.
     """
 
-    argument_types = [
+    argument_types = (
         ArgTypeSequence([DataType.CONST_ARRAY_INT, DataType.INTEGER]),
         ArgTypeSequence([DataType.CONST_ARRAY_FLOAT, DataType.FLOAT]),
         ArgTypeSequence([DataType.CONST_ARRAY_STR, DataType.STRING]),
-    ]
-    variants = [
+    )
+    variants = (
         V(
             D.CLICKHOUSE,
             lambda array, value: sa.func.if_(
@@ -47,7 +44,7 @@ class FuncArrayContainsCHIndexed(base.FuncArrayContains):
                 (value.op("IN")(array)).op("AND")(sa.func.isNotNull(value)),
             ),
         ),
-    ]
+    )
 
 
 DEFINITIONS_ARRAY = [

@@ -9,6 +9,7 @@ from .base import (
     BaseWorkflowError,
     BaseWorkflowParams,
     BaseWorkflowResult,
+    LoggingExcluded,
     ParentContext,
     ResultType,
     SearchAttribute,
@@ -17,17 +18,30 @@ from .base import (
     define_workflow,
 )
 from .client import (
-    AlreadyExists,
+    AlreadyExistsError,
     EmptyMetadataProvider,
     EmptyMetadataProviderSettings,
     MetadataProvider,
     MetadataProviderSettings,
-    NotFound,
-    PermissionDenied,
+    NotFoundError,
+    PermissionDeniedError,
     TemporalClient,
     TemporalClientDependencies,
     TemporalClientError,
     TemporalClientSettings,
+)
+from .interceptor import TemporalInterceptor
+from .middlewares import (
+    ActivityHandler,
+    ActivityMiddleware,
+    LoggingActivityMiddleware,
+    LoggingWorkflowMiddleware,
+    MetricsActivityMiddleware,
+    MetricsWorkflowMiddleware,
+    ParentContextWorkflowMiddleware,
+    SearchAttributesWorkflowMiddleware,
+    WorkflowHandler,
+    WorkflowMiddleware,
 )
 from .temporal import (
     SyncSchedulesFromDynconfigActivity,
@@ -39,10 +53,11 @@ from .temporal import (
 )
 from .worker import create_worker
 
-
 __all__ = [
+    "ActivityHandler",
+    "ActivityMiddleware",
     "ActivityProtocol",
-    "AlreadyExists",
+    "AlreadyExistsError",
     "BaseActivity",
     "BaseActivityError",
     "BaseActivityParams",
@@ -54,13 +69,20 @@ __all__ = [
     "BaseWorkflowResult",
     "EmptyMetadataProvider",
     "EmptyMetadataProviderSettings",
+    "LoggingActivityMiddleware",
+    "LoggingExcluded",
+    "LoggingWorkflowMiddleware",
     "MetadataProvider",
     "MetadataProviderSettings",
-    "NotFound",
+    "MetricsActivityMiddleware",
+    "MetricsWorkflowMiddleware",
+    "NotFoundError",
     "ParentContext",
-    "PermissionDenied",
+    "ParentContextWorkflowMiddleware",
+    "PermissionDeniedError",
     "ResultType",
     "SearchAttribute",
+    "SearchAttributesWorkflowMiddleware",
     "SyncSchedulesFromDynconfigActivity",
     "SyncSchedulesFromDynconfigActivityParams",
     "SyncSchedulesFromDynconfigActivityResult",
@@ -71,6 +93,9 @@ __all__ = [
     "TemporalClientDependencies",
     "TemporalClientError",
     "TemporalClientSettings",
+    "TemporalInterceptor",
+    "WorkflowHandler",
+    "WorkflowMiddleware",
     "WorkflowProtocol",
     "create_worker",
     "define_activity",

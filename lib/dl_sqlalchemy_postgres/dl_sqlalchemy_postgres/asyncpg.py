@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from typing import Any
+
+from frozendict import frozendict
 from sqlalchemy import util
 from sqlalchemy.dialects.postgresql import (
     INTERVAL,
@@ -50,7 +53,7 @@ class AsyncpgFloat(AsyncpgNumeric):
 # we have to replace it by native SA asyncpg tools after their release
 # see https://docs.sqlalchemy.org/en/14/orm/extensions/asyncio.html
 class DBAPIMock:
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         pass
 
     STRING = util.symbol("STRING")
@@ -75,27 +78,29 @@ class DBAPIMock:
     DATETIME = TIMESTAMP
     BINARY = BYTEA
 
-    pg_types = {
-        STRING: "varchar",
-        TIMESTAMP: "timestamp",
-        TIMESTAMP_W_TZ: "timestamp with time zone",
-        DATE: "date",
-        TIME: "time",
-        INTERVAL: "interval",
-        NUMBER: "numeric",
-        FLOAT: "float",
-        BOOLEAN: "bool",
-        INTEGER: "integer",
-        BIGINTEGER: "bigint",
-        BYTES: "bytes",
-        DECIMAL: "decimal",
-        JSON: "json",
-        JSONB: "jsonb",
-        ENUM: "enum",
-        UUID: "uuid",
-        BYTEA: "bytea",
-        CITEXT: "citext",
-    }
+    pg_types = frozendict(
+        {
+            STRING: "varchar",
+            TIMESTAMP: "timestamp",
+            TIMESTAMP_W_TZ: "timestamp with time zone",
+            DATE: "date",
+            TIME: "time",
+            INTERVAL: "interval",
+            NUMBER: "numeric",
+            FLOAT: "float",
+            BOOLEAN: "bool",
+            INTEGER: "integer",
+            BIGINTEGER: "bigint",
+            BYTES: "bytes",
+            DECIMAL: "decimal",
+            JSON: "json",
+            JSONB: "jsonb",
+            ENUM: "enum",
+            UUID: "uuid",
+            BYTEA: "bytea",
+            CITEXT: "citext",
+        }
+    )
 
 
 # special dialect for asyncpg adapter
@@ -140,7 +145,7 @@ class AsyncBIPGDialect(BIPGDialect):
         },
     )
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         # special hack for getting types in compile query
         self.dbapi = DBAPIMock()

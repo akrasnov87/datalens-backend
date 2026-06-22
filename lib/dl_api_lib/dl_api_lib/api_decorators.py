@@ -1,11 +1,9 @@
+from collections.abc import Callable
 from functools import wraps
 import json
 import logging
 import sys
-from typing import (
-    Callable,
-    Optional,
-)
+from typing import Any
 
 import flask
 from flask import request
@@ -23,11 +21,10 @@ from dl_api_lib.error_handling import (
 )
 from dl_api_lib.schemas.main import get_api_model
 
-
 LOGGER = logging.getLogger(__name__)
 
 
-def abort_request(code, message=None, response_data: Optional[dict] = None) -> None:  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+def abort_request(code, message=None, response_data: dict | None = None) -> None:  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation for one or more arguments  [no-untyped-def]
     """
     Copy-paste of `flask_restx.abort`, but without passing additional data through **kwargs.
     So we can to pass field "code" to response json.
@@ -51,9 +48,9 @@ def abort_request(code, message=None, response_data: Optional[dict] = None) -> N
 
 def schematic_request(  # type: ignore  # TODO: fix
     ns: Namespace,
-    body: Optional[Schema] = None,
-    query: Optional[Schema] = None,
-    responses: Optional[dict[int, tuple[str, Optional[Schema]]]] = None,
+    body: Schema | None = None,
+    query: Schema | None = None,
+    responses: dict[int, tuple[str, Schema | None]] | None = None,
     dump: bool = True,
 ):
     """
@@ -79,7 +76,7 @@ def schematic_request(  # type: ignore  # TODO: fix
                 f = ns.response(code, description, model)(f)
 
         @wraps(f)
-        def wrapper(*args, **kwargs):  # type: ignore  # TODO: fix
+        def wrapper(*args: Any, **kwargs: Any) -> tuple[Any, int]:
             body = request.get_json() if body_schema is not None else None
 
             if LOGGER.isEnabledFor(logging.INFO):
@@ -90,8 +87,8 @@ def schematic_request(  # type: ignore  # TODO: fix
                 if url.startswith(pfx):
                     url = "https://" + url[len(pfx) :]
                 LOGGER.info("Body (piece) for %s: %s...", url, dbg_body[:1000])
-                extra = dict(
-                    request_path=request.full_path,
+                extra = {
+                    "request_path": request.full_path,
                     # Tricky point:
                     # Can either use the `dbg_body` as a string, pre-dumped
                     # into json, in which case it will be handled as a
@@ -100,8 +97,8 @@ def schematic_request(  # type: ignore  # TODO: fix
                     # dump it into json, then, in the logfeller, it will be
                     # loaded (full structure) into memory and then dumped into
                     # YSON.
-                    request_body=dbg_body,
-                )
+                    "request_body": dbg_body,
+                }
                 LOGGER.debug("Body for %s: %s...", url, dbg_body[:100], extra=extra)
                 del dbg_body_data
                 del dbg_body
@@ -114,7 +111,7 @@ def schematic_request(  # type: ignore  # TODO: fix
 
             if body_schema is not None:
                 try:
-                    kwargs["body"] = body_schema.load(body)
+                    kwargs["body"] = body_schema.load(body)  # type: ignore[arg-type]  # 26.05.2026 mypy bump 1.20.2
                 except MValidationError as err:
                     LOGGER.exception("Validation errors")
                     abort_request(status.BAD_REQUEST, err.messages)
@@ -160,12 +157,12 @@ def schematic_request(  # type: ignore  # TODO: fix
     return decorator
 
 
-def with_profiler_stats(stats_dir: str, condition_check: Callable = None):  # type: ignore  # TODO: fix
+def with_profiler_stats(stats_dir: str, condition_check: Callable | None = None):  # type: ignore  # TODO: fix
     """Run function with cProfiler and save stats to file"""
 
     def decorator(func):  # type: ignore  # TODO: fix
         @wraps(func)
-        def wrapper(*args, **kwargs):  # type: ignore  # TODO: fix
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             if condition_check is None or condition_check(*args, **kwargs):
                 with utils.profile_stats(stats_dir):
                     return func(*args, **kwargs)

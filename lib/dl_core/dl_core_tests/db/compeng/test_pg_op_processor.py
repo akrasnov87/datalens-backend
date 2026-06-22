@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import (
+    UTC,
     datetime,
     timedelta,
-    timezone,
 )
 from typing import ClassVar
 import uuid
@@ -19,7 +19,7 @@ from dl_compeng_pg.compeng_asyncpg.pool_asyncpg import AsyncpgPoolWrapper
 from dl_compeng_pg.compeng_asyncpg.processor_asyncpg import AsyncpgOperationProcessor
 from dl_compeng_pg.compeng_pg_base.pool_base import BasePgPoolWrapper
 from dl_compeng_pg.compeng_pg_base.processor_base import PostgreSQLOperationProcessor
-from dl_constants.enums import (
+from dl_constants import (
     JoinType,
     UserDataType,
 )
@@ -51,15 +51,17 @@ class PGOpRunnerTestBase(DefaultCoreTestClass):
     async def pg_op_processor(self, loop, conn_default_service_registry) -> PostgreSQLOperationProcessor:
         reporting_registry = conn_default_service_registry.get_reporting_registry()
         compeng_pg_dsn = self.core_test_config.get_compeng_url()
-        async with self.PG_POOL_WRAPPER_CLS.context(compeng_pg_dsn) as pool_wrapper:
-            async with self.PG_PROCESSOR_CLS(reporting_registry=reporting_registry, pg_pool=pool_wrapper) as processor:
-                yield processor
+        async with (
+            self.PG_POOL_WRAPPER_CLS.context(compeng_pg_dsn) as pool_wrapper,
+            self.PG_PROCESSOR_CLS(reporting_registry=reporting_registry, pg_pool=pool_wrapper) as processor,
+        ):
+            yield processor
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def input_stream(self) -> DataStreamAsync:
         names = ["int_value", "str_value", "dt_value", "gdt_value"]
         user_types = [UserDataType.integer, UserDataType.string, UserDataType.datetime, UserDataType.genericdatetime]
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         input_data = [
             [
                 i,

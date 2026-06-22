@@ -1,4 +1,4 @@
-from typing import Sequence
+from collections.abc import Sequence
 
 from dl_api_commons.base_models import TenantDef
 from dl_api_connector.form_config.models.api_schema import (
@@ -16,10 +16,16 @@ from dl_api_connector.form_config.models.common import (
     CommonFieldName,
     FormFieldName,
 )
-import dl_api_connector.form_config.models.rows as C
+from dl_api_connector.form_config.models.rows import (
+    CacheTTLRow,
+    CustomizableRow,
+    LabelRowItem,
+    RadioButtonRowItem,
+    SelectableOption,
+)
 from dl_api_connector.form_config.models.rows.base import FormRow
 from dl_api_connector.form_config.models.shortcuts.rows import RowConstructor
-from dl_constants.enums import RawSQLLevel
+from dl_constants import RawSQLLevel
 from dl_core.connectors.settings.base import ConnectorSettings
 
 from dl_connector_mysql.api.connection_info import MySQLConnectionInfoProvider
@@ -33,25 +39,25 @@ class MySQLFieldName(FormFieldName):
 
 
 class MySQLRowConstructor(RowConstructor):
-    def enforce_collate_row(self) -> C.CustomizableRow:
-        return C.CustomizableRow(
+    def enforce_collate_row(self) -> CustomizableRow:
+        return CustomizableRow(
             items=[
-                C.LabelRowItem(
+                LabelRowItem(
                     text=self._localizer.translate(Translatable("field_enforce-collate")),
                     display_conditions={CommonFieldName.advanced_settings: "opened"},
                 ),
-                C.RadioButtonRowItem(
+                RadioButtonRowItem(
                     name=MySQLFieldName.enforce_collate,
                     options=[
-                        C.SelectableOption(
+                        SelectableOption(
                             text=self._localizer.translate(Translatable("value_enforce-collate-auto")),
                             value=MySQLEnforceCollateMode.auto.value,
                         ),
-                        C.SelectableOption(
+                        SelectableOption(
                             text=self._localizer.translate(Translatable("value_enforce-collate-off")),
                             value=MySQLEnforceCollateMode.off.value,
                         ),
-                        C.SelectableOption(
+                        SelectableOption(
                             text=self._localizer.translate(Translatable("value_enforce-collate-on")),
                             value=MySQLEnforceCollateMode.on.value,
                         ),
@@ -109,18 +115,21 @@ class MySQLConnectionFormFactory(ConnectionFormFactory):
         rc: MySQLRowConstructor,
         connector_settings: ConnectorSettings | None,
     ) -> Sequence[FormRow]:
-        assert connector_settings is not None and isinstance(connector_settings, MySQLConnectorSettings)
+        assert connector_settings is not None
+        assert isinstance(connector_settings, MySQLConnectorSettings)
 
         raw_sql_levels = [RawSQLLevel.subselect, RawSQLLevel.dashsql]
         if connector_settings.ENABLE_DATASOURCE_TEMPLATE:
             raw_sql_levels.append(RawSQLLevel.template)
+        if connector_settings.ENABLE_DIRECTSQL:
+            raw_sql_levels.append(RawSQLLevel.readwrite)
 
         form_params = self._get_form_params()
         is_invalidation_cache_enabled = form_params.feature_flags.is_invalidation_cache_enabled
 
         return self._filter_nulls(
             [
-                C.CacheTTLRow(name=CommonFieldName.cache_ttl_sec) if not is_invalidation_cache_enabled else None,
+                CacheTTLRow(name=CommonFieldName.cache_ttl_sec) if not is_invalidation_cache_enabled else None,
                 rc.raw_sql_level_row_v2(raw_sql_levels=raw_sql_levels),
                 *(rc.cache_rows() if is_invalidation_cache_enabled else []),
                 rc.collapse_advanced_settings_row(),
@@ -154,9 +163,13 @@ class MySQLConnectionFormFactory(ConnectionFormFactory):
                     FormFieldApiSchema(name=CommonFieldName.db_name, required=True),
                     FormFieldApiSchema(name=CommonFieldName.password, required=self.mode == ConnectionFormMode.create),
                     FormFieldApiSchema(name=CommonFieldName.cache_ttl_sec, nullable=True),
-                    FormFieldApiSchema(name=CommonFieldName.cache_invalidation_throttling_interval_sec, nullable=True)
-                    if is_invalidation_cache_enabled
-                    else None,
+                    (
+                        FormFieldApiSchema(
+                            name=CommonFieldName.cache_invalidation_throttling_interval_sec, nullable=True
+                        )
+                        if is_invalidation_cache_enabled
+                        else None
+                    ),
                     FormFieldApiSchema(name=CommonFieldName.raw_sql_level),
                     FormFieldApiSchema(name=MySQLFieldName.enforce_collate),
                     FormFieldApiSchema(name=CommonFieldName.ssl_enable),

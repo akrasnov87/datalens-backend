@@ -1,7 +1,4 @@
-from typing import (
-    Any,
-    Union,
-)
+from typing import Any
 
 import attr
 import sqlalchemy as sa
@@ -16,7 +13,6 @@ from dl_formula.connectors.base.literal import (
 from dl_formula.core.dialect import DialectCombo
 
 from dl_connector_postgresql.formula.constants import PostgreSQLDialect as D
-
 
 PG_SMALLINT_MIN = -32768
 PG_SMALLINT_MAX = 32767
@@ -36,7 +32,7 @@ def integer_to_pg_sa_type(value: int) -> type[Integer]:
 class BasePostgreSQLLiteralizer(Literalizer):
     __slots__ = ()
 
-    def literal_array(self, value: Union[tuple, list], dialect: DialectCombo) -> Literal:
+    def literal_array(self, value: tuple | list, dialect: DialectCombo) -> Literal:
         return sa_postgresql.array(value)
 
 

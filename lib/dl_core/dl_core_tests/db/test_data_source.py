@@ -1,6 +1,6 @@
 import copy
 
-from dl_constants.enums import (
+from dl_constants import (
     DataSourceType,
     RawSQLLevel,
 )
@@ -9,7 +9,6 @@ from dl_core.us_dataset import Dataset
 from dl_core_tests.db.base import DefaultCoreTestClass
 
 from dl_connector_clickhouse.core.clickhouse.constants import SOURCE_TYPE_CH_TABLE
-
 
 FAKE_CREATED_FROM = DataSourceType.declare("FAKE_SOURCE")
 

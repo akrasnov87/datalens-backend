@@ -8,6 +8,10 @@ crawler.print_stats()  # chars=False)
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import (
+    AsyncIterable,
+    Sequence,
+)
 from enum import (
     Enum,
     auto,
@@ -15,15 +19,7 @@ from enum import (
 )
 import json
 import statistics
-from typing import (
-    Any,
-    AsyncIterable,
-    Generic,
-    Optional,
-    Sequence,
-    TypeVar,
-    Union,
-)
+from typing import Any
 
 import attr
 
@@ -33,7 +29,6 @@ from dl_core.us_entry import (
 )
 from dl_core.us_manager.us_manager_async import AsyncUSManager
 from dl_maintenance.core.us_crawler_base import USEntryCrawler
-
 
 DEFAULT_QUANTILE_SETTINGS = (1000, [100, 750, 900, 950, 999])
 
@@ -96,11 +91,9 @@ class Metric(Enum):
 
 M = Metric  # for convenience
 
-_RAW_VALUE_TV = TypeVar("_RAW_VALUE_TV")
 
-
-class RawValueCollector(Generic[_RAW_VALUE_TV]):
-    def add_value(self, value: _RAW_VALUE_TV) -> None:
+class RawValueCollector[RAW_VALUE_TV]:
+    def add_value(self, value: RAW_VALUE_TV) -> None:
         raise NotImplementedError
 
     def get_aggregate(self, **kwargs: Any) -> dict[str, Any]:
@@ -118,7 +111,7 @@ class RawIntegerCollector(RawValueCollector[int]):
         self,
         parts: int,
         return_values: Sequence[int],
-    ) -> dict[str, Union[int, float]]:
+    ) -> dict[str, int | float]:
         results = statistics.quantiles(self._values, n=parts, method="inclusive")
         return {f"q{parts}_{ret_idx}": results[ret_idx - 1] for ret_idx in return_values}
 
@@ -147,7 +140,7 @@ class RawCharCollector(RawValueCollector[str]):
         self._values |= set(value)
 
     def get_aggregate(self, **kwargs: Any) -> dict[str, Any]:
-        return dict(chars="".join(sorted(self._values)))
+        return {"chars": "".join(sorted(self._values))}
 
 
 @attr.s
@@ -191,7 +184,7 @@ class DatasetMetricCollector(USEntryCrawler):
         return self.usm.get_raw_collection(entry_scope="dataset", all_tenants=crawl_all_tenants)
 
     async def process_entry_get_save_flag(
-        self, entry: USEntry, logging_extra: dict[str, Any], usm: Optional[AsyncUSManager] = None
+        self, entry: USEntry, logging_extra: dict[str, Any], usm: AsyncUSManager | None = None
     ) -> tuple[bool, str]:
         data = entry.data
         self._stats_collector.int_collector(M.ds_cnt_field_all).add_value(len(data["result_schema"]))

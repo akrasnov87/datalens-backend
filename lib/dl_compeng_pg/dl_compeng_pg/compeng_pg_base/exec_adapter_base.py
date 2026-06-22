@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import Sequence
 import logging
 from typing import (
     ClassVar,
     Generic,
-    Sequence,
     TypeVar,
-    Union,
 )
 
 import attr
@@ -16,7 +15,7 @@ from sqlalchemy.dialects.postgresql.psycopg2 import PGDialect_psycopg2
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.sql.base import Executable
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_core.connectors.base.query_compiler import QueryCompiler
 from dl_core.data_processing.processing.db_base.exec_adapter_base import ProcessorDbExecAdapterBase
 from dl_type_transformer.sa_types import make_sa_type
@@ -24,7 +23,6 @@ from dl_utils.streaming import AsyncChunkedBase
 
 from dl_connector_postgresql.core.postgresql.constants import BACKEND_TYPE_POSTGRES
 from dl_connector_postgresql.core.postgresql_base.type_transformer import PostgreSQLTypeTransformer
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -50,10 +48,10 @@ class PostgreSQLExecAdapterAsync(Generic[_CONN_TV], ProcessorDbExecAdapterBase, 
         return PGDialect_psycopg2()
 
     @abc.abstractmethod
-    async def _execute(self, query: Union[str, Executable]) -> None:
+    async def _execute(self, query: str | Executable) -> None:
         """Execute query without (necessarily) fetching data"""
 
-    async def _execute_ddl(self, query: Union[str, Executable]) -> None:
+    async def _execute_ddl(self, query: str | Executable) -> None:
         """Execute a DDL statement"""
         await self._execute(query)
 

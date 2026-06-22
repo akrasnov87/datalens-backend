@@ -1,5 +1,7 @@
+from frozendict import frozendict
 import sqlalchemy as sa
 import sqlalchemy.dialects.postgresql as sa_postgresql
+from sqlalchemy.sql.elements import ClauseElement
 
 from dl_formula.core.datatype import DataType
 from dl_formula.definitions.args import ArgTypeSequence
@@ -13,10 +15,10 @@ from dl_formula.definitions.common_datetime import ensure_naive_first_arg
 import dl_formula.definitions.functions_type as base
 from dl_formula.definitions.scope import Scope
 from dl_formula.shortcuts import n
+from dl_formula.translation.context import TranslationCtx
 
 from dl_connector_postgresql.formula.constants import PostgreSQLDialect as D
 from dl_connector_postgresql.formula.definitions.common import PG_INT_64_TO_CHAR_FMT
-
 
 V = TranslationVariant.make
 VW = TranslationVariantWrapped.make
@@ -24,17 +26,17 @@ VW = TranslationVariantWrapped.make
 
 class FuncTypeGenericDatetime2PGImpl(SingleVariantTranslationBase, base.FuncTypeGenericDatetime2Impl):
     dialects = D.POSTGRESQL
-    argument_types = [
+    argument_types = (
         ArgTypeSequence(
             [
                 {DataType.DATETIME, DataType.GENERICDATETIME, DataType.INTEGER, DataType.FLOAT, DataType.STRING},
                 DataType.CONST_STRING,
             ]
         ),
-    ]
+    )
 
     @classmethod
-    def _translate_main(cls, value_ctx, tz_ctx):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def _translate_main(cls, value_ctx: TranslationCtx, tz_ctx: TranslationCtx) -> ClauseElement:
         """
         Equivalent to `dt at time zone tz`.
         Its semantics:
@@ -86,7 +88,7 @@ class FuncTypeGenericDatetime2PGImpl(SingleVariantTranslationBase, base.FuncType
 
 class FuncDatetimeTZPG(SingleVariantTranslationBase, base.FuncDatetimeTZ):
     dialects = D.POSTGRESQL
-    argument_types = [
+    argument_types = (
         ArgTypeSequence(
             [
                 {
@@ -101,11 +103,12 @@ class FuncDatetimeTZPG(SingleVariantTranslationBase, base.FuncDatetimeTZ):
                 DataType.CONST_STRING,
             ]
         ),
-    ]
+    )
 
     @classmethod
-    def _translate_main(cls, value_ctx, tz_ctx):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def _translate_main(cls, value_ctx: TranslationCtx, tz_ctx: TranslationCtx) -> ClauseElement:
         value = value_ctx.expression
+        assert value is not None
         value_type = value_ctx.data_type
         tz = tz_ctx.expression
 
@@ -121,11 +124,10 @@ class FuncDatetimeTZPG(SingleVariantTranslationBase, base.FuncDatetimeTZ):
             return sa.func.timezone(tz, value)  # make `timestamptz`
 
         if value_type in (DataType.INTEGER, DataType.FLOAT):
-            value = sa.func.to_timestamp(value)  # -> `timestamptz`
             # The timezone goes into the data_type_params.
-            return value
+            return sa.func.to_timestamp(value)  # -> `timestamptz`
 
-        elif value_type == DataType.STRING:
+        if value_type == DataType.STRING:
             # Casting to `timestamptz` ensures tzoffset in ISO strings isn't ignored.
             value = sa.cast(value, sa.TIMESTAMP(timezone=True))
             # Then making the naive datetime of the value minus the offset (if it had one)
@@ -149,82 +151,92 @@ class FuncDatetimeTZToNaivePG(base.FuncDatetimeTZToNaive):
     dialects = D.POSTGRESQL | D.COMPENG
 
     @classmethod
-    def _translate_main(cls, value_ctx):  # type: ignore  # 2024-01-30 # TODO: Function is missing a type annotation  [no-untyped-def]
+    def _translate_main(cls, value_ctx: TranslationCtx) -> ClauseElement:
         expr = value_ctx.expression
+        assert value_ctx.data_type_params is not None
         tz = value_ctx.data_type_params.timezone
         assert tz
 
         # Ensure the value is tz-aware in the postgresql:
         expr = sa.cast(expr, sa.TIMESTAMP(timezone=True))
         # Convert to postgresql's tz-naive value:
-        expr = sa.func.timezone(tz, expr)
-        return expr
+        return sa.func.timezone(tz, expr)
 
 
 class FuncDbCastPostgreSQLBase(base.FuncDbCastBase):
-    WHITELISTS = {
-        pg_dialect: {
-            DataType.INTEGER: [
-                base.WhitelistTypeSpec(name="smallint", sa_type=sa_postgresql.SMALLINT),
-                base.WhitelistTypeSpec(name="integer", sa_type=sa_postgresql.INTEGER),
-                base.WhitelistTypeSpec(name="bigint", sa_type=sa_postgresql.BIGINT),
-            ],
-            DataType.FLOAT: [
-                base.WhitelistTypeSpec(name="double precision", sa_type=sa_postgresql.DOUBLE_PRECISION),
-                base.WhitelistTypeSpec(name="real", sa_type=sa_postgresql.REAL),
-                base.WhitelistTypeSpec(
-                    name="numeric", sa_type=sa_postgresql.NUMERIC, arg_types=base.DECIMAL_CAST_ARG_T
-                ),
-            ],
-            DataType.STRING: [
-                base.WhitelistTypeSpec(name="text", sa_type=sa_postgresql.TEXT),
-                base.WhitelistTypeSpec(name="character", sa_type=sa_postgresql.CHAR, arg_types=base.CHAR_CAST_ARG_T),
-                base.WhitelistTypeSpec(
-                    name="character varying", sa_type=sa_postgresql.VARCHAR, arg_types=base.CHAR_CAST_ARG_T
-                ),
-                # Here we'll make an exception and allow the usage of type aliases
-                # just because in this case they are probably much more widely used
-                # then the proper type names:
-                base.WhitelistTypeSpec(name="char", sa_type=sa_postgresql.CHAR, arg_types=base.CHAR_CAST_ARG_T),
-                base.WhitelistTypeSpec(name="varchar", sa_type=sa_postgresql.VARCHAR, arg_types=base.CHAR_CAST_ARG_T),
-            ],
-            DataType.ARRAY_STR: [
-                base.WhitelistTypeSpec(name="text[]", sa_type=sa_postgresql.ARRAY, nested_sa_type=sa_postgresql.TEXT),
-                base.WhitelistTypeSpec(
-                    name="character varying[]", sa_type=sa_postgresql.ARRAY, nested_sa_type=sa_postgresql.VARCHAR
-                ),
-                base.WhitelistTypeSpec(
-                    name="varchar[]", sa_type=sa_postgresql.ARRAY, nested_sa_type=sa_postgresql.VARCHAR
-                ),
-            ],
-            DataType.ARRAY_INT: [
-                base.WhitelistTypeSpec(
-                    name="smallint[]", sa_type=sa_postgresql.ARRAY, nested_sa_type=sa_postgresql.SMALLINT
-                ),
-                base.WhitelistTypeSpec(
-                    name="integer[]", sa_type=sa_postgresql.ARRAY, nested_sa_type=sa_postgresql.INTEGER
-                ),
-                base.WhitelistTypeSpec(
-                    name="bigint[]", sa_type=sa_postgresql.ARRAY, nested_sa_type=sa_postgresql.BIGINT
-                ),
-            ],
-            DataType.ARRAY_FLOAT: [
-                base.WhitelistTypeSpec(
-                    name="double precision[]",
-                    sa_type=sa_postgresql.ARRAY,
-                    nested_sa_type=sa_postgresql.DOUBLE_PRECISION,
-                ),
-                base.WhitelistTypeSpec(name="real[]", sa_type=sa_postgresql.ARRAY, nested_sa_type=sa_postgresql.REAL),
-                base.WhitelistTypeSpec(
-                    name="numeric[]",
-                    sa_type=sa_postgresql.ARRAY,
-                    nested_sa_type=sa_postgresql.NUMERIC,
-                    arg_types=base.DECIMAL_CAST_ARG_T,
-                ),
-            ],
+    WHITELISTS = frozendict(
+        {
+            pg_dialect: {
+                DataType.INTEGER: [
+                    base.WhitelistTypeSpec(name="smallint", sa_type=sa_postgresql.SMALLINT),
+                    base.WhitelistTypeSpec(name="integer", sa_type=sa_postgresql.INTEGER),
+                    base.WhitelistTypeSpec(name="bigint", sa_type=sa_postgresql.BIGINT),
+                ],
+                DataType.FLOAT: [
+                    base.WhitelistTypeSpec(name="double precision", sa_type=sa_postgresql.DOUBLE_PRECISION),
+                    base.WhitelistTypeSpec(name="real", sa_type=sa_postgresql.REAL),
+                    base.WhitelistTypeSpec(
+                        name="numeric", sa_type=sa_postgresql.NUMERIC, arg_types=base.DECIMAL_CAST_ARG_T
+                    ),
+                ],
+                DataType.STRING: [
+                    base.WhitelistTypeSpec(name="text", sa_type=sa_postgresql.TEXT),
+                    base.WhitelistTypeSpec(
+                        name="character", sa_type=sa_postgresql.CHAR, arg_types=base.CHAR_CAST_ARG_T
+                    ),
+                    base.WhitelistTypeSpec(
+                        name="character varying", sa_type=sa_postgresql.VARCHAR, arg_types=base.CHAR_CAST_ARG_T
+                    ),
+                    # Here we'll make an exception and allow the usage of type aliases
+                    # just because in this case they are probably much more widely used
+                    # then the proper type names:
+                    base.WhitelistTypeSpec(name="char", sa_type=sa_postgresql.CHAR, arg_types=base.CHAR_CAST_ARG_T),
+                    base.WhitelistTypeSpec(
+                        name="varchar", sa_type=sa_postgresql.VARCHAR, arg_types=base.CHAR_CAST_ARG_T
+                    ),
+                ],
+                DataType.ARRAY_STR: [
+                    base.WhitelistTypeSpec(
+                        name="text[]", sa_type=sa_postgresql.ARRAY, nested_sa_type=sa_postgresql.TEXT
+                    ),
+                    base.WhitelistTypeSpec(
+                        name="character varying[]", sa_type=sa_postgresql.ARRAY, nested_sa_type=sa_postgresql.VARCHAR
+                    ),
+                    base.WhitelistTypeSpec(
+                        name="varchar[]", sa_type=sa_postgresql.ARRAY, nested_sa_type=sa_postgresql.VARCHAR
+                    ),
+                ],
+                DataType.ARRAY_INT: [
+                    base.WhitelistTypeSpec(
+                        name="smallint[]", sa_type=sa_postgresql.ARRAY, nested_sa_type=sa_postgresql.SMALLINT
+                    ),
+                    base.WhitelistTypeSpec(
+                        name="integer[]", sa_type=sa_postgresql.ARRAY, nested_sa_type=sa_postgresql.INTEGER
+                    ),
+                    base.WhitelistTypeSpec(
+                        name="bigint[]", sa_type=sa_postgresql.ARRAY, nested_sa_type=sa_postgresql.BIGINT
+                    ),
+                ],
+                DataType.ARRAY_FLOAT: [
+                    base.WhitelistTypeSpec(
+                        name="double precision[]",
+                        sa_type=sa_postgresql.ARRAY,
+                        nested_sa_type=sa_postgresql.DOUBLE_PRECISION,
+                    ),
+                    base.WhitelistTypeSpec(
+                        name="real[]", sa_type=sa_postgresql.ARRAY, nested_sa_type=sa_postgresql.REAL
+                    ),
+                    base.WhitelistTypeSpec(
+                        name="numeric[]",
+                        sa_type=sa_postgresql.ARRAY,
+                        nested_sa_type=sa_postgresql.NUMERIC,
+                        arg_types=base.DECIMAL_CAST_ARG_T,
+                    ),
+                ],
+            }
+            for pg_dialect in (D.COMPENG, D.NON_COMPENG_POSTGRESQL)
         }
-        for pg_dialect in (D.COMPENG, D.NON_COMPENG_POSTGRESQL)
-    }
+    )
 
 
 class FuncDbCastPostgreSQL2(FuncDbCastPostgreSQLBase, base.FuncDbCast2):

@@ -4,14 +4,11 @@ Helpers for fetching data from datasets
 
 from __future__ import annotations
 
-from typing import (
-    Collection,
-    Optional,
-)
+from collections.abc import Collection
 
 import attr
 
-from dl_constants.enums import (
+from dl_constants import (
     DataSourceRole,
     ProcessorType,
 )
@@ -44,8 +41,8 @@ from dl_utils.aio import (
 @attr.s
 class DataFetcher:
     _dataset: Dataset = attr.ib(kw_only=True)
-    _service_registry: Optional[ServicesRegistry] = attr.ib(kw_only=True, default=None)
-    _us_manager: Optional[USManagerBase] = attr.ib(kw_only=True, default=None)  # FIXME: Legacy; remove
+    _service_registry: ServicesRegistry | None = attr.ib(kw_only=True, default=None)
+    _us_manager: USManagerBase | None = attr.ib(kw_only=True, default=None)  # FIXME: Legacy; remove
     _us_entry_buffer: USEntryBuffer = attr.ib(kw_only=True)
     _ds_accessor: DatasetComponentAccessor = attr.ib(init=False)
 
@@ -65,7 +62,7 @@ class DataFetcher:
         stream_id: str,
         role: DataSourceRole,
         from_subquery: bool = False,
-        subquery_limit: Optional[int] = None,
+        subquery_limit: int | None = None,
     ) -> DataSourceVS:
         alias = avatar_id
         prep_component_manager = DefaultPreparedComponentManager(
@@ -95,14 +92,14 @@ class DataFetcher:
         self,
         *,
         bi_query: BIQuery,
-        data_key_data: Optional[str] = None,
+        data_key_data: str | None = None,
         role: DataSourceRole = DataSourceRole.origin,
-        row_count_hard_limit: Optional[int] = None,
-        root_avatar_id: Optional[AvatarId] = None,
-        required_avatar_ids: Optional[Collection[AvatarId]] = None,
+        row_count_hard_limit: int | None = None,
+        root_avatar_id: AvatarId | None = None,
+        required_avatar_ids: Collection[AvatarId] | None = None,
         join_on_expressions: Collection[JoinOnExpressionCtx] = (),
         from_subquery: bool = False,
-        subquery_limit: Optional[int] = None,
+        subquery_limit: int | None = None,
         allow_cache_usage: bool = True,
     ) -> DataStreamAsync:
         if root_avatar_id is None:
@@ -158,21 +155,20 @@ class DataFetcher:
             output_stream_ids={"down_0"},
         )
         assert len(output_streams) == 1, f"Expected 1 stream, got {len(output_streams)}"
-        data_stream = output_streams[0]
-        return data_stream
+        return output_streams[0]
 
     def get_data_stream(
         self,
         *,
         bi_query: BIQuery,
-        data_key_data: Optional[str] = None,
+        data_key_data: str | None = None,
         role: DataSourceRole = DataSourceRole.origin,
-        row_count_hard_limit: Optional[int] = None,
-        root_avatar_id: Optional[AvatarId] = None,
-        required_avatar_ids: Optional[Collection[AvatarId]] = None,
+        row_count_hard_limit: int | None = None,
+        root_avatar_id: AvatarId | None = None,
+        required_avatar_ids: Collection[AvatarId] | None = None,
         join_on_expressions: Collection[JoinOnExpressionCtx] = (),
         from_subquery: bool = False,
-        subquery_limit: Optional[int] = None,
+        subquery_limit: int | None = None,
         allow_cache_usage: bool = True,
     ) -> DataStream:
         async_data_stream = await_sync(

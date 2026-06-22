@@ -16,7 +16,6 @@ from dl_obfuscator.obfuscators.regex import (
 from dl_obfuscator.obfuscators.secret import SecretObfuscator
 from dl_obfuscator.secret_keeper import SecretKeeper
 
-
 LOGGER = logging.getLogger(__name__)
 ObfuscatableData = str | None | dict[str, "ObfuscatableData"] | list["ObfuscatableData"]
 
@@ -60,7 +59,7 @@ class ObfuscationEngine:
         on_error: OnObfuscationError = OnObfuscationError.FAIL,
     ) -> _ObfuscatableT:
         if data is None:
-            return None
+            return None  # type: ignore[return-value]  # 26.05.2026 mypy bump 1.20.2
         if isinstance(data, str):
             try:
                 return cast(_ObfuscatableT, self._obfuscate_text(data, context))

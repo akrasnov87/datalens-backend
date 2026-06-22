@@ -1,11 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterable
 import logging
-from typing import (
-    Any,
-    AsyncIterable,
-    Optional,
-)
+from typing import Any
 
 import attr
 
@@ -15,7 +12,6 @@ from dl_core.us_entry import (
 )
 from dl_core.us_manager.us_manager_async import AsyncUSManager
 from dl_maintenance.core.us_crawler_base import USEntryCrawler
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +24,7 @@ class RotateCryptoKeyInConnection(USEntryCrawler):
         return self.usm.get_raw_collection(entry_scope="connection", all_tenants=crawl_all_tenants)
 
     async def process_entry_get_save_flag(
-        self, entry: USEntry, logging_extra: dict[str, Any], usm: Optional[AsyncUSManager] = None
+        self, entry: USEntry, logging_extra: dict[str, Any], usm: AsyncUSManager | None = None
     ) -> tuple[bool, str]:
         assert isinstance(entry, USMigrationEntry)
         fields_key_info = self.usm.get_sensitive_fields_key_info(entry)

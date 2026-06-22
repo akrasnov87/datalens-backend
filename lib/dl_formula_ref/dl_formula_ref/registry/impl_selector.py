@@ -13,7 +13,6 @@ from dl_formula_ref.registry.arg_extractor import INFINITE_ARG_COUNT
 from dl_formula_ref.registry.impl_selector_base import ImplementationSelectorBase
 from dl_formula_ref.registry.impl_spec import FunctionImplementationSpec
 
-
 if TYPE_CHECKING:
     from dl_formula_ref.registry.base import FunctionDocRegistryItem
     from dl_formula_ref.registry.env import GenerationEnvironment
@@ -29,7 +28,7 @@ def _make_spec_from_implementation(impl: MultiVariantTranslation) -> FunctionImp
         dialects |= variant.dialects
 
     assert impl.name is not None
-    impl_spec = FunctionImplementationSpec(
+    return FunctionImplementationSpec(
         name=impl.name,
         arg_cnt=impl.arg_cnt,
         arg_names=impl.arg_names or (),
@@ -39,7 +38,6 @@ def _make_spec_from_implementation(impl: MultiVariantTranslation) -> FunctionImp
         dialects=dialects,
         return_flags=impl.return_flags,
     )
-    return impl_spec
 
 
 @lru_cache
@@ -73,7 +71,7 @@ class DefaultImplementationSelector(ImplementationSelectorBase):
 
 
 class ArgAwareImplementationSelector(ImplementationSelectorBase):
-    def __init__(self, exp_arg_types: dict[int, set[DataType]]):
+    def __init__(self, exp_arg_types: dict[int, set[DataType]]) -> None:
         self.exp_arg_types = exp_arg_types
 
     def get_implementations(
@@ -85,12 +83,12 @@ class ArgAwareImplementationSelector(ImplementationSelectorBase):
             if impl.argument_types is None:
                 continue
             for arg_type_matcher in impl.argument_types:
-                for pos in self.exp_arg_types.keys():
+                for pos in self.exp_arg_types:
                     actual_arg_types[pos] |= arg_type_matcher.get_possible_arg_types_at_pos(
                         pos=pos, total=impl.arg_cnt or INFINITE_ARG_COUNT
                     )
             for pos, arg_types in self.exp_arg_types.items():
-                if pos not in actual_arg_types or pos in actual_arg_types and not (actual_arg_types[pos] & arg_types):
+                if pos not in actual_arg_types or (pos in actual_arg_types and not (actual_arg_types[pos] & arg_types)):
                     break
             else:
                 result.append(impl)

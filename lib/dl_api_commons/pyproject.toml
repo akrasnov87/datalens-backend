@@ -17,13 +17,13 @@ dl-obfuscator = {path = "../dl_obfuscator"}
 dl-retrier = {path = "../dl_retrier"}
 dl-utils = {path = "../dl_utils"}
 flask = "*"
+frozendict = "*"
 marshmallow = "*"
 multidict = "*"
 opentracing = "*"
-python = ">=3.10, <3.13"
+python = ">=3.12, <3.13"
 requests = "*"
 sentry-sdk = {extras = ["flask"], version = "*"}
-typing-extensions = "*"
 werkzeug = "*"
 
 [tool.poetry.group.tests.dependencies]
@@ -34,6 +34,7 @@ statcommons = {path = "../statcommons"}
 
 [tool.deptry.per_rule_ignores]
 DEP001 = ["uwsgidecorators"]
+DEP003 = ["uwsgidecorators"]
 
 [tool.mypy]
 check_untyped_defs = true
@@ -61,7 +62,6 @@ requires = [
 ]
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_api_commons_tests/"
 skip_compose = "true"
 target_path = "unit"

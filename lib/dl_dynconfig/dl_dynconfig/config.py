@@ -1,15 +1,14 @@
+from collections.abc import Mapping
 import logging
 from typing import (
     Any,
-    Mapping,
+    Self,
 )
 
 import pydantic
-from typing_extensions import Self
 
 import dl_dynconfig.sources.base as base
 import dl_pydantic
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -52,7 +51,7 @@ class DynConfig(dl_pydantic.BaseModel):
             if annotation is not None and issubclass(annotation, DynConfig):
                 child = annotation.model_from_source(
                     source=source,
-                    path=instance._path + [field_name],
+                    path=[*instance._path, field_name],
                     initial_data=initial_data.get(field_name, {}),
                 )
                 setattr(instance, field_name, child)
@@ -84,14 +83,13 @@ class DynConfig(dl_pydantic.BaseModel):
         except Exception as e:
             if force:
                 raise FetchError("Failed to fetch data from source") from e
-            else:
-                LOGGER.exception("Failed to fetch data from source")
-                return
+            LOGGER.exception("Failed to fetch data from source")
+            return
 
         node = data
         for key in self._path:
             if not isinstance(node, Mapping):
-                raise pydantic.ValidationError(f"Expected a mapping at path {self._path + [key]}", [])
+                raise pydantic.ValidationError(f"Expected a mapping at path {[*self._path, key]}", [])
             if key not in node:
                 node = {}
                 break

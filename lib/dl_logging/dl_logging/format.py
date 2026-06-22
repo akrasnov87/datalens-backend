@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import time
 from typing import Any
 
 import statcommons.logs
@@ -10,6 +11,10 @@ from dl_obfuscator import (
     ObfuscationContext,
     OnObfuscationError,
     get_request_obfuscation_engine,
+)
+from dl_obfuscator.profiling import (
+    LogFormatProfilingContext,
+    get_log_format_profiling,
 )
 
 
@@ -40,6 +45,8 @@ DEFAULT_RECORD_ATTRS = frozenset(
         "threadName",
         "processName",
         "process",
+        # Python 3.12+ built-in: asyncio.current_task name (or None)
+        "taskName",
         # Added around here:
         "message",
         # Around here and in BI:
@@ -102,7 +109,7 @@ class DeployJsonFormatter(logging.Formatter):
         if standard_fields:
             fields["std"] = standard_fields
 
-        context_data = {}
+        context_data = {}  # type: ignore[var-annotated]  # 26.05.2026 mypy bump 1.20.2
         log_context_fields = record.log_context if hasattr(record, "log_context") else context.get_log_context()
         context_data.update(log_context_fields)
         context_data.update(get_record_extra(record))
@@ -128,13 +135,33 @@ class StdoutFormatter(logging.Formatter):
         self.json_formatter = JsonFormatter()
 
     def format(self, record: logging.LogRecord) -> str:
-        if is_deploy():
-            result = self.deploy_json_formatter.format(record)
-        else:
-            result = self.json_formatter.format(record)
+        profiling = get_log_format_profiling()
+        if profiling is None:
+            return self._do_format(record)
+        return self._do_format_with_profiling(record, profiling)
 
+    def _format_record(self, record: logging.LogRecord) -> str:
+        if is_deploy():
+            return self.deploy_json_formatter.format(record)
+        return self.json_formatter.format(record)
+
+    def _do_format(self, record: logging.LogRecord) -> str:
+        result = self._format_record(record)
         engine = get_request_obfuscation_engine()
         if engine is not None:
             result = engine.obfuscate(result, ObfuscationContext.LOGS, on_error=OnObfuscationError.SKIP)
+        return result
 
+    def _do_format_with_profiling(self, record: logging.LogRecord, profiling: LogFormatProfilingContext) -> str:
+        start = time.perf_counter()
+        result = self._format_record(record)
+        obf_elapsed = 0.0
+        engine = get_request_obfuscation_engine()
+        if engine is not None:
+            obf_start = time.perf_counter()
+            result = engine.obfuscate(result, ObfuscationContext.LOGS, on_error=OnObfuscationError.SKIP)
+            obf_elapsed = time.perf_counter() - obf_start
+        profiling.obfuscation_time += obf_elapsed
+        profiling.total_format_time += time.perf_counter() - start
+        profiling.call_count += 1
         return result

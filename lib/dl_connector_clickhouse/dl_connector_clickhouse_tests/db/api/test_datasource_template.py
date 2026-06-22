@@ -21,49 +21,45 @@ class BaseTableTestSourceTemplate(dl_api_lib_testing.BaseTableTestSourceTemplate
 
     @pytest.fixture(name="datasource_parameters")
     def fixture_datasource_parameters(self) -> dict[str, str]:
-        return dict(
-            table_name="{{table_name}}",
-            db_name=CoreConnectionSettings.DB_NAME,
-        )
+        return {
+            "table_name": "{{table_name}}",
+            "db_name": CoreConnectionSettings.DB_NAME,
+        }
 
     @pytest.fixture(name="invalid_datasource_parameters")
     def fixture_invalid_datasource_parameters(self) -> dict[str, str]:
-        return dict(
-            table_name="{{invalid_parameter_name}}",
-            db_name=CoreConnectionSettings.DB_NAME,
-        )
+        return {
+            "table_name": "{{invalid_parameter_name}}",
+            "db_name": CoreConnectionSettings.DB_NAME,
+        }
 
 
 class TestTableControlApiSourceTemplate(
     BaseTableTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplate,
     ClickHouseDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestTableControlApiSourceTemplateSettingsDisabled(
     BaseTableTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplateSettingsDisabled,
     ClickHouseDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestTableDataApiSourceTemplateConnectionDisabled(
     BaseTableTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplateConnectionDisabled,
     ClickHouseDataApiTestBase,
-):
-    ...
+): ...
 
 
 class TestTableDataApiSourceTemplate(
     BaseTableTestSourceTemplate,
     dl_api_lib_testing.BaseTestDataApiSourceTemplate,
     ClickHouseDataApiTestBase,
-):
-    ...
+): ...
 
 
 class BaseSubselectTestSourceTemplate(dl_api_lib_testing.BaseSubselectTestSourceTemplate):
@@ -81,29 +77,25 @@ class TestSubselectControlApiSourceTemplate(
     BaseSubselectTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplate,
     ClickHouseDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestSubselectControlApiSourceTemplateSettingsDisabled(
     BaseSubselectTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplateSettingsDisabled,
     ClickHouseDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestSubselectControlApiSourceTemplateConnectionDisabled(
     BaseSubselectTestSourceTemplate,
     dl_api_lib_testing.BaseTestControlApiSourceTemplateConnectionDisabled,
     ClickHouseDatasetTestBase,
-):
-    ...
+): ...
 
 
 class TestSubselectDataApiSourceTemplate(
     BaseSubselectTestSourceTemplate,
     dl_api_lib_testing.BaseTestDataApiSourceTemplate,
     ClickHouseDataApiTestBase,
-):
-    ...
+): ...

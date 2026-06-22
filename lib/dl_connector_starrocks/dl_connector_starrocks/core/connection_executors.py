@@ -10,14 +10,13 @@ from dl_connector_starrocks.core.async_adapters_starrocks import AsyncStarRocksA
 from dl_connector_starrocks.core.dto import StarRocksConnDTO
 from dl_connector_starrocks.core.target_dto import StarRocksConnTargetDTO
 
-
 _BASE_STARROCKS_ADAPTER_TV = TypeVar("_BASE_STARROCKS_ADAPTER_TV", bound=CommonBaseDirectAdapter)
 
 
 class _BaseStarRocksConnExecutor(DefaultSqlAlchemyConnExecutor[_BASE_STARROCKS_ADAPTER_TV]):
     _conn_dto: StarRocksConnDTO = attr.ib()
 
-    async def _make_target_conn_dto_pool(self) -> list[StarRocksConnTargetDTO]:  # type: ignore  # TODO: fix
+    async def _make_target_conn_dto_pool(self) -> list[StarRocksConnTargetDTO]:
         return [
             StarRocksConnTargetDTO(
                 conn_id=self._conn_dto.conn_id,

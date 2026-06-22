@@ -9,7 +9,6 @@ from dl_formula.shortcuts import n
 
 from dl_connector_mysql.formula.constants import MySQLDialect as D
 
-
 V = TranslationVariant.make
 VW = TranslationVariantWrapped.make
 
@@ -20,7 +19,7 @@ DEFINITIONS_STRING = [
     # char
     base.FuncChar.for_dialect(D.MYSQL),
     # concat
-    base.Concat1.for_dialect((D.MYSQL)),
+    base.Concat1.for_dialect(D.MYSQL),
     base.ConcatMultiStrConst.for_dialect(D.MYSQL),
     base.ConcatMultiStr.for_dialect(D.MYSQL),
     base.ConcatMultiAny.for_dialect(D.MYSQL),

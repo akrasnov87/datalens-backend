@@ -12,8 +12,7 @@ attrs = "*"
 cryptography = "*"
 dl-settings = {path = "../dl_settings"}
 pydantic = "*"
-python = ">=3.10, <3.13"
-typing-extensions = "*"
+python = ">=3.12, <3.13"
 
 [tool.poetry.group.tests.dependencies]
 dl-configs = {path = "../dl_configs"}
@@ -39,7 +38,6 @@ requires = [
 ]
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_crypto_tests/"
 skip_compose = "true"
 target_path = "unit"

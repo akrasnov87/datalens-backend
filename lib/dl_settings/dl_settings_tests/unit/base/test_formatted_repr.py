@@ -1,8 +1,5 @@
 import enum
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any
 
 import frozendict
 import pydantic
@@ -45,7 +42,7 @@ def test_bool() -> None:
 
 def test_none() -> None:
     class Settings(dl_settings.BaseRootSettings):
-        value: Optional[str] = None
+        value: str | None = None
 
     assert Settings().model_formatted_repr() == "Settings(...)\n  value: None"
 

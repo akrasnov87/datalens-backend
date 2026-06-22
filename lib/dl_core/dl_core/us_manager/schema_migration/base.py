@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import (
+    UTC,
     datetime,
     timedelta,
 )
@@ -9,18 +10,17 @@ import logging
 from typing import (
     TYPE_CHECKING,
     Protocol,
+    Self,
 )
 
 import attr
-from typing_extensions import Self
 
 from dl_app_tools.profiling_base import (
     generic_profiler,
     generic_profiler_async,
 )
-from dl_constants.enums import MigrationStatus
-from dl_core.exc import UnknownEntryMigration
-
+from dl_constants import MigrationStatus
+from dl_core.exc import UnknownEntryMigrationError
 
 if TYPE_CHECKING:
     from dl_core.services_registry import ServicesRegistry
@@ -30,13 +30,11 @@ LOGGER = logging.getLogger(__name__)
 
 
 class MigrationFunction(Protocol):
-    def __call__(self, entry: dict, services_registry: ServicesRegistry | None = None) -> dict:
-        ...
+    def __call__(self, entry: dict, services_registry: ServicesRegistry | None = None) -> dict: ...
 
 
 class AwaitMigrationFunction(Protocol):
-    async def __call__(self, entry: dict, services_registry: ServicesRegistry | None = None) -> dict:
-        ...
+    async def __call__(self, entry: dict, services_registry: ServicesRegistry | None = None) -> dict: ...
 
 
 @attr.s
@@ -124,7 +122,7 @@ class BaseEntrySchemaMigration:
         if not isinstance(entry_data, dict):
             raise ValueError(f"Invalid entry: 'data' should be a dict, got {type(entry_data).__name__}")
 
-        schema_version = entry_data.get("schema_version", "")
+        schema_version = entry_data.get("schema_version", "1")
         entry_schema_id = 1
         if schema_version != "1":
             entry_schema_id = int(datetime.fromisoformat(schema_version).timestamp())
@@ -142,24 +140,24 @@ class BaseEntrySchemaMigration:
         try:
             entry_schema_id = self._get_entry_schema_id(entry_copy)
             if entry_schema_id != 1 and entry_schema_id not in self.migration_ids:
-                raise UnknownEntryMigration(
-                    f"Unknown entry version: {datetime.fromtimestamp(entry_schema_id).isoformat()}"
+                raise UnknownEntryMigrationError(
+                    f"Unknown entry version: {datetime.fromtimestamp(entry_schema_id, tz=UTC).isoformat()}"
                 )
             for migration in self.sorted_migrations:
                 if migration.id <= entry_schema_id or migration.downgrade_only:
                     continue
                 if migration.version in seen_versions:
                     raise ValueError(f"Double migration detected for migration version: {migration.version}")
-                LOGGER.info(f"Apply migration ver={migration.version}, {migration.name}")
+                LOGGER.info("Apply migration ver=%s, %s", migration.version, migration.name)
                 entry_copy = migration.migrate_up(entry_copy, self.services_registry)
                 seen_versions.add(migration.version)
             # Rollback last migration if it needed
             last_migration = self.sorted_migrations[-1]
             if last_migration.id == entry_schema_id and last_migration.downgrade_only:
-                LOGGER.info(f"Rollback migration ver={last_migration.version}, {last_migration.name}")
+                LOGGER.info("Rollback migration ver=%s, %s", last_migration.version, last_migration.name)
                 entry_copy = last_migration.migrate_down(entry_copy, self.services_registry)
             return entry_copy
-        except UnknownEntryMigration:
+        except UnknownEntryMigrationError:
             raise
         except Exception as exc:
             if self.strict_migration:
@@ -181,24 +179,24 @@ class BaseEntrySchemaMigration:
         try:
             entry_schema_id = self._get_entry_schema_id(entry_copy)
             if entry_schema_id != 1 and entry_schema_id not in self.migration_ids:
-                raise UnknownEntryMigration(
-                    f"Unknown entry version: {datetime.fromtimestamp(entry_schema_id).isoformat()}"
+                raise UnknownEntryMigrationError(
+                    f"Unknown entry version: {datetime.fromtimestamp(entry_schema_id, tz=UTC).isoformat()}"
                 )
             for migration in self.sorted_migrations:
                 if migration.id <= entry_schema_id or migration.downgrade_only:
                     continue
                 if migration.version in seen_versions:
                     raise ValueError(f"Double migration detected for migration version: {migration.version}")
-                LOGGER.info(f"Apply migration ver={migration.version}, {migration.name}")
+                LOGGER.info("Apply migration ver=%s, %s", migration.version, migration.name)
                 entry_copy = await migration.migrate_up_async(entry_copy, self.services_registry)
                 seen_versions.add(migration.version)
             # Rollback last migration if it needed
             last_migration = self.sorted_migrations[-1]
             if last_migration.id == entry_schema_id and last_migration.downgrade_only:
-                LOGGER.info(f"Rollback migration ver={last_migration.version}, {last_migration.name}")
+                LOGGER.info("Rollback migration ver=%s, %s", last_migration.version, last_migration.name)
                 entry_copy = await last_migration.migrate_down_async(entry_copy, self.services_registry)
             return entry_copy
-        except UnknownEntryMigration:
+        except UnknownEntryMigrationError:
             raise
         except Exception as exc:
             if self.strict_migration:

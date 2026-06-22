@@ -1,16 +1,37 @@
+import logging
+
 import attr
 
-from dl_constants.enums import CalcMode
-from dl_core.base_models import ObligatoryFilter
+from dl_constants import (
+    CalcMode,
+    DataSourceType,
+    ExtractMode,
+    ExtractStatus,
+)
+from dl_core.base_models import (
+    ConnectionRef,
+    ObligatoryFilter,
+)
 from dl_core.data_source_spec.collection import DataSourceCollectionSpec
 import dl_core.exc as exc
+from dl_core.fields import (
+    FilterField,
+    OrderField,
+)
 from dl_core.multisource import (
     AvatarRelation,
     SourceAvatar,
 )
 from dl_core.us_dataset import Dataset
+from dl_core.us_extract import ExtractProperties
+from dl_model_tools.coercion import (
+    ParameterValueCoercionError,
+    coerce_value,
+)
 from dl_model_tools.typed_values import BIValue
 from dl_query_processing.compilation.specs import ParameterValueSpec
+
+LOGGER = logging.getLogger(__name__)
 
 
 @attr.s(frozen=True)
@@ -39,7 +60,7 @@ class DatasetComponentAccessor:
     def get_avatar_strict(self, avatar_id: str) -> SourceAvatar:
         avatar = self.get_avatar_opt(avatar_id=avatar_id)
         if avatar is None:
-            raise exc.SourceAvatarNotFound(f"Unknown source avatar: {avatar_id}")
+            raise exc.SourceAvatarNotFoundError(f"Unknown source avatar: {avatar_id}")
         return avatar
 
     def get_root_avatar_opt(self) -> SourceAvatar | None:
@@ -57,8 +78,65 @@ class DatasetComponentAccessor:
     def get_data_source_id_list(self) -> list[str]:
         return [dsrc_coll_spec.id for dsrc_coll_spec in self.get_data_source_coll_spec_list()]
 
+    def collect_data_source_types(
+        self,
+    ) -> dict[ConnectionRef, DataSourceType | None]:
+        """
+        Collect Dataset's sources with types.
+
+        In case of type conflict (same connection ref has two or more types),
+        this source's type is ignored.
+
+        Returns dict mapping ``ConnectionRef`` to ``DataSourceType`` or to
+        ``None`` if there is a type conflict.
+        """
+
+        dataset_sources: dict[ConnectionRef, DataSourceType | None] = {}
+
+        # Collect refs with source types from dataset sources
+        bad_source_refs = set()
+
+        for dsrc_coll_spec in self.get_data_source_coll_spec_list():
+            if dsrc_coll_spec.origin is None:
+                LOGGER.warning(
+                    "Dataset %s source collection %s has no origin source spec",
+                    self._dataset.uuid,
+                    dsrc_coll_spec.id,
+                )
+                continue
+
+            if dsrc_coll_spec.origin.connection_ref is None:
+                LOGGER.warning(
+                    "Dataset %s source collection %s has no origin connection_ref",
+                    self._dataset.uuid,
+                    dsrc_coll_spec.id,
+                )
+                continue
+
+            # Check duplicate with different type to remove them later
+            existing_source_type = dataset_sources.get(dsrc_coll_spec.origin.connection_ref)
+            if existing_source_type is not None and existing_source_type != dsrc_coll_spec.origin.source_type:
+                bad_source_refs.add(dsrc_coll_spec.origin.connection_ref)
+
+                LOGGER.warning(
+                    "Dataset %s has connection %s with different source types (%s != %s)",
+                    self._dataset.uuid,
+                    dsrc_coll_spec.origin.connection_ref,
+                    existing_source_type,
+                    dsrc_coll_spec.origin.source_type,
+                )
+                continue
+
+            dataset_sources[dsrc_coll_spec.origin.connection_ref] = dsrc_coll_spec.origin.source_type
+
+        # Remove bad sources and load them without type
+        for bad_source_ref in bad_source_refs:
+            dataset_sources[bad_source_ref] = None
+
+        return dataset_sources
+
     def get_data_source_coll_spec_list(self) -> list[DataSourceCollectionSpec]:
-        return [dsrc_coll_spec for dsrc_coll_spec in self._dataset.data.source_collections]
+        return list(self._dataset.data.source_collections)
 
     def get_data_source_coll_spec_opt(self, source_id: str) -> DataSourceCollectionSpec | None:
         for dsrc_coll_spec in self._dataset.data.source_collections:
@@ -69,7 +147,7 @@ class DatasetComponentAccessor:
     def get_data_source_coll_spec_strict(self, source_id: str) -> DataSourceCollectionSpec:
         dsrc_coll_spec = self.get_data_source_coll_spec_opt(source_id=source_id)
         if dsrc_coll_spec is None:
-            raise exc.DataSourceNotFound(f"Unknown data source: {source_id}")
+            raise exc.DataSourceNotFoundError(f"Unknown data source: {source_id}")
         return dsrc_coll_spec
 
     def get_avatar_relation_list(
@@ -81,13 +159,12 @@ class DatasetComponentAccessor:
         :param right_avatar_id: limit result to relations with this left ID
         :return: list of ``AvatarRelation`` objects
         """
-        result = []
-        for relation in self._dataset.data.avatar_relations:
-            if (not left_avatar_id or relation.left_avatar_id == left_avatar_id) and (
-                not right_avatar_id or relation.right_avatar_id == right_avatar_id
-            ):
-                result.append(relation)
-        return result
+        return [
+            relation
+            for relation in self._dataset.data.avatar_relations
+            if (not left_avatar_id or relation.left_avatar_id == left_avatar_id)
+            and (not right_avatar_id or relation.right_avatar_id == right_avatar_id)
+        ]
 
     def has_avatar_relation(
         self,
@@ -111,10 +188,8 @@ class DatasetComponentAccessor:
         right_avatar_id: str | None = None,
     ) -> AvatarRelation | None:
         for relation in self._dataset.data.avatar_relations:
-            if (
-                relation_id is not None
-                and relation.id == relation_id
-                or (relation.left_avatar_id == left_avatar_id and relation.right_avatar_id == right_avatar_id)
+            if (relation_id is not None and relation.id == relation_id) or (
+                relation.left_avatar_id == left_avatar_id and relation.right_avatar_id == right_avatar_id
             ):
                 return relation
         return None
@@ -131,7 +206,9 @@ class DatasetComponentAccessor:
             right_avatar_id=right_avatar_id,
         )
         if relation is None:
-            raise exc.AvatarRelationNotFound(f"Unknown avatar relation: {relation_id, left_avatar_id, right_avatar_id}")
+            raise exc.AvatarRelationNotFoundError(
+                f"Unknown avatar relation: {relation_id, left_avatar_id, right_avatar_id}"
+            )
         return relation
 
     def get_obligatory_filter_list(self) -> list[ObligatoryFilter]:
@@ -175,7 +252,7 @@ class DatasetComponentAccessor:
     ) -> ObligatoryFilter:
         obfilter = self.get_obligatory_filter_opt(obfilter_id=obfilter_id, field_guid=field_guid)
         if obfilter is None:
-            raise exc.ObligatoryFilterNotFound(f"Unknown obligatory filter: {obfilter_id, field_guid}")
+            raise exc.ObligatoryFilterNotFoundError(f"Unknown obligatory filter: {obfilter_id, field_guid}")
         return obfilter
 
     def get_parameter_values(self) -> dict[str, BIValue]:
@@ -203,13 +280,62 @@ class DatasetComponentAccessor:
             field = self._dataset.result_schema.by_guid(parameter_value_spec.field_id)
             if field.template_enabled:
                 assert field.default_value is not None
+
+                # Coercion runs purely as a validation gate: it rejects type
+                # mismatches / SQL-injection payloads that cannot be represented as
+                # the declared type. The original value is validated against the
+                # constraint and stored as-is so its rendered form is unchanged.
+                try:
+                    coerce_value(parameter_value_spec.value, field.default_value.type)
+                except ParameterValueCoercionError as e:
+                    raise exc.ParameterValueInvalidError(
+                        f"Value for field {field.title} is not valid for type "
+                        f"{field.default_value.type.name}: {parameter_value_spec.value!r}"
+                    ) from e
+
                 if field.value_constraint and not field.value_constraint.is_valid(parameter_value_spec.value):
                     raise exc.ParameterValueInvalidError(
-                        f"Default value for field {field.title} is not valid: {parameter_value_spec.value}"
+                        f"Value for field {field.title} is not valid: {parameter_value_spec.value}"
                     )
 
                 result[field.title] = attr.evolve(field.default_value, value=parameter_value_spec.value)
         return result
 
+    def get_extract_filter(self, filter_id: str) -> FilterField | None:
+        for filter in self._dataset.data.extract.filters:
+            if filter.id == filter_id:
+                return filter
+        return None
+
+    def get_extract_sort(self, sort_id: str) -> OrderField | None:
+        for sort in self._dataset.data.extract.sorting:
+            if sort.id == sort_id:
+                return sort
+        return None
+
     def get_template_enabled(self) -> bool:
         return self._dataset.template_enabled
+
+    def get_extract_properties(self) -> ExtractProperties:
+        return self._dataset.data.extract
+
+    def get_extract_mode(self) -> ExtractMode:
+        return self._dataset.data.extract.mode
+
+    def get_extract_status(self) -> ExtractStatus:
+        return self._dataset.data.extract.status
+
+    def get_extract_errors(self) -> list[str]:
+        return self._dataset.data.extract.errors
+
+    def get_extract_last_completed(self) -> int:
+        return self._dataset.data.extract.last_completed
+
+    def get_extract_filters(self) -> list[FilterField]:
+        return self._dataset.data.extract.filters
+
+    def get_extract_sorting(self) -> list[OrderField]:
+        return self._dataset.data.extract.sorting
+
+    def get_extract_data_dataset_revision(self) -> str | None:
+        return self._dataset.data.extract.data_dataset_revision

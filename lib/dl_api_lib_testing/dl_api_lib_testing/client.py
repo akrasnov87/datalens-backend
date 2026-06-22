@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from asyncio import AbstractEventLoop
+import contextlib
 import json
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any
 
 import aiohttp.test_utils
 import attr
@@ -22,14 +20,14 @@ from dl_utils.aio import await_sync
 class TestClientConverterAiohttpToFlask:
     _loop: AbstractEventLoop = attr.ib()
     _aio_client: aiohttp.test_utils.TestClient = attr.ib()
-    _extra_headers: Optional[dict[str, str]] = attr.ib(default=None)
-    _cookies: Optional[dict[str, str]] = attr.ib(default=None)
+    _extra_headers: dict[str, str] | None = attr.ib(default=None)
+    _cookies: dict[str, str] | None = attr.ib(default=None)
 
     @attr.s(frozen=True, auto_attribs=True)
     class Resp:
         status_code: int
         data: bytes
-        _json: Optional[dict]
+        _json: dict | None
 
         @property
         def json(self) -> dict:
@@ -56,9 +54,9 @@ class TestClientConverterAiohttpToFlask:
         url: str,
         *,
         method: str,
-        data: Optional[str] = None,
-        content_type: Optional[str] = None,
-        headers: Optional[dict] = None,
+        data: str | None = None,
+        content_type: str | None = None,
+        headers: dict | None = None,
     ) -> Resp:
         headers = dict(headers) if headers else {}
         if self._extra_headers:
@@ -76,14 +74,12 @@ class TestClientConverterAiohttpToFlask:
             ),
             loop=self._loop,
         )
-        resp_data = await_sync(resp.read())
+        resp_data = await_sync(resp.read(), loop=self._loop)
 
-        js: Optional[dict] = None
+        js: dict | None = None
         if resp_data is not None:
-            try:
+            with contextlib.suppress(json.JSONDecodeError):
                 js = json.loads(resp_data)
-            except json.JSONDecodeError:
-                pass
 
         return self.Resp(status_code=resp.status, data=resp_data, json=js)
 
@@ -100,8 +96,8 @@ class WrappedAioSyncApiClient(SyncHttpClientBase):
         url: str,
         method: str,
         headers: dict,
-        data: Optional[str] = None,
-        content_type: Optional[str] = None,
+        data: str | None = None,
+        content_type: str | None = None,
     ) -> ClientResponse:
         method = method.lower()
         int_response = self._int_wrapped_client.open(
@@ -130,8 +126,8 @@ class FlaskSyncApiClient(SyncHttpClientBase):
         url: str,
         method: str,
         headers: dict,
-        data: Optional[str] = None,
-        content_type: Optional[str] = None,
+        data: str | None = None,
+        content_type: str | None = None,
     ) -> ClientResponse:
         method = method.lower()
         int_response = self._int_wclient.open(

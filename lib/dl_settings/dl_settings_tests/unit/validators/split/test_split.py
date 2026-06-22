@@ -5,12 +5,11 @@ import pytest
 
 import dl_settings
 
-
 T = typing.TypeVar("T")
 
 
 @pytest.mark.parametrize(
-    "input, expected",
+    ("input", "expected"),
     [
         (None, None),
         ("test", ["test"]),
@@ -58,7 +57,7 @@ def test_list_with_root_settings(
 
 
 @pytest.mark.parametrize(
-    "input, expected",
+    ("input", "expected"),
     [
         (None, None),
         ("test", ("test",)),

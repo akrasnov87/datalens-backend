@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import logging
-from typing import (
-    TYPE_CHECKING,
+from collections.abc import (
     AsyncGenerator,
     Awaitable,
     Callable,
-    ClassVar,
-    Optional,
     Sequence,
-    Union,
+)
+import logging
+from typing import (
+    TYPE_CHECKING,
+    ClassVar,
 )
 
 import aiopg.sa
@@ -19,14 +19,13 @@ from sqlalchemy.sql.selectable import Select
 
 from dl_cache_engine.primitives import LocalKeyRepresentation
 from dl_compeng_pg.compeng_pg_base.exec_adapter_base import PostgreSQLExecAdapterAsync
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_core.data_processing.prepared_components.primitives import PreparedFromInfo
 from dl_core.data_processing.processing.context import OpExecutionContext
 from dl_utils.streaming import (
     AsyncChunked,
     AsyncChunkedBase,
 )
-
 
 if TYPE_CHECKING:
     from dl_constants.types import TBIDataValue
@@ -38,15 +37,15 @@ LOGGER = logging.getLogger(__name__)
 
 
 @attr.s
-class AiopgExecAdapter(PostgreSQLExecAdapterAsync[aiopg.sa.SAConnection]):  # noqa
+class AiopgExecAdapter(PostgreSQLExecAdapterAsync[aiopg.sa.SAConnection]):
     _conn: aiopg.sa.SAConnection = attr.ib()
     _log: ClassVar[logging.Logger] = LOGGER
 
-    async def _execute(self, query: Union[str, Executable]) -> None:
+    async def _execute(self, query: str | Executable) -> None:
         """Execute query without fetching data"""
         await self._conn.execute(query)
 
-    async def _execute_ddl(self, query: Union[str, Executable]) -> None:
+    async def _execute_ddl(self, query: str | Executable) -> None:
         """Execute a DDL statement"""
         await self._execute(query)
 
@@ -56,11 +55,11 @@ class AiopgExecAdapter(PostgreSQLExecAdapterAsync[aiopg.sa.SAConnection]):  # no
         query: Select | str,
         user_types: Sequence[UserDataType],
         chunk_size: int,
-        joint_dsrc_info: Optional[PreparedFromInfo] = None,
+        joint_dsrc_info: PreparedFromInfo | None = None,
         query_id: str,
         ctx: OpExecutionContext,
         data_key: LocalKeyRepresentation,
-        preparation_callback: Optional[Callable[[], Awaitable[None]]],
+        preparation_callback: Callable[[], Awaitable[None]] | None,
     ) -> AsyncChunkedBase[Sequence[TBIDataValue]]:
         if preparation_callback is not None:
             await preparation_callback()
@@ -99,13 +98,12 @@ class AiopgExecAdapter(PostgreSQLExecAdapterAsync[aiopg.sa.SAConnection]):  # no
         self._log.info(f"Inserting data into table {table_name}")
 
         async for raw_chunk in data.chunks:
-            chunk = []
-            for row in raw_chunk:
-                chunk.append(
-                    [
-                        self._tt.cast_for_input(value=value, user_t=user_t)
-                        for value, user_t in zip(row, user_types, strict=True)
-                    ]
-                )
+            chunk = [
+                [
+                    self._tt.cast_for_input(value=value, user_t=user_t)
+                    for value, user_t in zip(row, user_types, strict=True)
+                ]
+                for row in raw_chunk
+            ]
             query = table.insert(values=chunk)
             await self._execute(query=query)

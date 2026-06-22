@@ -3,31 +3,30 @@ from __future__ import annotations
 import datetime
 from json.decoder import JSONDecodeError
 import logging
-from typing import Optional
+from typing import Any
 
 import requests
 from requests.exceptions import RequestException
 
 import dl_sqlalchemy_metrica_api as package
 from dl_sqlalchemy_metrica_api.exceptions import (  # noqa
-    ConnectionClosedException,
-    CursorClosedException,
+    ConnectionClosedError,
+    CursorClosedError,
     DatabaseError,
     DataError,
     Error,
     IntegrityError,
     InterfaceError,
     InternalError,
-    MetrikaApiAccessDeniedException,
-    MetrikaApiException,
-    MetrikaApiObjectNotFoundException,
-    MetrikaHttpApiException,
+    MetrikaApiAccessDeniedError,
+    MetrikaApiError,
+    MetrikaApiObjectNotFoundError,
+    MetrikaHttpApiError,
     NotSupportedError,
     OperationalError,
     ProgrammingError,
     Warning,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -52,7 +51,7 @@ def _get_retriable_requests_session():
             ),
         )
     # TODO: allow to customize UA
-    ua = "{}, {}".format(requests.utils.default_user_agent(), package.__name__)
+    ua = f"{requests.utils.default_user_agent()}, {package.__name__}"
     session.headers.update({"User-Agent": ua})
     return session
 
@@ -67,7 +66,7 @@ def _parse_metrika_error(response):
     return msg
 
 
-class MetrikaApiClient(object):
+class MetrikaApiClient:
     """
     Simple HTTP client for Metrika API
     https://tech.yandex.ru/metrika/doc/api2/api_v1/intro-docpage/
@@ -76,23 +75,23 @@ class MetrikaApiClient(object):
     host = METRIKA_API_HOST
     default_timeout = 60
 
-    def __init__(self, oauth_token: str, host: Optional[str] = None, default_timeout=-1, **kwargs):
+    def __init__(self, oauth_token: str, host: str | None = None, default_timeout=-1, **kwargs: Any) -> None:
         if host is not None:
             self.host = host
         if default_timeout != -1:
             self.default_timeout = default_timeout
         self.oauth_token = oauth_token
         self._session = _get_retriable_requests_session()
-        self._session.headers.update({"Authorization": "OAuth {}".format(oauth_token)})
+        self._session.headers.update({"Authorization": f"OAuth {oauth_token}"})
 
     @property
     def _is_appmetrica(self):
         return self.host == APPMETRICA_API_HOST
 
-    def _request(self, method: str, uri: str, timeout: int = -1, _raw_resp: bool = False, **kwargs):
+    def _request(self, method: str, uri: str, timeout: int = -1, _raw_resp: bool = False, **kwargs: Any):
         if timeout == -1:
             timeout = self.default_timeout
-        full_url = "/".join(map(lambda s: s.strip("/"), (self.host, uri)))
+        full_url = "/".join(s.strip("/") for s in (self.host, uri))
 
         LOGGER.info(
             "Requesting Metrika API: method: %s, url: %s, params:(%s), json:(%s)",
@@ -134,22 +133,21 @@ class MetrikaApiClient(object):
         except RequestException as ex:
             msg = _parse_metrika_error(response)
             if response.status_code == 403:
-                raise MetrikaApiAccessDeniedException(msg, orig_exc=ex) from ex
-            elif response.status_code == 404:
-                raise MetrikaApiObjectNotFoundException(msg, orig_exc=ex) from ex
-            else:
-                raise MetrikaHttpApiException(msg, orig_exc=ex) from ex
+                raise MetrikaApiAccessDeniedError(msg, orig_exc=ex) from ex
+            if response.status_code == 404:
+                raise MetrikaApiObjectNotFoundError(msg, orig_exc=ex) from ex
+            raise MetrikaHttpApiError(msg, orig_exc=ex) from ex
 
         try:
             parsed_resp = response.json()
         except JSONDecodeError as ex:
-            raise MetrikaHttpApiException("Unable to parse response.", orig_exc=ex) from ex
+            raise MetrikaHttpApiError("Unable to parse response.", orig_exc=ex) from ex
         return parsed_resp
 
-    def get(self, uri, **kwargs):
+    def get(self, uri, **kwargs: Any):
         return self._request("GET", uri, **kwargs)
 
-    def post(self, uri, **kwargs):
+    def post(self, uri, **kwargs: Any):
         return self._request("POST", uri, **kwargs)
 
     def _parse_data_resp(self, resp, result_columns=None, req_metrics=None):
@@ -167,7 +165,7 @@ class MetrikaApiClient(object):
             if req_metrics is not None and len(req_metrics) == 1:
                 req_metrics = req_metrics[0].split(",")
                 if len(q_metrics) != len(req_metrics):
-                    raise MetrikaApiException("Unexpected response metrics count.")
+                    raise MetrikaApiError("Unexpected response metrics count.")
                 if q_metrics != req_metrics:
                     LOGGER.info(
                         "Response query metrics not matching requested metrics: %s, %s.",
@@ -180,7 +178,7 @@ class MetrikaApiClient(object):
             dims_src_keys = [rc_dict.get(dim, {}).get("src_key") or "name" for dim in q_dims]
 
             if not result_columns:
-                result_columns = [dict(name=col_name, label=None) for col_name in (*q_dims, *q_metrics)]
+                result_columns = [{"name": col_name, "label": None} for col_name in (*q_dims, *q_metrics)]
 
             for slice in resp["data"]:
                 # TODO: date dimensions values better retrieve from 'id' key instead of 'name'?
@@ -193,14 +191,14 @@ class MetrikaApiClient(object):
                     )
                 )
         except (KeyError, ValueError) as ex:
-            raise MetrikaApiException(orig_exc=ex) from ex
+            raise MetrikaApiError(orig_exc=ex) from ex
 
-        return dict(
-            fields=result_columns,
-            data=rows,
-        )
+        return {
+            "fields": result_columns,
+            "data": rows,
+        }
 
-    def get_table_data(self, params, result_columns=None, **kwargs):
+    def get_table_data(self, params, result_columns=None, **kwargs: Any):
         resp = self.get("/stat/v1/data", params=params, **kwargs)
         return self._parse_data_resp(
             resp,
@@ -208,18 +206,18 @@ class MetrikaApiClient(object):
             req_metrics=params.get("metrics"),
         )
 
-    def get_available_counters(self, **kwargs) -> list[dict]:
+    def get_available_counters(self, **kwargs: Any) -> list[dict]:
         obj_name = "applications" if self._is_appmetrica else "counters"
-        uri = "/management/v1/{}".format(obj_name)
+        uri = f"/management/v1/{obj_name}"
         resp = self.get(uri, **kwargs)
-        return [dict(id=c_info["id"], name=c_info["name"]) for c_info in resp[obj_name]]
+        return [{"id": c_info["id"], "name": c_info["name"]} for c_info in resp[obj_name]]
 
     def get_counter_info(self, counter_id):
         """
         https://tech.yandex.ru/metrika/doc/api2/management/counters/counter-docpage/
         """
         obj_name = "application" if self._is_appmetrica else "counter"
-        uri = "/management/v1/{obj_name}/{counter_id}".format(obj_name=obj_name, counter_id=counter_id)
+        uri = f"/management/v1/{obj_name}/{counter_id}"
         resp = self.get(uri)
         return resp[obj_name]
 
@@ -227,7 +225,7 @@ class MetrikaApiClient(object):
         counter_info = self.get_counter_info(counter_id)
         try:
             date_str = counter_info.get("create_time", counter_info.get("create_date")).split("T")[0]
-            creation_date = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+            creation_date = datetime.date.fromisoformat(date_str)
         except (ValueError, KeyError) as ex:
-            raise MetrikaApiException(orig_exc=ex) from ex
+            raise MetrikaApiError(orig_exc=ex) from ex
         return creation_date

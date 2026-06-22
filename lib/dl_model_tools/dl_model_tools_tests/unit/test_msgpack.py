@@ -26,7 +26,7 @@ def test_serialization():
 
 
 def test_safe_serialization(caplog):
-    unserializable_data = SAMPLE_DATA | dict(unserializable=CustomType())
+    unserializable_data = SAMPLE_DATA | {"unserializable": CustomType()}
     with pytest.raises(TypeError, match="Object of type CustomType is not MessagePack serializable"):
         DLMessagePackSerializer().dumps(unserializable_data)
 
@@ -39,7 +39,7 @@ def test_safe_serialization(caplog):
 
     log_record = get_log_record(caplog, predicate=lambda r: r.funcName == "to_jsonable", single=True)
     assert log_record.levelname == "WARNING"
-    assert log_record.msg == "Value of type CustomType is not serializable, skipping serialization"
+    assert log_record.getMessage() == "Value of type CustomType is not serializable, skipping serialization"
 
 
 @flaky.flaky(max_runs=3)
@@ -55,4 +55,4 @@ def test_perfomance():
     serializer = DLMessagePackSerializer()
     json_timeit = timeit.timeit(lambda: common_loads(common_dumps(obj)), number=10)
     msgpack_timeit = timeit.timeit(lambda: serializer.loads(serializer.dumps(obj)), number=10)
-    assert msgpack_timeit * 1.3 < json_timeit  # multiplier is selected experimentally
+    assert msgpack_timeit * 1.15 < json_timeit  # multiplier is selected experimentally

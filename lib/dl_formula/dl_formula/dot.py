@@ -2,26 +2,28 @@ from __future__ import annotations
 
 from functools import singledispatchmethod
 import textwrap
-from typing import Union
 import uuid
 
+from frozendict import frozendict
 import graphviz
 
 from dl_formula.core import nodes
 
 
 def make_name() -> str:
-    return "node_{}".format(uuid.uuid4().hex)
+    return f"node_{uuid.uuid4().hex}"
 
 
 class DotTranslator:
-    terminal_opts = dict(shape="rectangle", style="filled", margin="0")
-    literal_colors = {
-        str: "#fff6c1",
-        int: "#b2dee6",
-        float: "#c4b4e6",
-        bool: "#d7e6df",
-    }
+    terminal_opts = frozendict({"shape": "rectangle", "style": "filled", "margin": "0"})
+    literal_colors = frozendict(
+        {
+            str: "#fff6c1",
+            int: "#b2dee6",
+            float: "#c4b4e6",
+            bool: "#d7e6df",
+        }
+    )
 
     def __init__(self) -> None:
         pass
@@ -52,7 +54,7 @@ class DotTranslator:
     @_translate_node.register(nodes.Field)
     def _translate_node_field(self, node: nodes.Field, dot: graphviz.Digraph) -> str:
         node_name = make_name()
-        dot.node(node_name, label="[{}]".format(node.name), **self.terminal_opts, fillcolor="#e6cccc")
+        dot.node(node_name, label=f"[{node.name}]", **self.terminal_opts, fillcolor="#e6cccc")
         return node_name
 
     @_translate_node.register(nodes.LiteralInteger)
@@ -69,7 +71,7 @@ class DotTranslator:
         node_name = make_name()
         dot.node(
             node_name,
-            label="{!r}".format(node.value),
+            label=f"{node.value!r}",
             **self.terminal_opts,
             fillcolor=self.literal_colors[type(node.value)],
         )
@@ -86,24 +88,22 @@ class DotTranslator:
         node_name = make_name()
         dot.node(
             node_name,
-            label="[0..{}]".format(len(node.children) - 1),
+            label=f"[0..{len(node.children) - 1}]",
             shape="hexagon",
             style="filled",
             fillcolor="#bba7fc",
         )
         for i, child in enumerate(node.children):
             child_name = self.translate_node(child, dot)
-            dot.edge(node_name, child_name, label="[{}]".format(i))
+            dot.edge(node_name, child_name, label=f"[{i}]")
 
         return node_name
 
     @_translate_node.register(nodes.FuncCall)
     @_translate_node.register(nodes.WindowFuncCall)
-    def _translate_node_func_call(
-        self, node: Union[nodes.FuncCall, nodes.WindowFuncCall], dot: graphviz.Digraph
-    ) -> str:
+    def _translate_node_func_call(self, node: nodes.FuncCall | nodes.WindowFuncCall, dot: graphviz.Digraph) -> str:
         node_name = make_name()
-        args_names = ["ARG{}".format(i) for i in range(len(node.args))]
+        args_names = [f"ARG{i}" for i in range(len(node.args))]
         dot.node(
             node_name,
             label="{}({})".format(node.name.upper(), ", ".join(args_names)),
@@ -175,7 +175,7 @@ class DotTranslator:
     @_translate_node.register(nodes.WindowGroupingWithin)
     @_translate_node.register(nodes.WindowGroupingAmong)
     def _translate_node_window_grouping_with_dimensions(
-        self, node: Union[nodes.WindowGroupingWithin, nodes.WindowGroupingAmong], dot: graphviz.Digraph
+        self, node: nodes.WindowGroupingWithin | nodes.WindowGroupingAmong, dot: graphviz.Digraph
     ) -> str:
         node_name = make_name()
         keyword = {
@@ -185,7 +185,7 @@ class DotTranslator:
         dot.node(node_name, label=keyword, shape="octagon", style="filled", fillcolor="#ff898b")
         for i, child in enumerate(node.children):
             child_name = self.translate_node(child, dot)
-            dot.edge(node_name, child_name, label="DIM {}".format(i))
+            dot.edge(node_name, child_name, label=f"DIM {i}")
 
         return node_name
 
@@ -195,7 +195,7 @@ class DotTranslator:
         dot.node(node_name, label="ORDER BY", shape="octagon", style="filled", fillcolor="#ff898b")
         for i, child in enumerate(node.children):
             child_name = self.translate_node(child, dot)
-            dot.edge(node_name, child_name, label="EXPR {}".format(i))
+            dot.edge(node_name, child_name, label=f"EXPR {i}")
 
         return node_name
 
@@ -205,7 +205,7 @@ class DotTranslator:
         dot.node(node_name, label="BEFORE FILTER BY", shape="octagon", style="filled", fillcolor="#ff898b")
         for i, field_name in enumerate(node.field_names):
             child_name = self.translate_node(nodes.Field.make(name=field_name), dot)
-            dot.edge(node_name, child_name, label="FIELD {}".format(i))
+            dot.edge(node_name, child_name, label=f"FIELD {i}")
 
         return node_name
 

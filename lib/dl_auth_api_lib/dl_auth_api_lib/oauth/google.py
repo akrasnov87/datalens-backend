@@ -1,14 +1,15 @@
-from typing import Any
+from typing import (
+    Any,
+    Self,
+)
 import urllib.parse
 
 import aiohttp
 import attr
 import pydantic
-from typing_extensions import Self
 
 from dl_auth_api_lib.oauth.base import BaseOAuth
 from dl_auth_api_lib.settings import BaseOAuthClient
-
 
 _AUTH_URL: str = "https://accounts.google.com/o/oauth2/v2/auth?"
 _TOKEN_URL: str = "https://oauth2.googleapis.com/token"
@@ -18,7 +19,7 @@ class GoogleOAuthClient(BaseOAuthClient):
     type: str = pydantic.Field(alias="auth_type", default="google")
 
     client_id: str
-    client_secret: str
+    client_secret: str = pydantic.Field(repr=False)
     redirect_uri: str
     scope: str
     auth_url: str = pydantic.Field(default=_AUTH_URL)
@@ -44,8 +45,7 @@ class GoogleOAuth(BaseOAuth):
             "prompt": "consent",
             "include_granted_scopes": "true",
         }
-        uri = self.auth_url + urllib.parse.urlencode(params)
-        return uri
+        return self.auth_url + urllib.parse.urlencode(params)
 
     async def get_auth_token(self, code: str, origin: str | None = None) -> dict[str, Any]:
         async with aiohttp.ClientSession(
@@ -73,7 +73,6 @@ class GoogleOAuth(BaseOAuth):
         )
 
     def _get_session_headers(self) -> dict[str, str]:
-        headers = {
+        return {
             "Content-Type": "application/x-www-form-urlencoded",
         }
-        return headers

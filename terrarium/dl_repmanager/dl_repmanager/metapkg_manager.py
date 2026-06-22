@@ -2,7 +2,6 @@ import itertools
 import os.path
 from pathlib import Path
 import subprocess
-from typing import Optional
 from urllib.parse import urlparse
 
 import attr
@@ -54,14 +53,14 @@ class MetaPackageManager:
 
         return clone
 
-    def remove_dependency(self, group_name: Optional[str], pkg: str | ReqPackageSpec) -> None:
+    def remove_dependency(self, group_name: str | None, pkg: str | ReqPackageSpec) -> None:
         w = self.get_writer()
         section = w.get_editable_section(self.get_dependencies_section_name(group_name))
 
         effective_pkg_name = pkg if isinstance(pkg, str) else pkg.package_name
         section.remove(effective_pkg_name)
 
-    def write_dependency(self, group_name: Optional[str], pkg_spec: ReqPackageSpec) -> None:
+    def write_dependency(self, group_name: str | None, pkg_spec: ReqPackageSpec) -> None:
         w = self.get_writer()
         section = w.get_editable_section(self.get_dependencies_section_name(group_name))
         section[pkg_spec.package_name] = pkg_spec.to_toml_value()
@@ -87,12 +86,12 @@ class MetaPackageManager:
         del self._toml["tool"]["poetry"]["source"]  # type: ignore  # 2024-01-30 # TODO: Item "Item" of "Any | Item | Container" has no attribute "__delitem__"  [union-attr]
 
     @staticmethod
-    def get_dependencies_section_name(group: Optional[str]) -> str:
+    def get_dependencies_section_name(group: str | None) -> str:
         if group is None:
             return "tool.poetry.dependencies"
         return f"tool.poetry.group.{group}.dependencies"
 
-    def get_dependencies(self, group: Optional[str] = None) -> list[ReqPackageSpec]:
+    def get_dependencies(self, group: str | None = None) -> list[ReqPackageSpec]:
         r = self.get_reader()
 
         ret: list[ReqPackageSpec] = []
@@ -113,8 +112,8 @@ class MetaPackageManager:
         return ret
 
     def export_dependencies_raw(self, group: str) -> str:
-        proc = subprocess.run(
-            [
+        proc = subprocess.run(  # noqa: S603
+            [  # noqa: S607
                 "poetry",
                 "export",
                 "--only",
@@ -127,8 +126,7 @@ class MetaPackageManager:
             stdout=subprocess.PIPE,
             check=True,
         )
-        dependencies = proc.stdout.decode("ascii")
-        return dependencies
+        return proc.stdout.decode("ascii")
 
     def export_dependencies(self, group: str) -> list[ReqPackageSpec]:
         raw_deps = self.export_dependencies_raw(group)
@@ -158,7 +156,7 @@ class MetaPackageManager:
     def run_poetry_lock(self, suppress_stdout: bool = False) -> None:
         stdout_target = subprocess.DEVNULL if suppress_stdout else None
         subprocess.run(
-            ["poetry", "lock", "--no-update"],
+            ["poetry", "lock", "--no-update"],  # noqa: S607
             cwd=self.dir_path,
             check=True,
             stdout=stdout_target,

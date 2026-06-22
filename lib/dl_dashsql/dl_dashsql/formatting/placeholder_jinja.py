@@ -1,6 +1,6 @@
 import attr
 
-from dl_constants.enums import UserDataType
+from dl_constants import UserDataType
 from dl_dashsql.formatting.base import (
     JinjaStyleParamMatcher,
     QueryFormatter,
@@ -25,10 +25,9 @@ class JinjaPlaceholderStyle(PlaceholderStyle):
 @attr.s(frozen=True)
 class JinjaQueryFormatterFactory(QueryFormatterFactory):
     def get_query_formatter(self) -> QueryFormatter:
-        query_formatter = PlaceholderQueryFormatter(
+        return PlaceholderQueryFormatter(
             unknown_param_policy=UnknownParameterPolicy.ignore,
             unconsumed_param_policy=UnconsumedParameterPolicy.ignore,
             param_matcher=JinjaStyleParamMatcher(),
             placeholder_style=JinjaPlaceholderStyle(),
         )
-        return query_formatter

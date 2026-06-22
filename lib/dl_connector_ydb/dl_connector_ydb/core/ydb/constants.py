@@ -3,12 +3,11 @@ from enum import (
     unique,
 )
 
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     DataSourceType,
     SourceBackendType,
 )
-
 
 BACKEND_TYPE_YDB = SourceBackendType.declare("YDB")
 

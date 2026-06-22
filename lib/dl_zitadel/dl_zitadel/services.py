@@ -4,7 +4,6 @@ import typing
 
 import dl_zitadel.clients as dl_zitadel_clients
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -12,7 +11,7 @@ class ZitadelBaseTokenStorage:
     def __init__(
         self,
         token_refresh_timeout: datetime.timedelta = datetime.timedelta(seconds=60),
-    ):
+    ) -> None:
         self._token_refresh_timeout = token_refresh_timeout
         self._token: dl_zitadel_clients.Token | None = None
 
@@ -21,7 +20,8 @@ class ZitadelBaseTokenStorage:
             LOGGER.debug("Token is not set")
             return True
 
-        if (self._token.expiration_datetime - self._token_refresh_timeout) < datetime.datetime.now():
+        now = datetime.datetime.now(datetime.UTC)
+        if (self._token.expiration_datetime - self._token_refresh_timeout) < now:
             LOGGER.debug("Token is expired %s", self._token.expiration_datetime)
             return True
 
@@ -29,8 +29,7 @@ class ZitadelBaseTokenStorage:
 
 
 class SyncClientProtocol(typing.Protocol):
-    def get_token(self) -> dl_zitadel_clients.Token:
-        ...
+    def get_token(self) -> dl_zitadel_clients.Token: ...
 
 
 class ZitadelSyncTokenStorage(ZitadelBaseTokenStorage):
@@ -38,7 +37,7 @@ class ZitadelSyncTokenStorage(ZitadelBaseTokenStorage):
         self,
         client: SyncClientProtocol,
         token_refresh_timeout: datetime.timedelta = datetime.timedelta(seconds=60),
-    ):
+    ) -> None:
         self._client = client
 
         super().__init__(token_refresh_timeout)
@@ -52,8 +51,7 @@ class ZitadelSyncTokenStorage(ZitadelBaseTokenStorage):
 
 
 class AsyncClientProtocol(typing.Protocol):
-    async def get_token(self) -> dl_zitadel_clients.Token:
-        ...
+    async def get_token(self) -> dl_zitadel_clients.Token: ...
 
 
 # TODO: add soft refresh timeout to avoid multiple requests on timeout
@@ -62,7 +60,7 @@ class ZitadelAsyncTokenStorage(ZitadelBaseTokenStorage):
         self,
         client: AsyncClientProtocol,
         token_refresh_timeout: datetime.timedelta = datetime.timedelta(seconds=60),
-    ):
+    ) -> None:
         self._client = client
 
         super().__init__(token_refresh_timeout)

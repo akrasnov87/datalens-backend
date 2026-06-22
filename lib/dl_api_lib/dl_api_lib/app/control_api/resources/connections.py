@@ -35,27 +35,29 @@ from dl_api_lib.schemas.connection import (
     ConnectionItemQuerySchema,
     ConnectionSourcesQuerySchema,
     ConnectionSourceTemplatesResponseSchema,
+    ConnectionTemplateResponseSchema,
     GenericConnectionSchema,
 )
 from dl_api_lib.schemas.main import ImportResponseSchema
 from dl_api_lib.utils import (
     check_permission_on_entry,
+    need_delete_permission_on_entry,
     need_permission_on_entry,
 )
-from dl_constants.api_constants import DLHeadersCommon
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     CreateMode,
     EditMode,
     ExportMode,
     ImportMode,
 )
-from dl_constants.exc import DLBaseException
+from dl_constants.api_constants import DLHeadersCommon
+from dl_constants.exc import DLBaseError
 from dl_core.connectors.base.export_import import is_export_import_allowed
 from dl_core.data_source.type_mapping import get_data_source_class
 from dl_core.data_source_merge_tools import make_spec_from_dict
 from dl_core.exc import (
-    DatabaseUnavailable,
+    DatabaseUnavailableError,
     InvalidRequestError,
 )
 from dl_core.us_connection_base import (
@@ -63,7 +65,6 @@ from dl_core.us_connection_base import (
     DataSourceTemplate,
     ListingOptions,
 )
-
 
 if TYPE_CHECKING:
     from dl_core.connection_executors.sync_base import SyncConnExecutorBase
@@ -77,11 +78,10 @@ USE_S2S_AUTH = os.getenv("USE_S2S_AUTH", "0") == "1"
 
 
 def _handle_conn_test_exc(exception: Exception) -> NoReturn:
-    if isinstance(exception, DLBaseException):
+    if isinstance(exception, DLBaseError):
         raise exception
-    else:
-        LOGGER.exception("Got unhandled exception")
-        raise DatabaseUnavailable() from exception
+    LOGGER.exception("Got unhandled exception")
+    raise DatabaseUnavailableError() from exception
 
 
 @ns.route("/test_connection_params")
@@ -106,7 +106,7 @@ class ConnectionParamsTester(BIResource):
         try:
             conn.test(conn_executor_factory=service_registry.get_conn_executor_factory().get_sync_conn_executor)
         except NotImplementedError as err:
-            raise exc.UnsupportedForEntityType(f"Connector {conn_type} does not support testing") from err
+            raise exc.UnsupportedForEntityTypeError(f"Connector {conn_type} does not support testing") from err
         except Exception as err:
             _handle_conn_test_exc(err)
         return None
@@ -158,7 +158,9 @@ class ConnectionTester(BIResource):
         try:
             conn.test(conn_executor_factory=service_registry.get_conn_executor_factory().get_sync_conn_executor)
         except NotImplementedError as err:
-            raise exc.UnsupportedForEntityType(f"Connector {conn.conn_type.name} does not support testing") from err
+            raise exc.UnsupportedForEntityTypeError(
+                f"Connector {conn.conn_type.name} does not support testing"
+            ) from err
         except Exception as e:
             _handle_conn_test_exc(e)
         return None
@@ -207,13 +209,13 @@ class ConnectionsImportList(BIResource):
 
         conn_type_str = self.get_from_request(conn_data, "db_type")
         if conn_type_str not in ConnectionType:
-            raise exc.BadConnectionType(f"Not a valid connection type for this environment: {conn_type_str}")
+            raise exc.BadConnectionTypeError(f"Not a valid connection type for this environment: {conn_type_str}")
         conn_type = ConnectionType(conn_type_str)
 
         conn_availability = self.get_service_registry().get_connector_availability()
         conn_type_is_available = conn_availability.check_connector_is_available(conn_type)
         if not conn_type_is_available or not is_export_import_allowed(conn_type):
-            raise exc.UnsupportedForEntityType(
+            raise exc.UnsupportedForEntityTypeError(
                 f"Connector {conn_type_str} is not available for export/import in current environment"
             )
 
@@ -239,7 +241,7 @@ class ConnectionsImportList(BIResource):
 
         us_manager.create(conn)
 
-        return dict(id=conn.uuid, notifications=notifications)
+        return {"id": conn.uuid, "notifications": notifications}
 
 
 @ns.route("/")
@@ -252,13 +254,13 @@ class ConnectionsList(BIResource):
         conn_availability = self.get_service_registry().get_connector_availability()
         conn_type = request.json and request.json.get("type")
         if not conn_type or conn_type not in ConnectionType:
-            raise exc.BadConnectionType(f"Invalid connection type value: {conn_type}")
+            raise exc.BadConnectionTypeError(f"Invalid connection type value: {conn_type}")
         conn_type_is_available = conn_availability.check_connector_is_available(ConnectionType[conn_type])
 
         if not conn_type_is_available:
             # TODO: remove `abort` after migration to schematic_request decorator with common error handling
             abort(400, "This connection type is not editable")
-            raise exc.UnsupportedForEntityType("This connection type is not editable")
+            raise exc.UnsupportedForEntityTypeError("This connection type is not editable")
 
         schema = GenericConnectionSchema(context=self.get_schema_ctx(schema_operations_mode=CreateMode.create))
         try:
@@ -331,7 +333,7 @@ class ConnectionItem(BIResource):
             expected_type=ConnectionBase,
             context_name="connection",
         )
-        need_permission_on_entry(conn, USPermissionKind.admin)
+        need_delete_permission_on_entry(conn)
 
         us_manager.delete(conn)
 
@@ -401,11 +403,11 @@ class ConnectionExportItem(BIResource):
         conn_us_resp = us_manager.get_by_id_raw(connection_id, expected_type=ConnectionBase)
         conn_type_str = conn_us_resp.get("type")
         if conn_type_str not in ConnectionType:
-            raise exc.BadConnectionType(f"Not a valid connection type for this environment: {conn_type_str}")
+            raise exc.BadConnectionTypeError(f"Not a valid connection type for this environment: {conn_type_str}")
         conn_type = ConnectionType(conn_type_str)
 
         if not is_export_import_allowed(conn_type):
-            raise exc.UnsupportedForEntityType(
+            raise exc.UnsupportedForEntityTypeError(
                 f"Connector {conn_type_str} is not available for export/import in current environment"
             )
 
@@ -420,7 +422,7 @@ class ConnectionExportItem(BIResource):
         if conn_warnings:
             notifications.extend(conn_warnings)
 
-        return dict(connection=result, notifications=notifications)
+        return {"connection": result, "notifications": notifications}
 
 
 def _dump_source_templates(tpls: list[DataSourceTemplate] | None) -> list[dict[str, Any]] | None:
@@ -489,7 +491,7 @@ class ConnectionDBNames(BIResource):
 
         service_registry = self.get_service_registry()
         if not connection.supports_db_name_listing:
-            raise exc.UnsupportedForEntityType("DB names listing is not supported for current connection type")
+            raise exc.UnsupportedForEntityTypeError("DB names listing is not supported for current connection type")
         return {
             "db_names": connection.get_db_names(
                 conn_executor_factory=service_registry.get_conn_executor_factory().get_sync_conn_executor
@@ -534,6 +536,7 @@ class ConnectionInfoSourceListingOptions(BIResource):
             listing_options = ListingOptions(
                 supports_source_search=False,
                 supports_source_pagination=False,
+                supports_query_pagination=False,
                 supports_db_name_listing=False,
                 db_name_required_for_search=False,
                 db_name_label=None,
@@ -620,8 +623,7 @@ class ConnectionInfoSourceSchema(BIResource):
         sr = self.get_service_registry()
 
         def conn_executor_factory_func() -> SyncConnExecutorBase:
-            conn_executor = sr.get_conn_executor_factory().get_sync_conn_executor(conn=connection)
-            return conn_executor
+            return sr.get_conn_executor_factory().get_sync_conn_executor(conn=connection)
 
         need_permission_on_entry(connection, USPermissionKind.read)
         if not connection.is_dashsql_allowed:
@@ -642,3 +644,28 @@ class ConnectionInfoSourceSchema(BIResource):
         return {
             "raw_schema": schema_info.schema,
         }
+
+
+@ns.route("/<connection_id>/info/template")
+class ConnectionInfoTemplate(BIResource):
+    @schematic_request(
+        ns=ns,
+        responses={
+            200: ("Success", ConnectionTemplateResponseSchema()),
+            400: ("Failed", BadRequestResponseSchema()),
+        },
+    )
+    def get(self, connection_id: str) -> dict:
+        us_manager = self.get_regular_us_manager()
+        connection = us_manager.get_by_id(
+            connection_id,
+            expected_type=ConnectionBase,
+            context_name="connection",
+        )
+        need_permission_on_entry(connection, USPermissionKind.read)
+
+        template_name = connection.template_name
+        if template_name is None:
+            raise exc.ConnectionTemplateNotFoundError()
+
+        return {"template_name": template_name}

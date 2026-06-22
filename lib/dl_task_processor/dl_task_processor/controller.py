@@ -1,9 +1,6 @@
 import argparse
+from collections.abc import Iterable
 import json
-from typing import (
-    Iterable,
-    Optional,
-)
 
 import attr
 
@@ -84,8 +81,7 @@ class InstanceController:
     _processor: TaskProcessor = attr.ib()
 
     async def schedule(self, task: BaseTaskMeta) -> TaskInstance:
-        scheduled_task = await self._processor.schedule(task)
-        return scheduled_task
+        return await self._processor.schedule(task)
 
     async def get(self, name: TaskName) -> TaskInstance:
         raise NotImplementedError()
@@ -103,7 +99,7 @@ class Cli:
     _registry: TaskRegistry = attr.ib()
 
     @classmethod
-    def parse_params(cls, args: Optional[list[str]] = None) -> argparse.Namespace:
+    def parse_params(cls, args: list[str] | None = None) -> argparse.Namespace:
         parser = argparse.ArgumentParser(description="Task Processor controller")
         subparsers = parser.add_subparsers(dest="subparser")
 

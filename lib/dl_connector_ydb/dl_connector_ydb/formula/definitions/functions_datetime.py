@@ -14,7 +14,6 @@ from dl_formula.translation.context import TranslationCtx
 
 from dl_connector_ydb.formula.constants import YqlDialect as D
 
-
 V = TranslationVariant.make
 VW = TranslationVariantWrapped.make
 
@@ -148,11 +147,13 @@ DEFINITIONS_DATETIME = [
         variants=[
             V(
                 D.YQL,
-                lambda date, unit: sa.func.DateTime.MakeDate(
-                    getattr(sa.func.DateTime, YQL_DATE_DATETRUNC_FUNCS[base.norm_datetrunc_unit(unit)])(date)
-                )
-                if base.norm_datetrunc_unit(unit) in YQL_DATE_DATETRUNC_FUNCS
-                else date,
+                lambda date, unit: (
+                    sa.func.DateTime.MakeDate(
+                        getattr(sa.func.DateTime, YQL_DATE_DATETRUNC_FUNCS[base.norm_datetrunc_unit(unit)])(date)
+                    )
+                    if base.norm_datetrunc_unit(unit) in YQL_DATE_DATETRUNC_FUNCS
+                    else date
+                ),
             ),
         ]
     ),

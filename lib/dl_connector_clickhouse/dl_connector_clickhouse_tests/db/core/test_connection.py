@@ -1,9 +1,8 @@
-import os
-from typing import Callable
+from collections.abc import Callable
 
-import clickhouse_sqlalchemy.exceptions
 import pytest
 
+from dl_core import exc as dl_core_exc
 from dl_core.us_connection_base import DataSourceTemplate
 from dl_core_testing.testcases.connection import DefaultConnectionTestClass
 
@@ -65,7 +64,6 @@ class TestClickHouseReadonlyUserConnection(BaseClickHouseReadonlyUserTestClass, 
         assert conn.data.readonly == 1
 
 
-@pytest.mark.skipif(os.environ.get("WE_ARE_IN_CI"), reason="can't use localhost")
 class TestSslClickHouseConnection(
     BaseSslClickHouseTestClass,
     TestClickHouseConnection,
@@ -79,7 +77,6 @@ class TestSslClickHouseConnection(
         assert conn.data.ssl_ca == params["ssl_ca"]
 
 
-@pytest.mark.skipif(os.environ.get("WE_ARE_IN_CI"), reason="can't use localhost")
 class TestSslNoVerifyClickHouseConnection(
     BaseSslNoVerifyClickHouseTestClass,
     TestClickHouseConnection,
@@ -94,19 +91,17 @@ class TestSslNoVerifyClickHouseConnection(
         assert conn.data.ssl_ca_verify is False
 
 
-@pytest.mark.skipif(os.environ.get("WE_ARE_IN_CI"), reason="can't use localhost")
 class TestSslNoVerifyIgnoredWhenSettingDisabled(
     BaseSslClickHouseTestClass,
     BaseClickHouseTestClass,
 ):
-
     """SSL ClickHouse with ssl_ca_verify=False stored but ALLOW_SSL_CA_VERIFY_OPTION=False.
 
     Verifies that when the setting is disabled the stored ssl_ca_verify=False is ignored
     and SSL certificate verification remains active.
     """
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def connection_creation_params(self) -> dict:
         return dict(
             db_name=test_config.CoreSslConnectionSettings.DB_NAME,
@@ -114,7 +109,7 @@ class TestSslNoVerifyIgnoredWhenSettingDisabled(
             port=test_config.CoreSslConnectionSettings.PORT,
             username=test_config.CoreSslConnectionSettings.USERNAME,
             password=test_config.CoreSslConnectionSettings.PASSWORD,
-            **(dict(raw_sql_level=self.raw_sql_level) if self.raw_sql_level is not None else {}),
+            **({"raw_sql_level": self.raw_sql_level} if self.raw_sql_level is not None else {}),
             secure=True,
             ssl_ca_verify=False,  # stored, but must be ignored because ALLOW_SSL_CA_VERIFY_OPTION=False
         )
@@ -127,5 +122,5 @@ class TestSslNoVerifyIgnoredWhenSettingDisabled(
         def factory(connection):
             return sync_conn_executor_factory()
 
-        with pytest.raises(clickhouse_sqlalchemy.exceptions.DatabaseException):
+        with pytest.raises(dl_core_exc.SourceConnectError):
             saved_connection.test(conn_executor_factory=factory)

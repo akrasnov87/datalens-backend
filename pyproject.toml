@@ -7,7 +7,7 @@ readme = "README.md"
 version = "0.1.0"
 
 [tool.poetry.dependencies]
-python = ">=3.10"
+python = ">=3.12, <3.13"
 
 [tool.black]
 force-exclude = '''
@@ -20,7 +20,7 @@ force-exclude = '''
 )
 '''
 line-length = 120
-target-version = ['py310']
+target-version = ['py312']
 
 [tool.isort]
 force_grid_wrap = 2
@@ -35,7 +35,6 @@ known_first_party = [
   "dl_*",
 ]
 line_length = 120
-lines_after_imports = 2
 multi_line_output = 3
 profile = "black"
 sections = [
@@ -76,49 +75,74 @@ exclude = [
   "dist",
   "lib/clickhouse-sqlalchemy/**",
   "lib/dl_formula/dl_formula/parser/antlr/gen/**",
+  "lib/dl_task_processor/dl_task_processor/upstream_worker.py",
   "lib/redis-cache-lock/**",
   "node_modules",
+  "tools/cookiecutter/templates/**",
   "tools_venv",
   "venv",
 ]
 force-exclude = true
 line-length = 120
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
+# Each entry is tagged with its disposition:
+# Never — a deliberate, permanent choice; comment says what it is and why we keep ignoring it.
+# Later — we want it eventually; comment says what it is.
 ignore = [
-  "B024", # is an abstract base class, but it has no abstract methods
-  "B904", # force `raise ... from err` or `raise ... from None`
-  "B905", # `zip()` without an explicit `strict=` parameter
-  "E501", # line length, should be checked and fixed by black
-  "UP004", # [*] Class ... inherits from `object`
-  "UP007", # Use `X | Y` for type annotations
-  "UP008", # Use `super()` instead of `super(__class__, self)`
-  "UP009", # [*] UTF-8 encoding declaration is unnecessary
-  "UP010", # [*] Unnecessary `__future__` import ...
-  "UP012", # [*] Unnecessary UTF-8 `encoding` argument to `encode`
-  "UP014", # Convert `RequestData` from `NamedTuple` functional to class syntax
-  "UP015", # [*] Unnecessary open mode parameters
-  "UP018", # [*] Unnecessary `int` call (rewrite as a literal)
-  "UP024", # [*] Replace aliased errors with `OSError`
-  "UP026", # [*] `mock` is deprecated, use `unittest.mock`
-  "UP027", # [*] Replace unpacked list comprehension with a generator expression
-  "UP028", # Replace `yield` over `for` loop with `yield from`
-  "UP030", # Use implicit references for positional format fields
-  "UP031", # Use format specifiers instead of percent format
-  "UP032", # [*] Use f-string instead of `format` call
-  "UP034", # [*] Avoid extraneous parentheses
-  "UP035", # Import from `collections.abc`
-  "UP037", # [*] Remove quotes from type annotation
-  "UP038", # Use `X | Y` in `isinstance` call instead of `(X, Y)`
+  "ASYNC109", # Never: async-function-with-timeout — fires on any async fn that has a `timeout` parameter regardless of use; our `timeout` params are legitimate domain durations (functions run their own wait-loop), so enforcing only adds noqa noise
+  "DTZ001", # Later (TODO: BI-7500): call-datetime-without-tzinfo — DTZ category is enabled, but this sub-rule is deferred wholesale to BI-7500: naive datetimes are pervasive (tests, parsing, connector data, internal timings) and per-site tz migration needs the connector/DB test matrix to verify
+  "E501", # Never: line-too-long — line length is delegated to black
+  "PIE790", # Never: unnecessary-placeholder — we intentionally keep explicit `pass` / `...` in stub bodies (abstract methods, empty overrides, docstring-only classes) for readability
+  "RUF001", # Never: ambiguous-unicode-character-string — Cyrillic look-alikes in string literals (test data, localized messages) are intentional; per-site review showed flagging only adds `noqa` noise
+  "RUF002", # Never: ambiguous-unicode-character-docstring — Cyrillic in RU docstrings is intentional; per-site review showed flagging only adds `noqa` noise (incl. dead/commented-out code)
+  "RUF003", # Never: ambiguous-unicode-character-comment — same intentional Cyrillic in RU comments
+  "RUF009", # Never: function-call-in-dataclass-default — fires on the attrs field-declaration idiom (`s_attrib()` returns `attr.ib()`, ~287 sites); a pure false positive, not a real shared-mutable default
+  "S101", # Never: assert — `assert` is an accepted inline invariant/precondition idiom repo-wide (incl. non-test source) and ubiquitous in tests; flake8-bandit's assert ban would only add noqa noise. Preliminary disposition for the `S` category (migrated incrementally in BI-7445; security-relevant `S` sub-rules handled separately).
+  "S104", # Never: hardcoded-bind-all-interfaces — binding to 0.0.0.0 is intentional for containerized services (exposure is controlled by the orchestrator, not the app); the rule would only add noqa noise.
+  "S105", # Never: hardcoded-password-string — fires on the naming heuristic (vars named password/token/secret); per-site review of all sites found zero real secrets (HTTP header names, form-field keys, log-masking regexes, masks, fakes), so enforcing only adds noqa noise.
+  "S106", # Never: hardcoded-password-func-arg — twin of S105; fires on call kwargs named password/token/secret with literal values, all benign (test fixtures + dummy/mock US managers with a dummy us_master_token); no real secrets, so enforcing only adds noqa noise.
+  "S311", # Never: suspicious-non-cryptographic-random-usage — `random` for non-security use (load balancing, retry jitter, test data, internal ids) is pervasive and legitimate; per-site review found no security-sensitive use, so enforcing only adds noqa noise.
+  "S608", # Never: hardcoded-sql-expression — string-built SQL is pervasive and legitimate here (connectors, repositories: structural query construction with parameterized values, not user-input interpolation); per-site review found no injection sites, so enforcing only adds noqa noise.
+  "SIM108", # Never: if-else-block-instead-of-if-exp — forcing ternaries hurts readability; many sites carry explanatory comments / type-ignores that don't survive the (unsafe-only) autofix
+  "SIM300", # Never: yoda-conditions — autofix mis-handles our settings/config comparisons (`settings.MODE == Enum.member`), yoda-fying correct code
 ]
+# Rule categories considered for `select`, documented here (outside the array so
+# toml-sort does not drop the commented-out lines):
+#
+# Later — want these; enable in follow-up PRs/tickets, once the backlog
+# of existing violations is cleared:
+# "ANN",   # flake8-annotations — Later: blanket annotation enforcement, enabled incrementally per sub-rule in BI-7445 (see ANN* entries in select); the full category is still deferred
+#
+# Never — will not enable:
+# "I",   # isort — Never: ruff has no `force_grid_wrap` equivalent (tried; collapses multi-member imports), keep the standalone isort linter (see [tool.isort])
+# "TCH", # flake8-type-checking — Never: forces `from __future__ import annotations` / TYPE_CHECKING blocks, both banned by python-style.mdc
+# "D",   # pydocstyle — Never: we don't mandate docstrings repo-wide
 select = [
-  # Bugbear
-  "B",
-  # Pyflakes
-  "F",
-  # pyupgrade
-  "UP",
+  "ANN002", # flake8-annotations (sub-rule): missing-type-args
+  "ANN003", # flake8-annotations (sub-rule): missing-type-kwargs
+  "ANN204", # flake8-annotations (sub-rule): missing-return-type-special-method
+  "ANN205", # flake8-annotations (sub-rule): missing-return-type-static-method
+  "ANN206", # flake8-annotations (sub-rule): missing-return-type-class-method
+  "ASYNC", # flake8-async
+  "B", # flake8-bugbear
+  "C4", # flake8-comprehensions
+  "DTZ", # flake8-datetimez
+  "F", # Pyflakes
+  "FLY", # flynt
+  "FURB", # refurb
+  "G", # flake8-logging-format
+  "LOG", # flake8-logging
+  "N", # pep8-naming
+  "PERF", # Perflint
+  "PIE", # flake8-pie
+  "PT", # flake8-pytest-style
+  "RET", # flake8-return
+  "RUF", # Ruff-specific rules
+  "S", # flake8-bandit
+  "SIM", # flake8-simplify
+  "UP", # pyupgrade
 ]
 
 [tool.tomlsort]

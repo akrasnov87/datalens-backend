@@ -1,7 +1,4 @@
-from typing import (
-    Collection,
-    Optional,
-)
+from collections.abc import Collection
 
 import attr
 
@@ -15,7 +12,7 @@ from dl_core.core_data_processors import register_all_data_processor_plugins
 @attr.s(frozen=True)
 class CoreLibraryConfig:
     # Whitelist of connector entrypoints to be loaded
-    core_connector_ep_names: Optional[Collection[str]] = attr.ib(kw_only=True, default=None)
+    core_connector_ep_names: Collection[str] | None = attr.ib(kw_only=True, default=None)
 
 
 def preload_bi_core() -> None:

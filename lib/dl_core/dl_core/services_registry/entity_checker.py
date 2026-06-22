@@ -4,11 +4,9 @@ import abc
 from typing import (
     TYPE_CHECKING,
     Any,
-    Optional,
 )
 
 from dl_i18n.localizer_base import Localizer
-
 
 if TYPE_CHECKING:
     from dl_api_commons.base_models import RequestContextInfo
@@ -17,16 +15,16 @@ if TYPE_CHECKING:
     from dl_core.us_manager.us_manager import USManagerBase
 
 
-class EntityUsageNotAllowed(Exception):
-    _user_reason: Optional[str]
+class EntityUsageNotAllowedError(Exception):
+    _user_reason: str | None
 
-    def __init__(self, *args: Any, user_reason: Optional[str] = None):
+    def __init__(self, *args: Any, user_reason: str | None = None) -> None:
         super().__init__(*args)
         self._user_reason = user_reason
 
     @property
     def user_reason(self) -> str:
-        return self._user_reason if self._user_reason else "Unknown reason"
+        return self._user_reason or "Unknown reason"
 
 
 class EntityUsageChecker(metaclass=abc.ABCMeta):
@@ -36,7 +34,7 @@ class EntityUsageChecker(metaclass=abc.ABCMeta):
         rci: RequestContextInfo,
         dataset: Dataset,
         us_manager: USManagerBase,
-        localizer: Optional[Localizer] = None,
+        localizer: Localizer | None = None,
     ) -> None:
         pass
 

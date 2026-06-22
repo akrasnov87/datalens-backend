@@ -4,8 +4,6 @@ import abc
 from typing import (
     TYPE_CHECKING,
     ClassVar,
-    Generic,
-    Optional,
     TypeVar,
 )
 
@@ -13,16 +11,15 @@ import sqlalchemy as sa
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.sql.elements import ClauseElement
 
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     SourceBackendType,
 )
 from dl_core.backend_types import get_backend_type
 from dl_core.connection_executors.models.scoped_rci import DBAdapterScopedRCI
 
-
 if TYPE_CHECKING:
-    from dl_core.connection_executors.models.connection_target_dto_base import ConnTargetDTO  # noqa: F401
+    from dl_core.connection_executors.models.connection_target_dto_base import ConnTargetDTO
 
 
 _DIALECT_STRINGS: dict[ConnectionType, str] = {}  # Filled from connectors
@@ -42,14 +39,15 @@ def get_dialect_string(conn_type: ConnectionType) -> str:
 def get_dialect_for_conn_type(conn_type: ConnectionType) -> DefaultDialect:
     engine = sa.create_engine(f"{get_dialect_string(conn_type)}://", strategy="mock", executor=lambda *_, **__: None)
     engine = engine.execution_options(compiled_cache=None)
-    return engine.dialect  # type: ignore  # 2024-01-24 # TODO: Incompatible return value type (got "Dialect", expected "DefaultDialect")  [return-value]
+    return engine.dialect
 
 
 _DBA_TV = TypeVar("_DBA_TV", bound="CommonBaseDirectAdapter")
+# Kept as a module-level TypeVar (in addition to the PEP 695 class parameter) for external importers.
 _TARGET_DTO_TV = TypeVar("_TARGET_DTO_TV", bound="ConnTargetDTO")
 
 
-class CommonBaseDirectAdapter(Generic[_TARGET_DTO_TV], metaclass=abc.ABCMeta):
+class CommonBaseDirectAdapter[TARGET_DTO_TV: "ConnTargetDTO"](metaclass=abc.ABCMeta):
     # TODO FIX: May be use dialect strings right here???
     conn_type: ClassVar[ConnectionType]  # Kostyl to use `get_dialect_string`  # FIXME: Switch to backend_type here
 
@@ -63,7 +61,7 @@ class CommonBaseDirectAdapter(Generic[_TARGET_DTO_TV], metaclass=abc.ABCMeta):
     @classmethod
     @abc.abstractmethod
     def create(
-        cls: type[_DBA_TV], target_dto: _TARGET_DTO_TV, req_ctx_info: DBAdapterScopedRCI, default_chunk_size: int
+        cls: type[_DBA_TV], target_dto: TARGET_DTO_TV, req_ctx_info: DBAdapterScopedRCI, default_chunk_size: int
     ) -> _DBA_TV:
         """Generic way to create"""
 
@@ -71,9 +69,7 @@ class CommonBaseDirectAdapter(Generic[_TARGET_DTO_TV], metaclass=abc.ABCMeta):
     def get_dialect(cls) -> DefaultDialect:
         return get_dialect_for_conn_type(cls.conn_type)
 
-    def compile_query_for_execution(
-        self, query: ClauseElement | str, dialect: Optional[sa.engine.Dialect] = None
-    ) -> str:
+    def compile_query_for_execution(self, query: ClauseElement | str, dialect: sa.engine.Dialect | None = None) -> str:
         """Should not be used unless it is impossible to avoid"""
         if isinstance(query, str):
             return query
@@ -87,6 +83,4 @@ class CommonBaseDirectAdapter(Generic[_TARGET_DTO_TV], metaclass=abc.ABCMeta):
         )
 
         # TODO: check the `dialect dbapi paramstyle`
-        query_text = str(compiled_query)
-
-        return query_text
+        return str(compiled_query)

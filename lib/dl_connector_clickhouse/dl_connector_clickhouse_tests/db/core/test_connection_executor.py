@@ -1,18 +1,16 @@
 import asyncio
+from collections.abc import Sequence
 import enum
-import os
-from typing import (
-    Optional,
-    Sequence,
-)
 
 import attr
 from clickhouse_sqlalchemy import types as ch_types
 import pytest
+import shortuuid
 import sqlalchemy as sa
 
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
+    IndexKind,
     UserDataType,
 )
 from dl_core.connection_executors import (
@@ -20,11 +18,16 @@ from dl_core.connection_executors import (
     ConnExecutorQuery,
     SyncConnExecutorBase,
 )
+from dl_core.connection_models import TableIdent
 from dl_core.connection_models.common_models import DBIdent
+from dl_core.db import IndexInfo
+from dl_core_testing.database import Db
 from dl_core_testing.testcases.connection_executor import (
     DefaultAsyncConnectionExecutorTestSuite,
+    DefaultIndexDiscoveryTestSuite,
     DefaultSyncAsyncConnectionExecutorCheckBase,
     DefaultSyncConnectionExecutorTestSuite,
+    IndexTestCase,
 )
 from dl_testing.regulated_test import RegulatedTestParams
 from dl_type_transformer.native_type import (
@@ -53,11 +56,11 @@ class ClickHouseSyncAsyncConnectionExecutorCheckBase(
         },
     )
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def db_ident(self) -> DBIdent:
         return DBIdent(db_name=CoreConnectionSettings.DB_NAME)
 
-    def check_db_version(self, db_version: Optional[str]) -> None:
+    def check_db_version(self, db_version: str | None) -> None:
         assert db_version is not None
         assert "." in db_version
 
@@ -65,6 +68,7 @@ class ClickHouseSyncAsyncConnectionExecutorCheckBase(
 class TestClickHouseSyncConnectionExecutor(
     ClickHouseSyncAsyncConnectionExecutorCheckBase,
     DefaultSyncConnectionExecutorTestSuite[ConnectionClickhouse],
+    DefaultIndexDiscoveryTestSuite[ConnectionClickhouse],
 ):
     @attr.s(frozen=True)
     class CD(DefaultSyncConnectionExecutorTestSuite.CD):
@@ -182,6 +186,35 @@ class TestClickHouseSyncConnectionExecutor(
             ],
         }
 
+    @pytest.fixture(params=["no_idx", "one_columns_sorting", "two_columns_sorting"])
+    def index_test_case(self, db: Db, request: pytest.FixtureRequest):
+        table_name = f"idx_test_{shortuuid.uuid()}"
+        cases = {
+            "no_idx": (
+                f"CREATE TABLE `{table_name}` (num_1 UInt64, num_2 UInt64, txt String) ENGINE = Log",
+                [],
+            ),
+            "one_columns_sorting": (
+                f"CREATE TABLE `{table_name}` (num_1 UInt64, num_2 UInt64, txt String)"
+                f" ENGINE = MergeTree() ORDER BY (num_1)",
+                [IndexInfo(columns=("num_1",), kind=IndexKind.table_sorting)],
+            ),
+            "two_columns_sorting": (
+                f"CREATE TABLE `{table_name}` (num_1 UInt64, num_2 UInt64, txt String)"
+                f" ENGINE = MergeTree() ORDER BY (num_1, num_2)",
+                [IndexInfo(columns=("num_1", "num_2"), kind=IndexKind.table_sorting)],
+            ),
+        }
+        ddl, expected_indexes = cases[request.param]
+        try:
+            db.execute(ddl)
+            yield IndexTestCase(
+                table_ident=TableIdent(db_name=None, schema_name=None, table_name=table_name),
+                expected_indexes=frozenset(expected_indexes),
+            )
+        finally:
+            db.execute(f"DROP TABLE IF EXISTS `{table_name}`")
+
 
 class TestClickHouseAsyncConnectionExecutor(
     ClickHouseSyncAsyncConnectionExecutorCheckBase,
@@ -211,7 +244,6 @@ class TestClickHouseAsyncConnectionExecutor(
         assert rows == [(None,)]
 
 
-@pytest.mark.skipif(os.environ.get("WE_ARE_IN_CI"), reason="can't use localhost")
 class TestSslClickHouseSyncConnectionExecutor(
     BaseSslClickHouseTestClass,
     TestClickHouseSyncConnectionExecutor,
@@ -221,7 +253,6 @@ class TestSslClickHouseSyncConnectionExecutor(
         self.check_ssl_directory_is_empty()
 
 
-@pytest.mark.skipif(os.environ.get("WE_ARE_IN_CI"), reason="can't use localhost")
 class TestSslClickHouseAsyncConnectionExecutor(
     BaseSslClickHouseTestClass,
     TestClickHouseAsyncConnectionExecutor,

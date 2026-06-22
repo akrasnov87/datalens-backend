@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-from typing import (
-    Iterable,
-    Optional,
-)
+from collections.abc import Iterable
 
 import attr
 
 from dl_connector_bitrix_gds.core.constants import BitrixGDSTableType
-
 
 CRM_DEAL = [
     {"name": "ID", "type": "integer"},
@@ -902,7 +898,7 @@ class BitrixGDSColumn:
 class BitrixGDSTable:
     type: BitrixGDSTableType = attr.ib()
     schema: Iterable[BitrixGDSColumn] = attr.ib()
-    daterange_col_name: Optional[str] = attr.ib(default=None)
+    daterange_col_name: str | None = attr.ib(default=None)
 
     def get_columns(self) -> list[str]:
         return [column.name for column in self.schema]

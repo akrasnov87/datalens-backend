@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import Iterator
 from copy import deepcopy
 import itertools
 import logging
-from typing import (
-    Any,
-    Iterator,
-    Optional,
-)
+from typing import Any
 
 import attr
 
@@ -16,7 +13,7 @@ from dl_api_commons.base_models import TenantDef
 from dl_api_connector.connection_info import ConnectionInfoProvider
 from dl_api_lib.connection_forms.registry import CONN_FORM_FACTORY_BY_TYPE
 from dl_api_lib.connection_info import get_connector_info_provider
-from dl_api_lib.exc import ConnectorIconNotFoundException
+from dl_api_lib.exc import ConnectorIconNotFoundError
 from dl_api_lib.i18n.localizer import Translatable
 from dl_configs.connector_availability import (
     ConnectorAvailabilityConfigSettings,
@@ -31,7 +28,7 @@ from dl_configs.settings_loaders.fallback_cfg_resolver import ObjectLikeConfig
 from dl_configs.settings_loaders.meta_definition import s_attrib
 from dl_configs.settings_loaders.settings_obj_base import SettingsBase
 from dl_configs.utils import conn_type_set_env_var_converter
-from dl_constants.enums import (
+from dl_constants import (
     ConnectionType,
     ConnectorAvailability,
 )
@@ -40,7 +37,6 @@ from dl_dynamic_enum import (
     DynamicEnum,
 )
 from dl_i18n.localizer_base import Localizer
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -51,7 +47,7 @@ class LocalizedSerializable(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
 
-def _make_translatable(text: str, domain: Optional[str]) -> Translatable:
+def _make_translatable(text: str, domain: str | None) -> Translatable:
     translatable = Translatable(text)
     if domain is not None:
         translatable.domain = domain
@@ -68,7 +64,7 @@ class Section(LocalizedSerializable):
         def _connector_from_settings(settings: ConnectorBaseSettings | ObjectLikeConfig) -> ConnectorBase:
             if hasattr(settings, "conn_type"):
                 return Connector.from_settings(settings)  # type: ignore  # 2024-01-30 # TODO: Argument 1 to "from_settings" of "Connector" has incompatible type "ConnectorBaseSettings | ObjectLikeConfig"; expected "ConnectorSettings"  [arg-type]
-            elif hasattr(settings, "includes"):
+            if hasattr(settings, "includes"):
                 return ConnectorContainer.from_settings(settings)  # type: ignore  # 2024-01-24 # TODO: Argument 1 to "from_settings" of "ConnectorContainer" has incompatible type "ConnectorBaseSettings"; expected "ConnectorContainerSettings"  [arg-type]
             raise ValueError('Can\'t create a connector, neither "conn_type" nor "includes" found among settings')
 
@@ -78,10 +74,10 @@ class Section(LocalizedSerializable):
         )
 
     def as_dict(self, localizer: Localizer) -> dict[str, Any]:
-        return dict(
-            title=localizer.translate(self.title_translatable),
-            connectors=[connector.as_dict(localizer) for connector in self.connectors],
-        )
+        return {
+            "title": localizer.translate(self.title_translatable),
+            "connectors": [connector.as_dict(localizer) for connector in self.connectors],
+        }
 
 
 @attr.s(kw_only=True)
@@ -116,14 +112,14 @@ class ConnectorBase(LocalizedSerializable, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     def as_dict(self, localizer: Localizer) -> dict[str, Any]:
-        return dict(
-            visibility_mode=self.visibility_mode.value,
-            alias=self.alias,
-            conn_type=self.conn_type_str,
-            title=self.get_title(localizer),
-            backend_driven_form=self.backend_driven_form,
-            history=self.history,
-        )
+        return {
+            "visibility_mode": self.visibility_mode.value,
+            "alias": self.alias,
+            "conn_type": self.conn_type_str,
+            "title": self.get_title(localizer),
+            "backend_driven_form": self.backend_driven_form,
+            "history": self.history,
+        }
 
 
 def _conn_type_converter(value: Any) -> ConnectionType:
@@ -144,10 +140,10 @@ class ConnectorIconSrcConfig:
     icon_type: ConnectorIconSrcType = attr.ib()
 
     def as_dict(self, conn: Connector) -> dict[str, Any] | None:
-        return dict(
-            type=self.icon_type.value,
-            conn_type=conn.conn_type.value,
-        )
+        return {
+            "type": self.icon_type.value,
+            "conn_type": conn.conn_type.value,
+        }
 
     @classmethod
     @abc.abstractmethod
@@ -157,16 +153,16 @@ class ConnectorIconSrcConfig:
 
 @attr.s(kw_only=True)
 class ConnectorIconSrcConfigData(ConnectorIconSrcConfig):
-    data: Optional[str] = attr.ib(default=None)
+    data: str | None = attr.ib(default=None)
 
     def as_dict(self, conn: Connector) -> dict[str, Any] | None:
         if not conn.connector_info_provider.icon_data_standard or not conn.connector_info_provider.icon_data_nav:
             return None
 
-        data = dict(
-            standard="data:image/svg+xml;base64," + conn.connector_info_provider.icon_data_standard,
-            nav="data:image/svg+xml;base64," + conn.connector_info_provider.icon_data_nav,
-        )
+        data = {
+            "standard": "data:image/svg+xml;base64," + conn.connector_info_provider.icon_data_standard,
+            "nav": "data:image/svg+xml;base64," + conn.connector_info_provider.icon_data_nav,
+        }
         base_dict = super().as_dict(conn=conn)
         assert base_dict
         return dict(
@@ -187,10 +183,10 @@ class ConnectorIconSrcConfigUrl(ConnectorIconSrcConfig):
     url_prefix: str = attr.ib()
 
     def as_dict(self, conn: Connector) -> dict[str, Any] | None:
-        url = dict(
-            standard=f"{self.url_prefix.rstrip('/')}/{ConnectorIconRole.standard.value}/{conn.conn_type.value}.svg",
-            nav=f"{self.url_prefix.rstrip('/')}/{ConnectorIconRole.nav.value}/{conn.conn_type.value}.svg",
-        )
+        url = {
+            "standard": f"{self.url_prefix.rstrip('/')}/{ConnectorIconRole.standard.value}/{conn.conn_type.value}.svg",
+            "nav": f"{self.url_prefix.rstrip('/')}/{ConnectorIconRole.nav.value}/{conn.conn_type.value}.svg",
+        }
         base_dict = super().as_dict(conn=conn)
         assert base_dict
         return dict(
@@ -340,10 +336,10 @@ class ConnectorAvailabilityConfig(SettingsBase):
         self.fill_icon_dict_by_conn_type()
         return list(self._icon_by_conn_type.values())
 
-    def get_icon(self, conn_type: str) -> Optional[dict[str, Any]]:
+    def get_icon(self, conn_type: str) -> dict[str, Any] | None:
         self.fill_icon_dict_by_conn_type()
         if conn_type not in self._icon_by_conn_type:
-            raise ConnectorIconNotFoundException()
+            raise ConnectorIconNotFoundError()
         return self._icon_by_conn_type[conn_type]
 
     @classmethod
@@ -368,11 +364,11 @@ class ConnectorAvailabilityConfig(SettingsBase):
             ),
         )
 
-    def get_available_connectors(self, localizer: Localizer, tenant: Optional[TenantDef]) -> dict[str, Any]:
-        return dict(
-            uncategorized=[connector.as_dict(localizer) for connector in self.uncategorized],
-            sections=[section.as_dict(localizer) for section in self.sections],
-        )
+    def get_available_connectors(self, localizer: Localizer, tenant: TenantDef | None) -> dict[str, Any]:
+        return {
+            "uncategorized": [connector.as_dict(localizer) for connector in self.uncategorized],
+            "sections": [section.as_dict(localizer) for section in self.sections],
+        }
 
     def check_connector_is_available(self, conn_type: ConnectionType) -> bool:
         conn_options = next((conn for conn in self._iter_connectors() if conn.conn_type == conn_type), None)

@@ -31,7 +31,6 @@ from dl_formula.definitions.type_strategy import (
 )
 from dl_formula.shortcuts import n
 
-
 if TYPE_CHECKING:
     from dl_formula.translation.context import TranslationCtx
     from dl_formula.translation.env import TranslationEnvironment
@@ -48,42 +47,34 @@ def as_bigint(value):  # type: ignore  # 2024-01-24 # TODO: Function is missing 
 class Binary(MultiVariantTranslation):
     arg_cnt = 2
     is_function = False
-    arg_names = ["left", "right"]
+    arg_names = ("left", "right")
 
 
 class BinaryPower(Binary):
     name = "^"
-    arg_names = ["base", "power"]
-    variants = [VW(D.DUMMY, lambda base, power: n.func.POWER(base, power))]
-    argument_types = [
-        ArgTypeSequence([DataType.FLOAT, DataType.FLOAT]),
-    ]
+    arg_names = ("base", "power")
+    variants = (VW(D.DUMMY, lambda base, power: n.func.POWER(base, power)),)
+    argument_types = (ArgTypeSequence([DataType.FLOAT, DataType.FLOAT]),)
     return_type = Fixed(DataType.FLOAT)
 
 
 class BinaryMult(Binary):
     name = "*"
-    arg_names = ["value_1", "value_2"]
+    arg_names = ("value_1", "value_2")
 
 
 class BinaryMultNumbers(BinaryMult):
-    variants = [
-        V(D.DUMMY | D.SQLITE, lambda left, right: left * right),
-    ]
-    argument_types = [
-        ArgTypeSequence([DataType.FLOAT, DataType.FLOAT]),
-    ]
+    variants = (V(D.DUMMY | D.SQLITE, lambda left, right: left * right),)
+    argument_types = (ArgTypeSequence([DataType.FLOAT, DataType.FLOAT]),)
     return_type = FromArgs()
 
 
 class BinaryMultStringConst(BinaryMult):
-    variants = [
-        V(D.DUMMY | D.SQLITE, lambda text, size: literal(un_literal(text) * un_literal(size))),
-    ]
-    argument_types = [
+    variants = (V(D.DUMMY | D.SQLITE, lambda text, size: literal(un_literal(text) * un_literal(size))),)
+    argument_types = (
         ArgTypeSequence([DataType.CONST_STRING, DataType.CONST_INTEGER]),
         ArgTypeSequence([DataType.CONST_INTEGER, DataType.CONST_STRING]),
-    ]
+    )
     return_type = Fixed(DataType.CONST_STRING)
 
 
@@ -97,10 +88,10 @@ class BinaryMultStringNonConst(BinaryMult):
                 args = [args[1], args[0]]
             return args
 
-    argument_types = [
+    argument_types = (
         ArgTypeSequence([DataType.STRING, DataType.INTEGER]),
         ArgTypeSequence([DataType.INTEGER, DataType.STRING]),
-    ]
+    )
     return_type = Fixed(DataType.STRING)
     arg_transformer = BinaryMultStringNonConstArgTransformer()
 
@@ -108,75 +99,53 @@ class BinaryMultStringNonConst(BinaryMult):
 class BinaryDiv(Binary):
     name = "/"
     return_type = Fixed(DataType.FLOAT)
-    arg_names = ["number_1", "number_2"]
+    arg_names = ("number_1", "number_2")
 
 
 class BinaryDivInt(BinaryDiv):
-    variants = [
-        V(D.DUMMY, lambda x, y: x / y),
-    ]
-    argument_types = [
-        ArgTypeSequence([DataType.INTEGER, DataType.INTEGER]),
-    ]
+    variants = (V(D.DUMMY, lambda x, y: x / y),)
+    argument_types = (ArgTypeSequence([DataType.INTEGER, DataType.INTEGER]),)
 
 
 class BinaryDivFloat(BinaryDiv):
-    variants = [
-        V(D.DUMMY | D.SQLITE, lambda x, y: x / y),
-    ]
-    argument_types = [
-        ArgTypeSequence([DataType.FLOAT, DataType.FLOAT]),
-    ]
+    variants = (V(D.DUMMY | D.SQLITE, lambda x, y: x / y),)
+    argument_types = (ArgTypeSequence([DataType.FLOAT, DataType.FLOAT]),)
 
 
 class BinaryMod(Binary):
     name = "%"
-    arg_names = ["number_1", "number_2"]
+    arg_names = ("number_1", "number_2")
 
 
 class BinaryModInteger(BinaryMod):
-    variants = [
-        V(D.DUMMY | D.SQLITE, lambda left, right: left % right),
-    ]
-    argument_types = [
-        ArgTypeSequence([DataType.INTEGER, DataType.INTEGER]),
-    ]
+    variants = (V(D.DUMMY | D.SQLITE, lambda left, right: left % right),)
+    argument_types = (ArgTypeSequence([DataType.INTEGER, DataType.INTEGER]),)
     return_type = FromArgs()
 
 
 class BinaryModFloat(BinaryMod):
-    variants = [
-        V(D.DUMMY, lambda left, right: left % right),
-    ]
-    argument_types = [
-        ArgTypeSequence([DataType.FLOAT, DataType.FLOAT]),
-    ]
+    variants = (V(D.DUMMY, lambda left, right: left % right),)
+    argument_types = (ArgTypeSequence([DataType.FLOAT, DataType.FLOAT]),)
     return_type = FromArgs()
 
 
 class BinaryPlus(Binary):
     name = "+"
-    arg_names = ["value_1", "value_2"]
+    arg_names = ("value_1", "value_2")
 
 
 class BinaryPlusNumbers(BinaryPlus):
-    variants = [
-        V(D.DUMMY | D.SQLITE, lambda left, right: left + right),
-    ]
-    argument_types = [
-        ArgTypeSequence([DataType.FLOAT, DataType.FLOAT]),
-    ]
+    variants = (V(D.DUMMY | D.SQLITE, lambda left, right: left + right),)
+    argument_types = (ArgTypeSequence([DataType.FLOAT, DataType.FLOAT]),)
     return_type = FromArgs()
 
 
 class BinaryPlusStrings(BinaryPlus):
-    variants = [
+    variants = (
         # `[str1] + [str2]` is equivalent to `concat([str1], [str2])`
         VW(D.DUMMY | D.SQLITE, n.func.CONCAT),
-    ]
-    argument_types = [
-        ArgTypeSequence([DataType.STRING, DataType.STRING]),
-    ]
+    )
+    argument_types = (ArgTypeSequence([DataType.STRING, DataType.STRING]),)
     return_type = Fixed(DataType.STRING)
 
 
@@ -191,19 +160,19 @@ class BinaryPlusDateInt(BinaryPlus):
             return args
 
     arg_transformer = BinaryPlusDateIntArgTransformer()
-    argument_types = [
+    argument_types = (
         ArgTypeSequence([DataType.DATE, DataType.INTEGER]),
         ArgTypeSequence([DataType.INTEGER, DataType.DATE]),
-    ]
+    )
     return_type = Fixed(DataType.DATE)
 
 
 class BinaryPlusArray(BinaryPlus):
-    argument_types = [
+    argument_types = (
         ArgTypeSequence([DataType.ARRAY_INT, DataType.ARRAY_INT]),
         ArgTypeSequence([DataType.ARRAY_FLOAT, DataType.ARRAY_FLOAT]),
         ArgTypeSequence([DataType.ARRAY_STR, DataType.ARRAY_STR]),
-    ]
+    )
     return_type = FromArgs()
 
 
@@ -218,10 +187,10 @@ class BinaryPlusDateFloat(BinaryPlus):
             return args
 
     arg_transformer = BinaryPlusDateFloatArgTransformer()
-    argument_types = [
+    argument_types = (
         ArgTypeSequence([DataType.DATE, DataType.FLOAT]),
         ArgTypeSequence([DataType.FLOAT, DataType.DATE]),
-    ]
+    )
     return_type = Fixed(DataType.DATE)
 
 
@@ -236,10 +205,10 @@ class BinaryPlusDatetimeNumber(BinaryPlus):
             return args
 
     arg_transformer = BinaryPlusDatetimeNumberArgTransformer()
-    argument_types = [
+    argument_types = (
         ArgTypeSequence([DataType.DATETIME, DataType.FLOAT]),
         ArgTypeSequence([DataType.FLOAT, DataType.DATETIME]),
-    ]
+    )
     return_type = Fixed(DataType.DATETIME)
 
 
@@ -254,87 +223,63 @@ class BinaryPlusGenericDatetimeNumber(BinaryPlus):
             return args
 
     arg_transformer = BinaryPlusGenericDatetimeNumberArgTransformer()
-    argument_types = [
+    argument_types = (
         ArgTypeSequence([DataType.GENERICDATETIME, DataType.FLOAT]),
         ArgTypeSequence([DataType.FLOAT, DataType.GENERICDATETIME]),
-    ]
+    )
     return_type = Fixed(DataType.GENERICDATETIME)
 
 
 class BinaryMinus(Binary):
     name = "-"
-    arg_names = ["value_1", "value_2"]
+    arg_names = ("value_1", "value_2")
 
 
 class BinaryMinusNumbers(BinaryMinus):
-    variants = [
-        V(D.DUMMY | D.SQLITE, lambda left, right: left - right),
-    ]
-    argument_types = [
-        ArgTypeSequence([DataType.FLOAT, DataType.FLOAT]),
-    ]
+    variants = (V(D.DUMMY | D.SQLITE, lambda left, right: left - right),)
+    argument_types = (ArgTypeSequence([DataType.FLOAT, DataType.FLOAT]),)
     return_type = FromArgs()
 
 
 class BinaryMinusInts(BinaryMinus):
-    variants = [
-        V(D.DUMMY | D.SQLITE, lambda left, right: left - right),
-    ]
-    argument_types = [
-        ArgTypeSequence([DataType.INTEGER, DataType.INTEGER]),
-    ]
+    variants = (V(D.DUMMY | D.SQLITE, lambda left, right: left - right),)
+    argument_types = (ArgTypeSequence([DataType.INTEGER, DataType.INTEGER]),)
     return_type = FromArgs()
 
 
 class BinaryMinusDateInt(BinaryMinus):
-    argument_types = [
-        ArgTypeSequence([DataType.DATE, DataType.INTEGER]),
-    ]
+    argument_types = (ArgTypeSequence([DataType.DATE, DataType.INTEGER]),)
     return_type = Fixed(DataType.DATE)
 
 
 class BinaryMinusDateFloat(BinaryMinus):
-    argument_types = [
-        ArgTypeSequence([DataType.DATE, DataType.FLOAT]),
-    ]
+    argument_types = (ArgTypeSequence([DataType.DATE, DataType.FLOAT]),)
     return_type = Fixed(DataType.DATE)
 
 
 class BinaryMinusDatetimeNumber(BinaryMinus):
-    argument_types = [
-        ArgTypeSequence([DataType.DATETIME, DataType.FLOAT]),
-    ]
+    argument_types = (ArgTypeSequence([DataType.DATETIME, DataType.FLOAT]),)
     return_type = Fixed(DataType.DATETIME)
 
 
 class BinaryMinusGenericDatetimeNumber(BinaryMinus):
-    argument_types = [
-        ArgTypeSequence([DataType.GENERICDATETIME, DataType.FLOAT]),
-    ]
+    argument_types = (ArgTypeSequence([DataType.GENERICDATETIME, DataType.FLOAT]),)
     return_type = Fixed(DataType.GENERICDATETIME)
 
 
 class BinaryMinusDates(BinaryMinus):
-    variants = [
-        V(D.DUMMY, lambda left, right: left - right),
-    ]
-    argument_types = [
-        ArgTypeSequence([DataType.DATE, DataType.DATE]),
-    ]
+    variants = (V(D.DUMMY, lambda left, right: left - right),)
+    argument_types = (ArgTypeSequence([DataType.DATE, DataType.DATE]),)
     return_type = Fixed(DataType.INTEGER)
 
 
 class BinaryMinusDatetimes(BinaryMinus):
-    argument_types = [
-        ArgTypeSequence([DataType.DATETIME, DataType.DATETIME]),
-    ]
+    argument_types = (ArgTypeSequence([DataType.DATETIME, DataType.DATETIME]),)
     return_type = Fixed(DataType.FLOAT)
 
 
 class BinaryMinusGenericDatetimes(BinaryMinus):
-    argument_types = [
-        ArgTypeSequence([DataType.GENERICDATETIME, DataType.GENERICDATETIME]),
-    ]
+    argument_types = (ArgTypeSequence([DataType.GENERICDATETIME, DataType.GENERICDATETIME]),)
     return_type = Fixed(DataType.FLOAT)
 
 
@@ -345,25 +290,17 @@ class BinaryComparison(Binary):
 
 class BinaryLike(BinaryComparison):
     name = "like"
-    variants = [
-        V(D.DUMMY | D.SQLITE, lambda x, y: x.like(y)),
-    ]
-    argument_types = [
-        ArgTypeSequence([DataType.STRING, DataType.STRING]),
-    ]
-    arg_names = ["string_1", "string_2"]
+    variants = (V(D.DUMMY | D.SQLITE, lambda x, y: x.like(y)),)
+    argument_types = (ArgTypeSequence([DataType.STRING, DataType.STRING]),)
+    arg_names = ("string_1", "string_2")
 
 
 class BinaryNotLike(BinaryComparison):
     name = "notlike"
     scopes = BinaryComparison.scopes & ~Scope.SUGGESTED & ~Scope.DOCUMENTED
-    variants = [
-        V(D.DUMMY | D.SQLITE, lambda x, y: x.notlike(y)),
-    ]
-    argument_types = [
-        ArgTypeSequence([DataType.STRING, DataType.STRING]),
-    ]
-    arg_names = ["string_1", "string_2"]
+    variants = (V(D.DUMMY | D.SQLITE, lambda x, y: x.notlike(y)),)
+    argument_types = (ArgTypeSequence([DataType.STRING, DataType.STRING]),)
+    arg_names = ("string_1", "string_2")
 
 
 class BinaryEqNEqOrderedBase(BinaryComparison):
@@ -378,7 +315,7 @@ class BinaryEqNEqOrderedBase(BinaryComparison):
     arg_transformer = BinaryEqNEqOrderedBaseArgTransformer()
 
 
-COMPARABLE_TYPES: list[ArgTypeMatcher] = [
+COMPARABLE_TYPES: tuple[ArgTypeMatcher, ...] = (
     ArgTypeSequence([DataType.BOOLEAN, DataType.BOOLEAN]),
     ArgTypeSequence([DataType.STRING, DataType.STRING]),
     ArgTypeSequence([DataType.FLOAT, DataType.FLOAT]),
@@ -395,7 +332,7 @@ COMPARABLE_TYPES: list[ArgTypeMatcher] = [
     ArgTypeSequence([DataType.ARRAY_INT, DataType.ARRAY_INT]),
     ArgTypeSequence([DataType.ARRAY_FLOAT, DataType.ARRAY_FLOAT]),
     ArgTypeSequence([DataType.ARRAY_STR, DataType.ARRAY_STR]),
-]
+)
 
 
 class BinaryEqNEq(BinaryEqNEqOrderedBase):
@@ -403,9 +340,7 @@ class BinaryEqNEq(BinaryEqNEqOrderedBase):
 
 
 class BinaryEqNEqInternal(BinaryEqNEq):
-    argument_types = BinaryEqNEq.argument_types + [
-        ArgTypeSequence([DataType.MARKUP, DataType.MARKUP]),
-    ]
+    argument_types = (*BinaryEqNEq.argument_types, ArgTypeSequence([DataType.MARKUP, DataType.MARKUP]))
     # not intended to be used explicitly, only in internal JOINs
     # but JOINs are implemented in the same manner as other formulas, using formula_nodes.Binary,
     # so they won't work without Scope.EXPLICIT_USAGE
@@ -413,17 +348,17 @@ class BinaryEqNEqInternal(BinaryEqNEq):
 
 
 class BinaryEqImpl(MultiVariantTranslation):
-    variants = [
+    variants = (
         V(
             D.DUMMY | D.SQLITE,
             lambda left, right: left == right,
         ),
-    ]
+    )
 
 
 class BinaryEqual(BinaryEqImpl, BinaryEqNEq):
     name = "=="
-    arg_names = ["value_1", "value_2"]
+    arg_names = ("value_1", "value_2")
 
 
 class BinaryEqualInternal(BinaryEqImpl, BinaryEqNEqInternal):
@@ -433,18 +368,14 @@ class BinaryEqualInternal(BinaryEqImpl, BinaryEqNEqInternal):
 class BinaryEqualDenullified(BinaryEqNEqInternal):
     name = "_dneq"
     scopes = BinaryEqNEqInternal.scopes
-    variants = [
+    variants = (
         V(D.DUMMY | D.SQLITE, lambda left, right: sa.or_(left == right, sa.and_(left.is_(None), right.is_(None)))),
-    ]
-    argument_types = BinaryEqNEqInternal.argument_types + [
-        ArgTypeSequence([DataType.MARKUP, DataType.MARKUP]),
-    ]
+    )
+    argument_types = (*BinaryEqNEqInternal.argument_types, ArgTypeSequence([DataType.MARKUP, DataType.MARKUP]))
 
 
 class BinaryNEqImpl(MultiVariantTranslation):
-    variants = [
-        V(D.DUMMY | D.SQLITE, lambda left, right: left != right),
-    ]
+    variants = (V(D.DUMMY | D.SQLITE, lambda left, right: left != right),)
 
 
 class BinaryNotEqual(BinaryNEqImpl, BinaryEqNEq):
@@ -457,7 +388,7 @@ class BinaryNotEqualInternal(BinaryNEqImpl, BinaryEqNEqInternal):
 
 
 class BinaryOrderedComparison(BinaryEqNEqOrderedBase):
-    argument_types = [
+    argument_types = (
         ArgTypeSequence([DataType.STRING, DataType.STRING]),
         ArgTypeSequence([DataType.FLOAT, DataType.FLOAT]),
         ArgTypeSequence([DataType.DATE, DataType.DATE]),
@@ -468,65 +399,51 @@ class BinaryOrderedComparison(BinaryEqNEqOrderedBase):
         ArgTypeSequence([DataType.DATE, DataType.GENERICDATETIME]),
         ArgTypeSequence([DataType.GENERICDATETIME, DataType.DATE]),
         ArgTypeSequence([DataType.UUID, DataType.UUID]),
-    ]
+    )
 
 
 class BinaryLessThan(BinaryOrderedComparison):
     name = "<"
     scopes = BinaryOrderedComparison.scopes & ~Scope.SUGGESTED & ~Scope.DOCUMENTED
-    variants = [V(D.DUMMY | D.SQLITE, lambda left, right: left < right)]
+    variants = (V(D.DUMMY | D.SQLITE, lambda left, right: left < right),)
 
 
 class BinaryLessThanOrEqual(BinaryOrderedComparison):
     name = "<="
     scopes = BinaryOrderedComparison.scopes & ~Scope.SUGGESTED & ~Scope.DOCUMENTED
-    variants = [
-        V(D.DUMMY | D.SQLITE, lambda left, right: left <= right),
-    ]
+    variants = (V(D.DUMMY | D.SQLITE, lambda left, right: left <= right),)
 
 
 class BinaryGreaterThan(BinaryOrderedComparison):
     name = ">"
     scopes = BinaryOrderedComparison.scopes & ~Scope.SUGGESTED & ~Scope.DOCUMENTED
-    variants = [
-        V(D.DUMMY | D.SQLITE, lambda left, right: left > right),
-    ]
+    variants = (V(D.DUMMY | D.SQLITE, lambda left, right: left > right),)
     return_type = Fixed(DataType.BOOLEAN)
 
 
 class BinaryGreaterThanOrEqual(BinaryOrderedComparison):
     name = ">="
     scopes = BinaryOrderedComparison.scopes & ~Scope.SUGGESTED & ~Scope.DOCUMENTED
-    variants = [
-        V(D.DUMMY | D.SQLITE, lambda left, right: left >= right),
-    ]
+    variants = (V(D.DUMMY | D.SQLITE, lambda left, right: left >= right),)
     return_type = Fixed(DataType.BOOLEAN)
 
 
 class BinaryAnd(Binary):  # FIXME: support other types
     name = "and"
-    arg_names = ["value_1", "value_2"]
-    argument_types = [
-        ArgTypeSequence([DataType.BOOLEAN, DataType.BOOLEAN]),
-    ]
+    arg_names = ("value_1", "value_2")
+    argument_types = (ArgTypeSequence([DataType.BOOLEAN, DataType.BOOLEAN]),)
     argument_flags = ArgFlagSequence([ContextFlag.REQ_CONDITION, ContextFlag.REQ_CONDITION])
-    variants = [
-        V(D.DUMMY | D.SQLITE, sa.and_),
-    ]
+    variants = (V(D.DUMMY | D.SQLITE, sa.and_),)
     return_type = FromArgs()
     return_flags = ContextFlag.IS_CONDITION
 
 
 class BinaryOr(Binary):  # FIXME: support other types
     name = "or"
-    arg_names = ["value_1", "value_2"]
-    argument_types = [
-        ArgTypeSequence([DataType.BOOLEAN, DataType.BOOLEAN]),
-    ]
+    arg_names = ("value_1", "value_2")
+    argument_types = (ArgTypeSequence([DataType.BOOLEAN, DataType.BOOLEAN]),)
     argument_flags = ArgFlagSequence([ContextFlag.REQ_CONDITION, ContextFlag.REQ_CONDITION])
-    variants = [
-        V(D.DUMMY | D.SQLITE, sa.or_),
-    ]
+    variants = (V(D.DUMMY | D.SQLITE, sa.or_),)
     return_type = FromArgs()
     return_flags = ContextFlag.IS_CONDITION
 
@@ -547,13 +464,13 @@ def _in_fix_null(left, right, stringify_values):  # type: ignore  # 2024-01-24 #
 
 class BinaryIn(Binary):
     name = "in"
-    arg_names = ["item", "list"]
-    variants = [
+    arg_names = ("item", "list")
+    variants = (
         V(
             D.DUMMY | D.SQLITE,
             functools.partial(_in_fix_null, stringify_values=False),
         ),
-    ]
+    )
     argument_types = COMPARABLE_TYPES
     return_type = Fixed(DataType.BOOLEAN)
     return_flags = ContextFlag.IS_CONDITION
@@ -587,13 +504,13 @@ def _prepare_in_args(left, right, stringify_values: bool):  # type: ignore  # 20
 class BinaryNotIn(Binary):
     name = "notin"
     scopes = Binary.scopes & ~Scope.SUGGESTED & ~Scope.DOCUMENTED
-    arg_names = ["item", "list"]
-    variants = [
+    arg_names = ("item", "list")
+    variants = (
         V(
             D.DUMMY | D.SQLITE,
             functools.partial(_not_in_fix_null, stringify_values=False),
         ),
-    ]
+    )
     argument_types = COMPARABLE_TYPES
     return_type = Fixed(DataType.BOOLEAN)
     return_flags = ContextFlag.IS_CONDITION

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import Enum
 from typing import (
+    Any,
     ClassVar,
-    Sequence,
 )
 
 from dl_formula.core.datatype import DataType
@@ -21,7 +22,6 @@ from dl_formula.definitions.operators_binary import BinaryPlus
 from dl_formula.definitions.scope import Scope
 from dl_formula.definitions.type_strategy import Fixed
 from dl_formula.shortcuts import n
-
 
 V = TranslationVariant.make
 VW = TranslationVariantWrapped.make
@@ -83,26 +83,20 @@ class FuncInternalStrBase(Function):
     name = "__str"
     scopes = Function.scopes & ~Scope.EXPLICIT_USAGE & ~Scope.SUGGESTED & ~Scope.DOCUMENTED
 
-    arg_names = ["expression"]
+    arg_names = ("expression",)
     arg_cnt = 1
 
     # Markup is already a string value, so nothing to do.
-    variants = [
-        V(D.DUMMY | D.SQLITE, lambda value: value),
-    ]
+    variants = (V(D.DUMMY | D.SQLITE, lambda value: value),)
 
 
 class FuncInternalStrConst(FuncInternalStrBase):
-    argument_types = [
-        ArgTypeSequence([{DataType.CONST_MARKUP, DataType.CONST_STRING}]),
-    ]
+    argument_types = (ArgTypeSequence([{DataType.CONST_MARKUP, DataType.CONST_STRING}]),)
     return_type = Fixed(DataType.CONST_STRING)
 
 
 class FuncInternalStr(FuncInternalStrBase):
-    argument_types = [
-        ArgTypeSequence([MARKUP_EFFECTIVELY]),
-    ]
+    argument_types = (ArgTypeSequence([MARKUP_EFFECTIVELY]),)
     return_type = Fixed(DataType.STRING)
 
 
@@ -137,7 +131,7 @@ def process_markup_child(node):  # type: ignore  # 2024-01-24 # TODO: Function i
     raise Exception("Unexpected markup child type", node)
 
 
-def markup_node(func_name, *children):  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation  [no-untyped-def]
+def markup_node(func_name: str, *children: Any) -> Any:
     """
     Using `concat` and `replace`, return an expression that results in
     something parseable by the special parser.
@@ -154,12 +148,12 @@ def markup_node(func_name, *children):  # type: ignore  # 2024-01-24 # TODO: Fun
 
 
 def make_variants(func_name):  # type: ignore  # 2024-01-24 # TODO: Function is missing a type annotation  [no-untyped-def]
-    return [
+    return (
         VW(
             D.DUMMY | D.SQLITE,
             lambda *children: markup_node(func_name, *children),
         ),
-    ]
+    )
 
 
 class MarkupTypeStrategy(Fixed):
@@ -194,10 +188,8 @@ class FuncMarkupUnary(FuncMarkup):
     # arguments, passing them to concat internally.
 
     arg_cnt = 1
-    arg_names = ["text"]
-    argument_types = [
-        ArgTypeSequence([MARKUP_EFFECTIVELY]),
-    ]
+    arg_names = ("text",)
+    argument_types = (ArgTypeSequence([MARKUP_EFFECTIVELY]),)
 
 
 class FuncBold(FuncMarkupUnary):
@@ -213,19 +205,17 @@ class FuncItalics(FuncMarkupUnary):
 class FuncUrl(FuncMarkup):
     name = "url"
     arg_cnt = 2
-    arg_names = ["address", "text"]
-    argument_types = [
+    arg_names = ("address", "text")
+    argument_types = (
         # url(str, markup|str)
         ArgTypeSequence([DataType.STRING, MARKUP_EFFECTIVELY]),
-    ]
+    )
     variants = make_variants("a")
 
 
 class BinaryPlusMarkup(BinaryPlus):
     variants = make_variants("c")
-    argument_types = [
-        StrictMarkupCompatibleArgTypes(),
-    ]
+    argument_types = (StrictMarkupCompatibleArgTypes(),)
     return_type = Fixed(DataType.MARKUP)
 
 
@@ -238,9 +228,7 @@ class ConcatMultiMarkup(FuncMarkup):
 
     name = "markup"
     arg_cnt = None
-    argument_types = [
-        ArgTypeForAll(MARKUP_EFFECTIVELY),
-    ]
+    argument_types = (ArgTypeForAll(MARKUP_EFFECTIVELY),)
     return_type = Fixed(DataType.MARKUP)  # type: ignore  # TODO: fix
 
     variants = make_variants("c")
@@ -249,22 +237,22 @@ class ConcatMultiMarkup(FuncMarkup):
 class FuncColor(FuncMarkup):
     name = "color"
     arg_cnt = 2
-    arg_names = ["text", "color"]
-    argument_types = [
+    arg_names = ("text", "color")
+    argument_types = (
         # color( markup|str, str)
         ArgTypeSequence([MARKUP_EFFECTIVELY, DataType.STRING]),
-    ]
+    )
     variants = make_variants("cl")
 
 
 class FuncSize(FuncMarkup):
     name = "size"
     arg_cnt = 2
-    arg_names = ["text", "size"]
-    argument_types = [
+    arg_names = ("text", "size")
+    argument_types = (
         # size( markup|str, str)
         ArgTypeSequence([MARKUP_EFFECTIVELY, DataType.STRING]),
-    ]
+    )
     variants = make_variants("sz")
 
 
@@ -281,20 +269,20 @@ class FuncTooltipBase(FuncMarkup):
 
 class FuncTooltip2(FuncTooltipBase):
     arg_cnt = 2
-    arg_names = ["text", "tooltip"]
-    argument_types = [
+    arg_names = ("text", "tooltip")
+    argument_types = (
         # tooltip(markup|str, markup|str)
         ArgTypeSequence([MARKUP_EFFECTIVELY, MARKUP_EFFECTIVELY]),
-    ]
+    )
 
 
 class FuncTooltip3(FuncTooltipBase):
     arg_cnt = 3
-    arg_names = ["text", "tooltip", "placement"]
-    argument_types = [
+    arg_names = ("text", "tooltip", "placement")
+    argument_types = (
         # tooltip(markup|str, markup|str, str)
         ArgTypeSequence([MARKUP_EFFECTIVELY, MARKUP_EFFECTIVELY, DataType.STRING]),
-    ]
+    )
 
 
 class NullImageMarkupNode:
@@ -311,27 +299,27 @@ class FuncImageBase(FuncMarkup):
 
 class FuncImage1(FuncImageBase):
     arg_cnt = 1
-    arg_names = ["src"]
-    argument_types = [
+    arg_names = ("src",)
+    argument_types = (
         # image( null|str)
         ArgTypeSequence(
             [
                 DataType.STRING.autocast_types | DataType.NULL.autocast_types,
             ]
         ),
-    ]
-    variants = [
+    )
+    variants = (
         VW(
             D.DUMMY | D.SQLITE,
             lambda src: markup_node("img", src, null_image_node, null_image_node, null_image_node),
         ),
-    ]
+    )
 
 
 class FuncImage2(FuncImageBase):
     arg_cnt = 2
-    arg_names = ["src", "width"]
-    argument_types = [
+    arg_names = ("src", "width")
+    argument_types = (
         # image( null|str, null|int)
         ArgTypeSequence(
             [
@@ -339,19 +327,19 @@ class FuncImage2(FuncImageBase):
                 DataType.INTEGER.autocast_types | DataType.CONST_INTEGER.autocast_types | DataType.NULL.autocast_types,
             ]
         ),
-    ]
-    variants = [
+    )
+    variants = (
         VW(
             D.DUMMY | D.SQLITE,
             lambda src, width: markup_node("img", src, width, null_image_node, null_image_node),
         ),
-    ]
+    )
 
 
 class FuncImage3(FuncImageBase):
     arg_cnt = 3
-    arg_names = ["src", "width", "height"]
-    argument_types = [
+    arg_names = ("src", "width", "height")
+    argument_types = (
         # image( null|str, null|int, null|int)
         ArgTypeSequence(
             [
@@ -360,19 +348,19 @@ class FuncImage3(FuncImageBase):
                 DataType.INTEGER.autocast_types | DataType.CONST_INTEGER.autocast_types | DataType.NULL.autocast_types,
             ]
         ),
-    ]
-    variants = [
+    )
+    variants = (
         VW(
             D.DUMMY | D.SQLITE,
             lambda src, width, height: markup_node("img", src, width, height, null_image_node),
         ),
-    ]
+    )
 
 
 class FuncImage4(FuncImageBase):
     arg_cnt = 4
-    arg_names = ["src", "width", "height", "alt"]
-    argument_types = [
+    arg_names = ("src", "width", "height", "alt")
+    argument_types = (
         # image( null|str, null|int, null|int, null|str)
         ArgTypeSequence(
             [
@@ -382,26 +370,28 @@ class FuncImage4(FuncImageBase):
                 DataType.STRING.autocast_types | DataType.NULL.autocast_types,
             ]
         ),
-    ]
+    )
     variants = make_variants("img")
 
 
 class FuncUserInfo(FuncMarkup):
     name = "user_info"
     arg_cnt = 2
-    arg_names = ["user_id", "user_info_type"]
-    argument_types = [
+    arg_names = ("user_id", "user_info_type")
+    argument_types = (
         # user_info(str, str)
         ArgTypeSequence([DataType.STRING, DataType.STRING]),
-    ]
-    variants = [
+    )
+    variants = (
         VW(
             D.DUMMY | D.SQLITE,
-            lambda user_id, user_info_type: markup_node("userinfo", user_id, user_info_type)
-            if user_info_type.node.value in ["name", "email"]
-            else markup_node("c", user_id),
+            lambda user_id, user_info_type: (
+                markup_node("userinfo", user_id, user_info_type)
+                if user_info_type.node.value in ["name", "email"]
+                else markup_node("c", user_id)
+            ),
         ),
-    ]
+    )
 
 
 DEFINITIONS_MARKUP = [

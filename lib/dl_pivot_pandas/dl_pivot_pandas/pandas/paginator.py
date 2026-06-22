@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-)
+from typing import TYPE_CHECKING
 
 from dl_pivot.base.paginator import PivotPaginator
 from dl_pivot_pandas.pandas.data_frame import (
@@ -11,7 +8,6 @@ from dl_pivot_pandas.pandas.data_frame import (
     PdPivotDataFrame,
     PdVSeriesPivotDataFrame,
 )
-
 
 if TYPE_CHECKING:
     from dl_pivot.base.data_frame import PivotDataFrame
@@ -21,8 +17,8 @@ class PdPivotPaginator(PivotPaginator):
     def paginate(
         self,
         pivot_dframe: PivotDataFrame,
-        limit_rows: Optional[int] = None,
-        offset_rows: Optional[int] = None,
+        limit_rows: int | None = None,
+        offset_rows: int | None = None,
     ) -> PivotDataFrame:
         assert isinstance(pivot_dframe, PdPivotDataFrame)
         pd_df = pivot_dframe.pd_df
@@ -39,16 +35,15 @@ class PdPivotPaginator(PivotPaginator):
             pd_df = pd_df.head(min(total_rows, limit_rows))
 
         # Create table copy with truncated data frame
-        pivot_dframe = pivot_dframe.clone(pd_df=pd_df)
-        return pivot_dframe
+        return pivot_dframe.clone(pd_df=pd_df)
 
 
 class PdHSeriesPivotPaginator(PivotPaginator):
     def paginate(
         self,
         pivot_dframe: PivotDataFrame,
-        limit_rows: Optional[int] = None,
-        offset_rows: Optional[int] = None,
+        limit_rows: int | None = None,
+        offset_rows: int | None = None,
     ) -> PivotDataFrame:
         assert isinstance(pivot_dframe, PdHSeriesPivotDataFrame)
         pd_series = pivot_dframe.pd_series
@@ -58,16 +53,15 @@ class PdHSeriesPivotPaginator(PivotPaginator):
             assert pivot_dframe.get_row_count() == 1
             pd_series = pd_series.transform(lambda x: None)
 
-        pivot_dframe = pivot_dframe.clone(pd_series=pd_series)
-        return pivot_dframe
+        return pivot_dframe.clone(pd_series=pd_series)
 
 
 class PdVSeriesPivotPaginator(PivotPaginator):
     def paginate(
         self,
         pivot_dframe: PivotDataFrame,
-        limit_rows: Optional[int] = None,
-        offset_rows: Optional[int] = None,
+        limit_rows: int | None = None,
+        offset_rows: int | None = None,
     ) -> PivotDataFrame:
         assert isinstance(pivot_dframe, PdVSeriesPivotDataFrame)
         pd_series = pivot_dframe.pd_series
@@ -84,5 +78,4 @@ class PdVSeriesPivotPaginator(PivotPaginator):
             pd_series = pd_series.head(min(total_rows, limit_rows))
 
         # Create table copy with truncated data frame
-        pivot_dframe = pivot_dframe.clone(pd_series=pd_series)
-        return pivot_dframe
+        return pivot_dframe.clone(pd_series=pd_series)

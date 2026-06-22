@@ -12,7 +12,6 @@ from dl_api_commons.aiohttp.required_resources import (
 import dl_api_commons.base_models as dl_api_commons_base_models
 import dl_auth_native.middlewares.base as middlewares_base
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -42,8 +41,8 @@ class AioHTTPMiddleware(middlewares_base.BaseMiddleware):
 
             try:
                 auth_result = self._auth(user_access_token_header)
-            except self.Unauthorized as exc:
-                LOGGER.info(f"Unauthorized: {exc.message}")
+            except self.UnauthorizedError as exc:
+                LOGGER.info("Unauthorized: %s", exc.message)
                 raise aiohttp_web.HTTPUnauthorized(reason=exc.message) from exc
 
             app_request.replace_temp_rci(

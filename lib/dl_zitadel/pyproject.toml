@@ -16,7 +16,7 @@ dl-constants = {path = "../dl_constants"}
 dl-httpx = {path = "../dl_httpx"}
 flask = {optional = true, version = "*"}
 httpx = "*"
-python = ">=3.10, <3.13"
+python = ">=3.12, <3.13"
 werkzeug = "*"
 
 [tool.poetry.group.tests.dependencies]
@@ -52,6 +52,5 @@ root_dir = "dl_zitadel_tests/db"
 skip_tests = true # won't fix until deleted from repository
 
 [datalens.pytest.unit]
-labels = ["no_compose"]
 root_dir = "dl_zitadel_tests/unit"
 skip_compose = "true"

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import abc
-import logging
-from typing import (
-    AbstractSet,
+from collections.abc import (
     Collection,
-    Optional,
     Sequence,
+    Set,
 )
+import logging
+from typing import Any
 
 import attr
 
@@ -29,7 +29,6 @@ from dl_query_processing.compilation.specs import (
 )
 from dl_query_processing.legend.block_legend import BlockSpec
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -42,7 +41,7 @@ class QuerySpecFormalizerBase(abc.ABC):
 
     _verbose_logging: bool = attr.ib(kw_only=True, default=False)
 
-    def _log_info(self, *args, **kwargs) -> None:  # type: ignore  # TODO: fix
+    def _log_info(self, *args: Any, **kwargs: Any) -> None:
         if self._verbose_logging:
             LOGGER.info(*args, **kwargs)
 
@@ -92,7 +91,7 @@ class QuerySpecFormalizerBase(abc.ABC):
     def make_relation_and_avatar_specs(
         self,
         used_field_ids: Collection[FieldId],
-    ) -> tuple[list[RelationSpec], AbstractSet[AvatarId], Optional[AvatarId]]:
+    ) -> tuple[list[RelationSpec], Set[AvatarId], AvatarId | None]:
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -102,7 +101,7 @@ class QuerySpecFormalizerBase(abc.ABC):
     ) -> list[ParameterValueSpec]:
         raise NotImplementedError
 
-    def make_limit_offset(self, block_spec: BlockSpec) -> tuple[Optional[int], Optional[int]]:
+    def make_limit_offset(self, block_spec: BlockSpec) -> tuple[int | None, int | None]:
         return block_spec.limit, block_spec.offset
 
     def make_query_meta(
@@ -110,7 +109,7 @@ class QuerySpecFormalizerBase(abc.ABC):
         block_spec: BlockSpec,
         phantom_select_ids: list[FieldId],
         select_specs: list[SelectFieldSpec],
-        root_avatar_id: Optional[AvatarId],
+        root_avatar_id: AvatarId | None,
     ) -> QueryMetaInfo:
         row_count_hard_limit = block_spec.row_count_hard_limit
         if row_count_hard_limit is None:
@@ -118,7 +117,7 @@ class QuerySpecFormalizerBase(abc.ABC):
         assert row_count_hard_limit is not None
         row_count_hard_limit = min(row_count_hard_limit, DataAPILimits.DEFAULT_SOURCE_DB_LIMIT)
 
-        query_meta = QueryMetaInfo(
+        return QueryMetaInfo(
             query_type=block_spec.query_type,
             phantom_select_ids=phantom_select_ids,
             field_order=[
@@ -129,7 +128,6 @@ class QuerySpecFormalizerBase(abc.ABC):
             row_count_hard_limit=row_count_hard_limit,
             empty_query_mode=block_spec.empty_query_mode,
         )
-        return query_meta
 
     def make_query_spec(self, block_spec: BlockSpec) -> QuerySpec:
         order_by_specs = self.make_order_by_specs(block_spec=block_spec)

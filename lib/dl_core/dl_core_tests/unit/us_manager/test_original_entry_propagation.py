@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import Mock
 
 import attr
@@ -38,7 +39,7 @@ class TestUSEntryStorageSchema(DefaultStorageSchema):
 class TestLifecycleManager(EntryLifecycleManager[TestUSEntry]):
     ENTRY_CLS = TestUSEntry
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
 
         self.pre_save_hook_mock = Mock()
@@ -66,7 +67,7 @@ class TestLifecycleManager(EntryLifecycleManager[TestUSEntry]):
 
 
 class TestLifecycleManagerFactory(EntryLifecycleManagerFactoryBase):
-    def __init__(self):
+    def __init__(self) -> None:
         self.created_managers: list[TestLifecycleManager] = []
 
     def get_lifecycle_manager(
@@ -102,12 +103,12 @@ class TestMockedSyncUSManager(MockedSyncUSManager):
         return super()._get_entry_class(us_scope=us_scope, us_type=us_type, entry_key=entry_key)
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def test_lifecycle_factory() -> TestLifecycleManagerFactory:
     return TestLifecycleManagerFactory()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def test_us_manager(
     bi_context: RequestContextInfo,
     crypto_keys_config: CryptoKeysConfig,
@@ -126,7 +127,7 @@ def test_us_manager(
     return us_manager
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def entry(
     test_us_manager: USManagerBase,
     test_lifecycle_factory: TestLifecycleManagerFactory,
